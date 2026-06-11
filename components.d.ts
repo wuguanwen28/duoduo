@@ -17,5 +17,6 @@ declare module 'vue' {
     ElSwitch: typeof import('element-plus/es')['ElSwitch']
     Menu: typeof import('./src/components/Menu/Menu.vue')['default']
     Pet: typeof import('./src/components/Pet/Pet.vue')['default']
+    SpriteAnimator: typeof import('./src/components/SpriteAnimator/SpriteAnimator.vue')['default']
   }
 }

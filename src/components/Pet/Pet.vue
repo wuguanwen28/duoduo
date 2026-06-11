@@ -1,9 +1,9 @@
 <template>
   <div class="pet" @keydown.esc="menuOpen = false" @contextmenu.prevent>
-    <!-- Right-click the cat to open the menu. el-popover handles the
-         contextmenu trigger, outside-click close, and the open/close
-         animation; :teleported="false" keeps the panel inside the 500×500
-         window instead of escaping to <body>. -->
+    <!-- Right-click the cat to open the menu. The window is always wide
+         enough to hold the cat (right-aligned) + the menu panel (left side),
+         so placement="left-end" works without needing a dynamic resize.
+         :teleported="false" keeps the panel inside the window. -->
     <el-popover
       v-model:visible="menuOpen"
       trigger="contextmenu"
@@ -12,6 +12,7 @@
       :teleported="false"
       :show-arrow="false"
       :persistent="false"
+      :popper-options="{ modifiers: [{ name: 'flip', enabled: false }] }"
       popper-class="pet-menu-popover"
     >
       <template #reference>
@@ -160,13 +161,6 @@ const followCursor = ref(true);
 
 /** In-window menu state. */
 const menuOpen = ref(false);
-
-// Resize the window when the menu opens/closes so it's just big enough for the
-// cat (+ menu when open). The Rust command shifts the window leftward when
-// opening so the cat doesn't jump on screen.
-watch(menuOpen, (open) => {
-  invoke("pet_resize_for_menu", { open }).catch(() => {});
-});
 
 // ── Head calibration ─────────────────────────────────────────────────
 // Ratio of the head offset to the sprite's *diameter* so it stays stable
@@ -354,6 +348,9 @@ onUnmounted(() => {
 .pet {
   width: 100vw;
   height: 100vh;
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-end;
   position: relative;
   outline: none;
 }
@@ -366,6 +363,7 @@ onUnmounted(() => {
   cursor: grab;
   -webkit-user-drag: none;
   user-select: none;
+  pointer-events: auto;
 }
 
 .pet__img-wrap:active {
@@ -398,6 +396,7 @@ onUnmounted(() => {
   align-items: center;
   justify-content: center;
   z-index: 100;
+  pointer-events: auto;
 }
 
 .pet__calib-instructions {
@@ -469,5 +468,6 @@ onUnmounted(() => {
   border: 0;
   border-radius: 10px;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  pointer-events: auto;
 }
 </style>

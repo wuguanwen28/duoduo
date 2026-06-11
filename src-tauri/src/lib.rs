@@ -2,12 +2,19 @@ use std::sync::Mutex;
 use tauri::{
     menu::{Menu, MenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-    Manager, PhysicalPosition,
+    Emitter, Manager, PhysicalPosition,
 };
 
 /// The cat sprite's base size in logical (CSS) pixels — must match the `200`
 /// in Pet.vue's `imgStyle` (`Math.round(200 * size)`).
 const PET_BASE_PX: f64 = 200.0;
+
+/// Width / height (logical px) reserved on the LEFT side of the window for the
+/// in-window menu panel. Includes the menu itself (200×~346) + 10 px gap on
+/// each side. The window is always wide enough to hold the cat (right-aligned)
+/// plus this reserve, so the menu can pop up on the left without a dynamic resize.
+const MENU_EXTRA_W_LP: f64 = 220.0; // 200 menu + 10 gap × 2
+const MENU_EXTRA_H_LP: f64 = 366.0; // ~346 menu + 10 gap × 2
 
 /// Shared app state. `scale` mirrors the in-window size slider so the clamp
 /// logic knows the cat's real on-screen size (the window itself is a fixed
@@ -31,18 +38,16 @@ fn clampf(v: f64, lo: f64, hi: f64) -> f64 {
 }
 
 /// Bring the pet window back into view: unminimize, show, and focus it.
-/// Also resizes to the cat's current sprite size in case the window was
-/// shrunk to 200×200 by the menu-close path before being minimised.
+/// Resizes to the cat's current sprite size + the left-side menu reserve
+/// (the window always includes space for the menu, even when closed).
 /// Used by the tray "显示多多" item and a left-click on the tray icon.
 fn show_pet(app: &tauri::AppHandle) {
-    if let Some(window) = app.get_webview_window("pet") {
+    if let Some(window) = app.get_webview_window("duoduo") {
         // Restore the window first — set_size on a minimized window may be
         // ignored by the OS.
         let _ = window.unminimize();
         let _ = window.show();
         let _ = window.set_focus();
-        // Now resize to the cat's actual sprite size (the menu-close path
-        // may have shrunk it to 200×200 before minimisation).
         let scale = window
             .state::<PetState>()
             .scale
@@ -51,7 +56,12 @@ fn show_pet(app: &tauri::AppHandle) {
             .unwrap_or(1.0);
         let sf = window.scale_factor().unwrap_or(1.0);
         let cat_px = (PET_BASE_PX * scale * sf).round() as u32;
-        let _ = window.set_size(tauri::PhysicalSize::new(cat_px, cat_px));
+        let menu_w = (MENU_EXTRA_W_LP * sf).round() as u32;
+        let menu_h = (MENU_EXTRA_H_LP * sf).round() as u32;
+        let _ = window.set_size(tauri::PhysicalSize::new(
+            cat_px + menu_w,
+            cat_px.max(menu_h),
+        ));
     }
 }
 
@@ -64,8 +74,9 @@ const HEAD_DEAD_ZONE_FRAC: f64 = 0.1225;
 /// Angle (in degrees, screen convention: 0 = +x/right, 90 = down, measured
 /// clockwise) from the cat's head centre to the global mouse cursor.
 ///
-/// The head centre is computed as the window centre + the user-calibrated
-/// head offset (in physical pixels, so it stays correct across DPIs and sizes).
+/// The cat sprite is right-aligned and bottom-aligned in the window (menu
+/// reserve on the left), so the head centre = window right edge - sprite/2
+/// (X), window bottom edge - sprite/2 (Y), plus calibrated offset.
 /// Returns `None` when the cursor falls inside the head dead zone so the cat
 /// faces forward instead of jittering.
 #[tauri::command]
@@ -79,10 +90,10 @@ fn pet_cursor_angle(window: tauri::Window) -> Result<Option<f64>, String> {
     let (ox_ratio, oy_ratio) = state.head_offset.lock().map(|g| *g).unwrap_or((0.0, 0.0));
     let sf = window.scale_factor().map_err(|e| e.to_string())?;
 
-    // Head centre in physical pixels (window centre + calibrated offset).
+    // Cat is right-aligned and bottom-aligned.
     let sprite_px = PET_BASE_PX * scale * sf;
-    let cx = pos.x as f64 + size.width as f64 / 2.0 + ox_ratio * sprite_px;
-    let cy = pos.y as f64 + size.height as f64 / 2.0 + oy_ratio * sprite_px;
+    let cx = pos.x as f64 + size.width as f64 - sprite_px / 2.0 + ox_ratio * sprite_px;
+    let cy = pos.y as f64 + size.height as f64 - sprite_px / 2.0 + oy_ratio * sprite_px;
     let dx = cursor.x - cx;
     let dy = cursor.y - cy;
 
@@ -130,12 +141,12 @@ fn combined_work_area(window: &tauri::Window) -> Result<(i32, i32, i32, i32), St
     Ok((min_x, min_y, max_x, max_y))
 }
 
-/// Clamp the window so the **centered cat sprite** (not the whole window) stays
-/// within the bounding box of all monitors. The window is an 800×500 box much
-/// larger than the sprite, so the window's empty margins are allowed to hang
-/// off-screen — only the visible cat content is kept on-screen.
+/// Clamp the window so the **cat sprite** (not the whole window) stays within
+/// the bounding box of all monitors. The window has extra space on the left for
+/// the menu panel; the cat is right-aligned. Only the visible cat content is
+/// kept on-screen — the window's left margin is allowed to hang off-screen.
 ///
-/// The sprite is `PET_BASE_PX * scale` logical px, centered in the window;
+/// The sprite is `PET_BASE_PX * scale` logical px, right-aligned in the window;
 /// converting to physical px (× scale_factor) gives its real size. We compute
 /// the content box's top-left, clamp THAT to the work area, then derive the
 /// window position back from it. Idempotent; called from the Moved handler.
@@ -152,12 +163,12 @@ fn clamp_to_work_area(window: &tauri::Window) -> Result<(), String> {
         .unwrap_or(1.0);
     let sf = window.scale_factor().map_err(|e| e.to_string())?;
 
-    // Cat sprite size in physical pixels, and its centered offset within the window.
+    // Cat is right-aligned & bottom-aligned.
     let content = (PET_BASE_PX * scale * sf).round();
     let win_w = size.width as f64;
     let win_h = size.height as f64;
-    let off_x = (win_w - content) / 2.0;
-    let off_y = (win_h - content) / 2.0;
+    let off_x = win_w - content; // cat is at the right edge
+    let off_y = win_h - content; // cat is at the bottom edge
 
     // Current content top-left in screen space.
     let content_x = pos.x as f64 + off_x;
@@ -180,70 +191,20 @@ fn clamp_to_work_area(window: &tauri::Window) -> Result<(), String> {
 }
 
 /// Update the cached sprite scale (mirrors the in-window size slider) and
-/// re-clamp so shrinking near an edge doesn't leave the cat off-screen.
+/// resize the window so it always fits the cat (right-aligned) + the left-side
+/// menu reserve. Re-clamps so growing near an edge doesn't push the cat off-screen.
 #[tauri::command]
 fn pet_set_content_scale(window: tauri::Window, scale: f64) -> Result<(), String> {
     let s = scale.clamp(0.1, 8.0);
     if let Ok(mut g) = window.state::<PetState>().scale.lock() {
         *g = s;
     }
-    clamp_to_work_area(&window)?;
-    Ok(())
-}
-
-/// Resize the window to fit the cat sprite plus the menu panel (or back to
-/// just the cat). The cat occupies the RIGHT side of the window; when the menu
-/// is open it appears to the LEFT, so we expand the window leftward and shift
-/// the window's x position by the same amount to keep the cat in place.
-///
-/// `open`: true = menu just opened, false = menu just closed.
-#[tauri::command]
-fn pet_resize_for_menu(window: tauri::Window, open: bool) -> Result<(), String> {
-    use tauri::PhysicalSize;
-
-    let state = window.state::<PetState>();
-    let scale = state.scale.lock().map(|g| *g).unwrap_or(1.0);
     let sf = window.scale_factor().map_err(|e| e.to_string())?;
-
-    let cat_px = (PET_BASE_PX * scale * sf).round() as u32;
-    // Menu: 200 logical wide, ~346 logical tall, 10 logical gap on each side.
-    let menu_extra_w = ((200.0 + 20.0) * sf).round() as u32;
-    let menu_extra_h = ((346.0 + 20.0) * sf).round() as u32;
-
-    let pos = window.outer_position().map_err(|e| e.to_string())?;
-
-    let (new_w, new_h, dx) = if open {
-        (
-            cat_px + menu_extra_w,
-            cat_px.max(menu_extra_h),
-            -(menu_extra_w as i32),
-        )
-    } else {
-        (cat_px, cat_px, menu_extra_w as i32)
-    };
-
+    let cat_px = (PET_BASE_PX * s * sf).round() as u32;
+    let menu_w = (MENU_EXTRA_W_LP * sf).round() as u32;
+    let menu_h = (MENU_EXTRA_H_LP * sf).round() as u32;
     window
-        .set_size(PhysicalSize::new(new_w, new_h))
-        .map_err(|e| e.to_string())?;
-    // Shift x to keep the cat in the same screen position.
-    let _ = window.set_position(PhysicalPosition::new(pos.x + dx, pos.y));
-    clamp_to_work_area(&window)?;
-    Ok(())
-}
-
-/// Resize the pet window and re-clamp the position so it doesn't extend past
-/// the work area after the size change. Currently unused by the in-window
-/// menu (it scales the sprite image instead) but kept available for callers
-/// that want to drive the window size programmatically.
-#[tauri::command]
-fn pet_set_size(window: tauri::Window, scale: f64) -> Result<(), String> {
-    use tauri::PhysicalSize;
-    let s = scale.clamp(0.25, 4.0);
-    let base = 200.0_f64;
-    let w = (base * s).round().max(40.0) as u32;
-    let h = (base * s).round().max(40.0) as u32;
-    window
-        .set_size(PhysicalSize::new(w, h))
+        .set_size(tauri::PhysicalSize::new(cat_px + menu_w, cat_px.max(menu_h)))
         .map_err(|e| e.to_string())?;
     clamp_to_work_area(&window)?;
     Ok(())
@@ -256,6 +217,14 @@ fn pet_quit(app: tauri::AppHandle) {
     app.exit(0);
 }
 
+/// Trigger a sprite animation on the frontend by emitting a "pet-play-action"
+/// event with the action name. The frontend's SpriteAnimator component plays
+/// the corresponding frame sequence.
+#[tauri::command]
+fn pet_play_action(app: tauri::AppHandle, action: String) -> Result<(), String> {
+    app.emit("pet-play-action", action).map_err(|e| e.to_string())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -265,18 +234,17 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             pet_cursor_angle,
-            pet_set_size,
             pet_set_content_scale,
             pet_set_head_offset,
-            pet_resize_for_menu,
-            pet_quit
+            pet_quit,
+            pet_play_action
         ])
         .on_window_event(|window, event| {
             // Clamp the pet to the union of all monitors. There is only one
             // window now (the menu lives inside it), so this affects the
-            // single "pet" window.
+            // single "duoduo" window.
             if let tauri::WindowEvent::Moved(_) = event {
-                if window.label() == "pet" {
+                if window.label() == "duoduo" {
                     // When the window is minimized, Windows parks it off-screen
                     // at (-32000, -32000). Clamping that back into view would
                     // fight the minimize and ping-pong Moved events forever,
@@ -323,14 +291,29 @@ pub fn run() {
                 .build(app)?;
 
             // Position the pet window at the bottom-right of the primary
-            // monitor's work area (clear of the taskbar).
-            if let Some(window) = app.get_webview_window("pet") {
+            // monitor's work area (clear of the taskbar). Resize first so the
+            // window includes the left-side menu reserve from the start.
+            if let Some(window) = app.get_webview_window("duoduo") {
                 if let Ok(Some(monitor)) = window.current_monitor() {
                     let area = monitor.work_area();
-                    let win_size = window.outer_size().unwrap_or(tauri::PhysicalSize::new(800, 500));
+                    let sf = window.scale_factor().unwrap_or(1.0);
+                    let cat_px = (PET_BASE_PX * sf).round() as u32;
+                    let menu_w = (MENU_EXTRA_W_LP * sf).round() as u32;
+                    let menu_h = (MENU_EXTRA_H_LP * sf).round() as u32;
+                    let _ = window.set_size(tauri::PhysicalSize::new(
+                        cat_px + menu_w,
+                        cat_px.max(menu_h),
+                    ));
+                    let win_size = window.outer_size().unwrap_or(tauri::PhysicalSize::new(
+                        cat_px + menu_w,
+                        cat_px.max(menu_h),
+                    ));
                     let x = area.position.x + area.size.width as i32 - win_size.width as i32;
                     let y = area.position.y + area.size.height as i32 - win_size.height as i32;
                     let _ = window.set_position(PhysicalPosition::new(x, y));
+                    // Window was created with visible:false — show it now that
+                    // it's at the correct size and position (no flash).
+                    let _ = window.show();
                 }
             }
 

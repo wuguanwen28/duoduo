@@ -14,15 +14,16 @@
       {
         "label": "duoduo",
         "title": "duoduo",
-        "width": 200,
-        "height": 200,
+        "width": 420,
+        "height": 366,
         "resizable": false,
         "decorations": true,
         "transparent": true,
         "alwaysOnTop": true,
         "skipTaskbar": true,
         "shadow": false,
-        "center": false
+        "center": false,
+        "visible": false
       }
     ],
     "security": {

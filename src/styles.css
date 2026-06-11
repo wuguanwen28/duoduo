@@ -8,8 +8,10 @@ body,
   height: 100%;
   background: transparent !important;
   overflow: hidden;
-  /* Let mouse events fall through empty areas would require OS-level
-     click-through; here we keep the window small so there is little empty space. */
+  /* Clicks on transparent areas pass through to apps behind the window.
+     Interactive children (cat image, menu, calibration overlay) re-enable
+     pointer-events locally. Keyboard events (Esc) are unaffected. */
+  pointer-events: none;
   user-select: none;
   -webkit-user-select: none;
   cursor: default;
