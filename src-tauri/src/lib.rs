@@ -71,16 +71,30 @@ fn show_pet(app: &tauri::AppHandle) {
 /// to frame 0 (facing forward).
 const HEAD_DEAD_ZONE_FRAC: f64 = 0.1225;
 
-/// Angle (in degrees, screen convention: 0 = +x/right, 90 = down, measured
-/// clockwise) from the cat's head centre to the global mouse cursor.
+/// Result of a gaze sample: the gaze angle plus the raw global cursor position.
+///
+/// `angle` follows the screen convention (0 = +x/right, 90 = down, clockwise)
+/// from the cat's head centre to the cursor, or `None` when the cursor sits
+/// inside the head dead zone (so the cat faces forward instead of jittering).
+///
+/// `cursor_x` / `cursor_y` are the raw global cursor coordinates (physical px),
+/// always present regardless of the dead zone. The frontend's state machine
+/// uses them to tell whether the mouse has moved since the last tick.
+#[derive(serde::Serialize)]
+struct GazeSample {
+    angle: Option<f64>,
+    cursor_x: f64,
+    cursor_y: f64,
+}
+
+/// Sample the cursor gaze. Returns the angle from the cat's head to the global
+/// cursor (see `GazeSample`) together with the raw cursor position.
 ///
 /// The cat sprite is right-aligned and bottom-aligned in the window (menu
 /// reserve on the left), so the head centre = window right edge - sprite/2
 /// (X), window bottom edge - sprite/2 (Y), plus calibrated offset.
-/// Returns `None` when the cursor falls inside the head dead zone so the cat
-/// faces forward instead of jittering.
 #[tauri::command]
-fn pet_cursor_angle(window: tauri::Window) -> Result<Option<f64>, String> {
+fn pet_cursor_angle(window: tauri::Window) -> Result<GazeSample, String> {
     let cursor = window.cursor_position().map_err(|e| e.to_string())?;
     let pos = window.outer_position().map_err(|e| e.to_string())?;
     let size = window.outer_size().map_err(|e| e.to_string())?;
@@ -99,11 +113,16 @@ fn pet_cursor_angle(window: tauri::Window) -> Result<Option<f64>, String> {
 
     let dead_radius = PET_BASE_PX / 2.0 * scale * sf * HEAD_DEAD_ZONE_FRAC;
 
-    if (dx * dx + dy * dy).sqrt() < dead_radius {
-        return Ok(None);
-    }
-    let deg = dy.atan2(dx).to_degrees().rem_euclid(360.0);
-    Ok(Some(deg))
+    let angle = if (dx * dx + dy * dy).sqrt() < dead_radius {
+        None
+    } else {
+        Some(dy.atan2(dx).to_degrees().rem_euclid(360.0))
+    };
+    Ok(GazeSample {
+        angle,
+        cursor_x: cursor.x,
+        cursor_y: cursor.y,
+    })
 }
 
 /// Update the user-calibrated head offset (ratio of sprite diameter) and

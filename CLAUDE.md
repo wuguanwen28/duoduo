@@ -97,3 +97,6 @@ Right-clicking the sprite toggles `menuOpen` in `Pet.vue`. A full-window backdro
 - New sprite frames: drop into `src/assets/cat/` with the `frame_000XXX.png` zero-padded naming, then re-run the WebP conversion (the `cat-webp/` directory is what's actually bundled). The `import.meta.glob` is non-recursive and glob-ordered, so consistent padding keeps the index math intact.
 </content>
 </invoke>
+
+## 注意事项
+- 回答我的问题时都要叫我老大

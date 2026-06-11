@@ -22,7 +22,7 @@
           @mousedown="onMouseDown"
           @contextmenu.prevent
         >
-          <img class="pet__img" :src="currentSrc" alt="cat" draggable="false" />
+          <CatSprite :src="currentSrc" />
         </div>
       </template>
       <Menu
@@ -66,62 +66,20 @@
 </template>
 
 <script lang="ts" setup>
-import { computed, onMounted, onUnmounted, ref, watch } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import Menu from "../Menu/Menu.vue";
+import CatSprite from "../CatSprite/CatSprite.vue";
+import { useCatBrain } from "../../composables/useCatBrain";
 
-/**
- * Eagerly import every cat frame. Vite returns a map keyed by the file path;
- * sorting the keys gives us frame_000000 … frame_000168 in order, so the array
- * index equals the frame number. (Frames are kept as compressed WebP under
- * `cat-webp/`; the original PNGs are in `cat/` if you need to re-export.)
- */
-const modules = import.meta.glob<string>("../../assets/cat-webp/*.webp", {
-  eager: true,
-  import: "default",
-});
-const frames: string[] = Object.keys(modules)
-  .sort()
-  .map((k) => modules[k]);
-const FRAME_COUNT = frames.length;
-
-/**
- * Gaze map: (clock angle → frame index), where the clock angle is measured
- * with 0° = looking UP and increases CLOCKWISE (90° = right, 180° = down,
- * 270° = left). These anchors were read off the actual sprites; the gaze
- * makes exactly one clockwise loop across the sequence.
- */
-const ANCHORS: ReadonlyArray<readonly [number, number]> = [
-  [0, 15], // up
-  [45, 45], // up-right
-  [90, 63], // right
-  [135, 81], // down-right
-  [180, 93], // down
-  [225, 108], // down-left
-  [270, 120], // left
-  [315, 135], // up-left
-  [360, 168], // up (loop close)
-];
-
-/** Piecewise-linear lookup: clock angle (0..360) → frame index. */
-function angleToFrame(clock: number): number {
-  const a = ((clock % 360) + 360) % 360;
-  for (let i = 0; i < ANCHORS.length - 1; i++) {
-    const [a0, f0] = ANCHORS[i];
-    const [a1, f1] = ANCHORS[i + 1];
-    if (a >= a0 && a <= a1) {
-      const t = (a - a0) / (a1 - a0);
-      return Math.round(f0 + t * (f1 - f0));
-    }
-  }
-  return 0;
-}
-
-const frameIndex = ref(0);
-const currentSrc = computed(
-  () => frames[Math.min(frameIndex.value, FRAME_COUNT - 1)] ?? frames[0],
-);
+// ── Behaviour state machine ──────────────────────────────────────────
+// All "which frame to show" logic lives in the brain; Pet.vue only owns
+// window-level concerns (drag, menu, calibration, toast, sizing).
+/** When false, the cat ignores the cursor (the "别偷看" toggle). */
+const followCursor = ref(true);
+const brain = useCatBrain({ followEnabled: () => followCursor.value });
+const currentSrc = brain.currentSrc;
 
 const size = ref(1.0);
 const imgStyle = computed(() => {
@@ -154,10 +112,6 @@ watch(
   },
   { immediate: true },
 );
-
-/** When false, the pet ignores the cursor and locks to the forward sprite
- *  (frame 0). Toggled from the in-window menu's "是否跟随" switch. */
-const followCursor = ref(true);
 
 /** In-window menu state. */
 const menuOpen = ref(false);
@@ -237,6 +191,8 @@ watch(calibrating, (on) => {
     window.removeEventListener("mouseup", onCalibMouseUp);
   }
 });
+
+// ── Toast ────────────────────────────────────────────────────────────
 const toast = ref("");
 let toastTimer: number | undefined;
 
@@ -248,13 +204,14 @@ function showToast(msg: string, ms = 1800) {
   }, ms);
 }
 
+// ── Menu actions ─────────────────────────────────────────────────────
 function onToggleFollow(v: boolean) {
   followCursor.value = v;
 }
 
 function onSleep() {
   menuOpen.value = false;
-  showToast("睡觉功能暂未开发");
+  brain.trigger("sleep", "follow");
 }
 
 function onFeed() {
@@ -299,31 +256,7 @@ async function onMouseDown(e: MouseEvent) {
   }
 }
 
-let timer: number | undefined;
-
-async function tick() {
-  if (!followCursor.value) {
-    frameIndex.value = 0;
-    return;
-  }
-  try {
-    const screen = await invoke<number | null>("pet_cursor_angle");
-    if (screen === null) {
-      frameIndex.value = 0;
-      return;
-    }
-    const clock = (screen + 90) % 360;
-    frameIndex.value = angleToFrame(clock);
-  } catch {
-    // Ignore transient IPC errors.
-  }
-}
-
 onMounted(() => {
-  // ~20 fps gaze tracking.
-  timer = window.setInterval(tick, 50);
-  tick();
-
   // Sync the persisted head offset to Rust on startup.
   if (headOffset.value.x !== 0 || headOffset.value.y !== 0) {
     invoke("pet_set_head_offset", {
@@ -336,11 +269,6 @@ onMounted(() => {
   const root = document.querySelector(".pet") as HTMLElement | null;
   root?.setAttribute("tabindex", "-1");
   root?.focus();
-});
-
-onUnmounted(() => {
-  if (timer !== undefined) window.clearInterval(timer);
-  if (toastTimer !== undefined) clearTimeout(toastTimer);
 });
 </script>
 
@@ -368,13 +296,6 @@ onUnmounted(() => {
 
 .pet__img-wrap:active {
   cursor: grabbing;
-}
-
-.pet__img {
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
-  pointer-events: none;
 }
 
 /* Dead-zone circle: shows where the cat is "looking forward". */
