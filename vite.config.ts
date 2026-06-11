@@ -11,8 +11,14 @@ const host = process.env.TAURI_DEV_HOST;
 export default defineConfig(async () => ({
   plugins: [
     vue(),
-    AutoImport({ resolvers: [ElementPlusResolver()] }),
-    Components({ resolvers: [ElementPlusResolver()] }),
+    AutoImport({
+      resolvers: [ElementPlusResolver()],
+      dts: "src/types/auto-imports.d.ts",
+    }),
+    Components({
+      resolvers: [ElementPlusResolver()],
+      dts: "src/types/components.d.ts",
+    }),
   ],
 
   // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`

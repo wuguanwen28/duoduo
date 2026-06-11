@@ -10,3 +10,6 @@ target/
 
 # Generated Tauri files
 src-tauri/gen/schemas/
+
+auto-imports.d.ts
+components.d.ts
