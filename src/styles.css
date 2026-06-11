@@ -1,0 +1,16 @@
+/* Transparent everywhere — only the pet sprite is visible. */
+html,
+body,
+#app {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  background: transparent !important;
+  overflow: hidden;
+  /* Let mouse events fall through empty areas would require OS-level
+     click-through; here we keep the window small so there is little empty space. */
+  user-select: none;
+  -webkit-user-select: none;
+  cursor: default;
+}

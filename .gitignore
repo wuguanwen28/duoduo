@@ -1,0 +1,12 @@
+node_modules
+dist
+dist-ssr
+*.local
+.DS_Store
+
+# Rust / Tauri build output (huge, generated)
+src-tauri/target/
+target/
+
+# Generated Tauri files
+src-tauri/gen/schemas/
