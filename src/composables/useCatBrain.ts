@@ -171,8 +171,9 @@ export function useCatBrain(opts: BrainOptions): CatBrain {
     anim.stop();
     activePlayer.value = "seg";
     state.value = { kind: "idle" };
-    // idle 走分段运行器的退化配置（整段循环、无插播）。
-    seg.start(IDLE_SEGMENTED);
+    // idle 走分段运行器的退化配置（整段循环、无插播）；fps 用 config.idleFps，
+    // 保留「可在运行时调整 idle 速度」的能力（覆盖 IDLE_SEGMENTED 的默认 fps）。
+    seg.start({ ...IDLE_SEGMENTED, fps: config.idleFps });
     scheduleIdleAction();
   }
 
@@ -201,6 +202,8 @@ export function useCatBrain(opts: BrainOptions): CatBrain {
     if (activePlayer.value === "seg") {
       seg.requestExit(finishAction); // 起身（倒放趴下）后回到 follow/idle
     } else {
+      // 一次性动作（anim 路径）被点醒：直接停后结束（当前 wiki 可被鼠标移动打断，
+      // 此分支为将来「不可打断的一次性动作」预留）。
       anim.stop();
       finishAction();
     }
