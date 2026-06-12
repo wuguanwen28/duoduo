@@ -151,7 +151,7 @@ idle 接入后表现与现状一致（整段循环、无插播），但插播 / 
 - 销毁（`onUnmounted`）：`seg.stop()`。
 - `interruptible`：sleep 仍为不可打断（鼠标移动不唤醒，只有点击 / 自动醒）；该判定保留在 `useCatBrain` 的 action 分支。
 
-`currentSrc` 计算属性：`follow` 状态取 gaze，其余（idle / action）取 `seg.currentSrc`。
+`currentSrc` 计算属性：用一个 `activePlayer` 选择子（`'gaze' | 'seg' | 'anim'`）决定取哪一路——`follow` 取 gaze；idle 与分段动作（sleep）取 `seg.currentSrc`；一次性动作（wiki）取原 `anim.currentSrc`。每次状态切换时设置 `activePlayer`，并停掉非活跃的播放器。
 
 > 取舍：wiki 等「一次性、无分段」的 IDLE_POOL 动作**暂不**迁移到分段机制（YAGNI），继续走现有简单路径，只有 idle 和 sleep 用分段运行器。
 
