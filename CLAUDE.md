@@ -17,6 +17,13 @@ Package name: `duoduo` (Tauri identifier `com.example.duoduo`).
 - **Package manager**: pnpm (lockfile is `pnpm-lock.yaml`)
 - **No test runner, no linter, no CI configured.** `vue-tsc --noEmit` is the only type-check (runs as part of `pnpm build`)
 
+## Code conventions
+
+- **`src/` 下的所有注释一律使用中文。** 包括 `.ts`/`.vue`/`.css` 里的行注释 `//`、块注释 `/* */`、JSDoc `/** */`，以及 Vue `<template>` 里的 `<!-- -->`。新增或修改代码时，注释必须写成中文（自然、专业的技术中文，不要逐字硬译）。
+- 注释中出现的符号名、文件路径/行号、API 名（如 `pet_cursor_angle`、`useCatBrain`、`frame_XXXXXX.webp`）保持原样，只用中文写说明性文字。
+- 此约定仅针对注释内容；标识符、字符串字面量、模板可见文本等代码本身不受影响。
+- `src-tauri/` 的 Rust 注释暂不强制（如需统一可另行约定）。
+
 ## Commands
 
 | Task | Command | Notes |
@@ -100,3 +107,4 @@ Right-clicking the sprite toggles `menuOpen` in `Pet.vue`. A full-window backdro
 
 ## 注意事项
 - 回答我的问题时都要叫我老大
+- 注释要使用中文，并且使用文档注释

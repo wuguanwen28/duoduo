@@ -85,6 +85,10 @@ struct GazeSample {
     angle: Option<f64>,
     cursor_x: f64,
     cursor_y: f64,
+    /// Whether the cursor is inside the cat sprite's screen rect. The frontend
+    /// uses this to toggle window click-through: clicks over the cat stay with
+    /// the window, clicks on the transparent margin pass through to apps behind.
+    over_cat: bool,
 }
 
 /// Sample the cursor gaze. Returns the angle from the cat's head to the global
@@ -118,10 +122,22 @@ fn pet_cursor_angle(window: tauri::Window) -> Result<GazeSample, String> {
     } else {
         Some(dy.atan2(dx).to_degrees().rem_euclid(360.0))
     };
+
+    // The cat fills a `sprite_px` square anchored to the window's bottom-right.
+    // A click inside that box belongs to the cat; everything else is empty and
+    // should pass through (see the frontend's click-through toggle).
+    let sprite_right = pos.x as f64 + size.width as f64;
+    let sprite_bottom = pos.y as f64 + size.height as f64;
+    let over_cat = cursor.x >= sprite_right - sprite_px
+        && cursor.x <= sprite_right
+        && cursor.y >= sprite_bottom - sprite_px
+        && cursor.y <= sprite_bottom;
+
     Ok(GazeSample {
         angle,
         cursor_x: cursor.x,
         cursor_y: cursor.y,
+        over_cat,
     })
 }
 

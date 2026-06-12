@@ -190,7 +190,7 @@ function onToggleChange(value: string | number | boolean) {
   background: transparent;
 }
 
-/* Element Plus switch — dark glass theme */
+/* Element Plus 开关 —— 深色玻璃质感主题 */
 .menu__row--toggle :deep(.el-switch) {
   --el-switch-off-color: rgba(255, 255, 255, 0.15);
   --el-switch-on-color: #4a9eff;

@@ -1,9 +1,8 @@
 <template>
   <div class="pet" @keydown.esc="menuOpen = false" @contextmenu.prevent>
-    <!-- Right-click the cat to open the menu. The window is always wide
-         enough to hold the cat (right-aligned) + the menu panel (left side),
-         so placement="left-end" works without needing a dynamic resize.
-         :teleported="false" keeps the panel inside the window. -->
+    <!-- 右键点击猫咪即可打开菜单。窗口始终足够宽，能同时容纳猫咪（右对齐）
+         和菜单面板（左侧），因此 placement="left-end" 无需动态调整窗口尺寸即可正常工作。
+         :teleported="false" 使面板保持在窗口内部。 -->
     <el-popover
       v-model:visible="menuOpen"
       trigger="contextmenu"
@@ -39,7 +38,7 @@
       />
     </el-popover>
 
-    <!-- Calibration overlay: covers the full window while calibrating. -->
+    <!-- 校准遮罩层：校准期间覆盖整个窗口。 -->
     <div
       v-if="calibrating"
       class="pet__calib-overlay"
@@ -73,12 +72,18 @@ import Menu from "../Menu/Menu.vue";
 import CatSprite from "../CatSprite/CatSprite.vue";
 import { useCatBrain } from "../../composables/useCatBrain";
 
-// ── Behaviour state machine ──────────────────────────────────────────
-// All "which frame to show" logic lives in the brain; Pet.vue only owns
-// window-level concerns (drag, menu, calibration, toast, sizing).
-/** When false, the cat ignores the cursor (the "别偷看" toggle). */
+// ── 行为状态机 ──────────────────────────────────────────
+// 所有"显示哪一帧"的逻辑都集中在 brain 中；Pet.vue 只负责
+// 窗口层面的事务（拖动、菜单、校准、提示、尺寸缩放）。
+/** 为 false 时，猫咪会忽略光标（即"别偷看"开关）。 */
 const followCursor = ref(true);
-const brain = useCatBrain({ followEnabled: () => followCursor.value });
+const brain = useCatBrain({
+  followEnabled: () => followCursor.value,
+  // 校准期间让猫咪停留在 idle 状态，使其头部停止跟踪光标
+  //（因为校准圆圈是随鼠标拖动的）。`calibrating` 在下方声明；
+  // 该 getter 只会在之后的 brain tick 中被调用。
+  paused: () => calibrating.value,
+});
 const currentSrc = brain.currentSrc;
 
 const size = ref(1.0);
@@ -87,42 +92,47 @@ const imgStyle = computed(() => {
   return { width: `${px}px`, height: `${px}px` };
 });
 
-// Calibration circle: same size as dead-zone, uses green colour, draggable.
+// 校准圆圈：与死区大小相同，使用绿色，可拖动。
+// 精灵图在窗口中右下对齐（菜单预留区域位于左侧），因此头部原点是
+// 精灵图中心——即从左上角算起的 `100% - half`——而非窗口中心。
+// 这必须与 `pet_cursor_angle` 中 Rust 端的头部中心计算保持一致，
+// 否则校准偏移量会被按错误的原点解释，导致注视死区落在错误的位置。
 const calibCircleStyle = computed(() => {
   const d = Math.round(200 * size.value * 0.1225);
+  const half = Math.round(200 * size.value * 0.5); // 精灵图半径（像素）
   const ox = Math.round(200 * size.value * headOffset.value.x);
   const oy = Math.round(200 * size.value * headOffset.value.y);
   return {
     width: `${d}px`,
     height: `${d}px`,
-    left: `calc(50% + ${ox}px)`,
-    top: `calc(50% + ${oy}px)`,
+    left: `calc(100% - ${half - ox}px)`,
+    top: `calc(100% - ${half - oy}px)`,
   };
 });
 
-// Mirror the sprite scale to Rust so its on-screen-clamp constrains the actual
-// cat content (centered in the oversized window), not the window frame. Fires
-// immediately so the backend starts with the correct scale.
+// 将精灵图缩放比例同步给 Rust，使其屏幕边界约束的是实际的猫咪内容
+//（在超大窗口中居中），而非窗口边框。立即执行一次，
+// 以便后端从一开始就使用正确的缩放比例。
 watch(
   size,
   (s) => {
     invoke("pet_set_content_scale", { scale: s }).catch(() => {
-      // Ignore — backend may not be ready during teardown.
+      // 忽略——销毁过程中后端可能尚未就绪。
     });
   },
   { immediate: true },
 );
 
-/** In-window menu state. */
+/** 窗口内菜单的状态。 */
 const menuOpen = ref(false);
 
-// ── Head calibration ─────────────────────────────────────────────────
-// Ratio of the head offset to the sprite's *diameter* so it stays stable
-// across size changes. (0,0) = image centre, (0,-0.2) = slightly above.
+// ── 头部校准 ─────────────────────────────────────────────────
+// 头部偏移量相对于精灵图*直径*的比例，使其在尺寸变化时保持稳定。
+//（0,0）= 图像中心，（0,-0.2）= 略微偏上。
 const calibrating = ref(false);
 const headOffset = ref<{ x: number; y: number }>({ x: 0, y: 0 });
 
-// Load persisted offset on startup.
+// 启动时加载已持久化的偏移量。
 try {
   const raw = localStorage.getItem("pet-head-offset");
   if (raw) {
@@ -132,7 +142,7 @@ try {
     }
   }
 } catch {
-  /* corrupt — ignore */
+  /* 数据损坏——忽略 */
 }
 
 function startCalibrate() {
@@ -154,7 +164,7 @@ function cancelCalibrate() {
   calibrating.value = false;
 }
 
-// ── Drag handling (calibration mode) ─────────────────────────────────
+// ── 拖动处理（校准模式） ─────────────────────────────────
 const dragAnchor = ref<{ x: number; y: number } | null>(null);
 const dragStartOffset = ref<{ x: number; y: number }>({ x: 0, y: 0 });
 
@@ -168,7 +178,7 @@ function onCalibMouseDown(e: MouseEvent) {
 
 function onCalibMouseMove(e: MouseEvent) {
   if (!dragAnchor.value) return;
-  const spritePx = 200 * size.value; // logical px of sprite diameter
+  const spritePx = 200 * size.value; // 精灵图直径的逻辑像素值
   const dx = (e.clientX - dragAnchor.value.x) / spritePx;
   const dy = (e.clientY - dragAnchor.value.y) / spritePx;
   headOffset.value = {
@@ -181,7 +191,7 @@ function onCalibMouseUp() {
   dragAnchor.value = null;
 }
 
-// Global mouse listeners — active only while calibrating.
+// 全局鼠标监听器——仅在校准期间激活。
 watch(calibrating, (on) => {
   if (on) {
     window.addEventListener("mousemove", onCalibMouseMove);
@@ -192,7 +202,28 @@ watch(calibrating, (on) => {
   }
 });
 
-// ── Toast ────────────────────────────────────────────────────────────
+// ── 点击穿透 ─────────────────────────────────────────────────────
+// 窗口大部分区域是透明的；只有猫咪（以及打开时的菜单/校准界面）
+// 应当响应点击——其余区域的点击都穿透到后方的应用。
+// `setIgnoreCursorEvents` 作用于整个窗口，因此我们结合注视轮询
+//（即便在忽略事件时它仍会上报光标是否悬停在猫咪上）和自身的 UI 状态来切换它。
+// 仅在状态变化时切换，以避免每个 tick 都产生 IPC 抖动。
+const interactive = computed(
+  () => menuOpen.value || calibrating.value || brain.cursorOverCat.value,
+);
+watch(
+  interactive,
+  (on) => {
+    getCurrentWindow()
+      .setIgnoreCursorEvents(!on)
+      .catch(() => {
+        // 忽略——窗口可能正在销毁。
+      });
+  },
+  { immediate: true },
+);
+
+// ── 提示 ────────────────────────────────────────────────────────────
 const toast = ref("");
 let toastTimer: number | undefined;
 
@@ -204,7 +235,7 @@ function showToast(msg: string, ms = 1800) {
   }, ms);
 }
 
-// ── Menu actions ─────────────────────────────────────────────────────
+// ── 菜单操作 ─────────────────────────────────────────────────────
 function onToggleFollow(v: boolean) {
   followCursor.value = v;
 }
@@ -229,21 +260,58 @@ function onMinimize() {
 }
 
 /**
- * Left-button press starts a native OS window drag. Tauri's `startDragging`
- * takes over the gesture: a click-without-move still fires a normal click,
- * while a press-and-move relocates the window. Right-click is reserved for
- * toggling the in-window menu.
+ * 按下左键即启动原生 OS 窗口拖动。Tauri 的 `startDragging`
+ * 会接管该手势：点击但不移动仍会触发正常的点击事件，
+ * 而按住并移动则会移动窗口。右键则保留用于
+ * 切换窗口内菜单。
  *
- * Double-click is detected manually because `startDragging()` eats the
- * browser's dblclick event — two clicks within 300 ms minimise the window.
+ * 双击需手动检测，因为 `startDragging()` 会吞掉
+ * 浏览器的 dblclick 事件——300 毫秒内的两次点击会最小化窗口。
  */
 let lastClickTime = 0;
 
+/**
+ * 在猫咪正处于某个动作中（例如睡觉）时区分点击与拖动：
+ * 干净的点击（按下 → 未移动即释放）会唤醒它；按住并拖动
+ * 则会重新定位窗口而*不*唤醒它。此处我们刻意*不*在按下时调用
+ * startDragging()——否则它会吞掉我们用于检测点击的 mouseup 事件——
+ * 只有当移动距离超过阈值时才交由原生拖动接管。
+ */
+const ACTION_DRAG_THRESHOLD = 5; // 达到该移动像素数即视为拖动
+
+function beginActionGesture(e: MouseEvent) {
+  const start = { x: e.clientX, y: e.clientY };
+  let dragging = false;
+  function cleanup() {
+    window.removeEventListener("mousemove", onMove);
+    window.removeEventListener("mouseup", onUp);
+  }
+  function onMove(ev: MouseEvent) {
+    if (dragging) return;
+    if (Math.hypot(ev.clientX - start.x, ev.clientY - start.y) > ACTION_DRAG_THRESHOLD) {
+      dragging = true;
+      cleanup();
+      getCurrentWindow().startDragging().catch(() => {});
+    }
+  }
+  function onUp() {
+    cleanup();
+    if (!dragging) brain.wake(); // 干净的点击，无拖动 → 唤醒
+  }
+  window.addEventListener("mousemove", onMove);
+  window.addEventListener("mouseup", onUp);
+}
+
 async function onMouseDown(e: MouseEvent) {
   if (e.button !== 0) return;
+  // 处于动作中（睡觉）时：点击会唤醒猫咪，拖动则仅移动它。
+  if (brain.state.value.kind === "action") {
+    beginActionGesture(e);
+    return;
+  }
   const now = Date.now();
   if (now - lastClickTime < 300) {
-    // Double-click → minimize.
+    // 双击 → 最小化。
     lastClickTime = 0;
     onMinimize();
     return;
@@ -252,12 +320,12 @@ async function onMouseDown(e: MouseEvent) {
   try {
     await getCurrentWindow().startDragging();
   } catch {
-    // Ignore — window may be tearing down.
+    // 忽略——窗口可能正在销毁。
   }
 }
 
 onMounted(() => {
-  // Sync the persisted head offset to Rust on startup.
+  // 启动时将已持久化的头部偏移量同步给 Rust。
   if (headOffset.value.x !== 0 || headOffset.value.y !== 0) {
     invoke("pet_set_head_offset", {
       x: headOffset.value.x,
@@ -265,7 +333,7 @@ onMounted(() => {
     }).catch(() => {});
   }
 
-  // The @keydown.esc on the root needs the element to be focusable.
+  // 根元素上的 @keydown.esc 需要该元素可获得焦点。
   const root = document.querySelector(".pet") as HTMLElement | null;
   root?.setAttribute("tabindex", "-1");
   root?.focus();
@@ -298,7 +366,7 @@ onMounted(() => {
   cursor: grabbing;
 }
 
-/* Dead-zone circle: shows where the cat is "looking forward". */
+/* 死区圆圈：标示猫咪"正视前方"的区域。 */
 .pet__deadzone {
   position: absolute;
   border-radius: 50%;
@@ -308,7 +376,7 @@ onMounted(() => {
   transform: translate(-50%, -50%);
 }
 
-/* Calibration overlay: full-window, blocks interaction with the pet. */
+/* 校准遮罩层：覆盖整个窗口，阻止与宠物的交互。 */
 .pet__calib-overlay {
   position: absolute;
   inset: 0;
@@ -378,9 +446,9 @@ onMounted(() => {
 }
 </style>
 
-<!-- el-popover renders its popper inside .pet (:teleported="false"), but the
-     scoped-style data-attr isn't applied to EP's runtime-created popper, so the
-     card-stripping override lives in a plain (unscoped) style block. -->
+<!-- el-popover 将其 popper 渲染在 .pet 内部（:teleported="false"），但
+     scoped 样式的 data 属性不会应用到 EP 运行时创建的 popper 上，因此
+     用于剥离卡片样式的覆盖规则放在了一个普通（非 scoped）的 style 块中。 -->
 <style>
 .pet-menu-popover.el-popover.el-popper {
   min-width: 0;

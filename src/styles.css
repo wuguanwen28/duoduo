@@ -1,4 +1,4 @@
-/* Transparent everywhere — only the pet sprite is visible. */
+/* 全局透明 —— 只有宠物精灵可见。 */
 html,
 body,
 #app {
@@ -8,9 +8,9 @@ body,
   height: 100%;
   background: transparent !important;
   overflow: hidden;
-  /* Clicks on transparent areas pass through to apps behind the window.
-     Interactive children (cat image, menu, calibration overlay) re-enable
-     pointer-events locally. Keyboard events (Esc) are unaffected. */
+  /* 透明区域上的点击会穿透到窗口背后的应用程序。
+     可交互的子元素（猫的图像、菜单、校准浮层）会在局部重新启用
+     pointer-events。键盘事件（Esc）不受影响。 */
   pointer-events: none;
   user-select: none;
   -webkit-user-select: none;

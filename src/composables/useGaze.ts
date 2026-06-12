@@ -1,33 +1,31 @@
 /**
- * useGaze — maps a cursor angle to the matching gaze frame.
+ * useGaze —— 将光标角度映射到对应的注视帧。
  *
- * This is the cursor-following behaviour, extracted from the old inline logic
- * in Pet.vue. Unlike timed actions, it is angle-driven: the backend reports
- * the clockwise screen angle from the cat's head to the cursor, and this
- * composable converts it to the internal clock convention and looks up the
- * frame. It is intentionally pure/stateless apart from the resolved `src`.
+ * 这是光标跟随行为,从 Pet.vue 中旧的内联逻辑里抽取出来。与按时序播放的动作
+ * 不同,它由角度驱动:后端上报从猫头部到光标的顺时针屏幕角度,本组合式函数
+ * 将其转换为内部的时钟约定并查找对应的帧。除了解析出的 `src` 之外,它有意保持
+ * 纯函数 / 无状态。
  *
- * Gaze map (clock angle → frame index): clock is measured with 0° = looking
- * UP, increasing CLOCKWISE (90° = right, 180° = down, 270° = left). These
- * anchors were read off the actual sprites; the gaze makes exactly one
- * clockwise loop across the 169-frame sequence.
+ * 注视映射表(时钟角度 → 帧索引):时钟角度以 0° = 朝上为起点,顺时针增大
+ * (90° = 右,180° = 下,270° = 左)。这些锚点是从实际的精灵图上读取的;
+ * 注视过程恰好在 169 帧的序列上顺时针完整循环一圈。
  */
 import { computed, ref, type Ref } from "vue";
 import { FOLLOW_FRAMES } from "../actions/frames";
 
 const ANCHORS: ReadonlyArray<readonly [number, number]> = [
-  [0, 15], // up
-  [45, 45], // up-right
-  [90, 63], // right
-  [135, 81], // down-right
-  [180, 93], // down
-  [225, 108], // down-left
-  [270, 120], // left
-  [315, 135], // up-left
-  [360, 168], // up (loop close)
+  [0, 15], // 上
+  [45, 45], // 右上
+  [90, 63], // 右
+  [135, 81], // 右下
+  [180, 93], // 下
+  [225, 108], // 左下
+  [270, 120], // 左
+  [315, 135], // 左上
+  [360, 168], // 上(闭合循环)
 ];
 
-/** Piecewise-linear lookup: clock angle (0..360) → frame index. */
+/** 分段线性查找:时钟角度(0..360)→ 帧索引。 */
 export function angleToFrame(clock: number): number {
   const a = ((clock % 360) + 360) % 360;
   for (let i = 0; i < ANCHORS.length - 1; i++) {
@@ -42,14 +40,14 @@ export function angleToFrame(clock: number): number {
 }
 
 export interface GazeController {
-  /** Reactive URL of the gaze frame to show right now. */
+  /** 此刻要显示的注视帧的响应式 URL。 */
   currentSrc: Ref<string>;
-  /** Current resolved frame index (for debugging). */
+  /** 当前解析出的帧索引(用于调试)。 */
   frameIndex: Ref<number>;
   /**
-   * Feed a new gaze sample. `screenAngle` is the backend's clockwise screen
-   * angle (0 = right, 90 = down), or `null` when the cursor is in the head
-   * dead zone — in which case the cat faces forward (frame 0).
+   * 输入一个新的注视采样。`screenAngle` 是后端的顺时针屏幕角度
+   * (0 = 右,90 = 下),当光标处于头部死区内时为 `null` —— 此时猫朝向正前方
+   * (frame 0)。
    */
   update: (screenAngle: number | null) => void;
 }
@@ -67,7 +65,7 @@ export function useGaze(): GazeController {
       frameIndex.value = 0;
       return;
     }
-    // Convert screen convention (0 = right) to clock convention (0 = up).
+    // 将屏幕约定(0 = 右)转换为时钟约定(0 = 上)。
     const clock = (screenAngle + 90) % 360;
     frameIndex.value = angleToFrame(clock);
   }

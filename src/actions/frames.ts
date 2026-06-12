@@ -1,38 +1,37 @@
 /**
- * Frame loader — eagerly imports sprite frames for each sprite set.
+ * 帧加载器 —— 为每个精灵图集急切（eager）导入精灵帧。
  *
- * Vite requires `import.meta.glob` patterns to be static string literals, so
- * each directory gets its own explicit glob. Frames are zero-padded 6-digit
- * (`frame_000000.webp` …), and lexical sort happens to equal numeric order,
- * so `Object.keys(...).sort()` yields frames in playback order — the array
- * index equals the frame number.
+ * Vite 要求 `import.meta.glob` 的模式必须是静态字符串字面量，因此每个目录
+ * 都有各自显式的 glob。帧采用零填充的 6 位数字命名（`frame_000000.webp` …），
+ * 而字典序恰好等于数字顺序，所以 `Object.keys(...).sort()` 会按播放顺序
+ * 返回帧 —— 数组索引即等于帧号。
  *
- * To add a new action:
- * 1. Drop frames under `src/assets/<new-dir>/` as `frame_XXXXXX.webp`.
- * 2. Copy a glob block below, replacing the directory name.
- * 3. Add the key to the `FRAMES` record, then register it in `./index.ts`.
+ * 添加新动作的步骤：
+ * 1. 将帧以 `frame_XXXXXX.webp` 命名放入 `src/assets/<new-dir>/`。
+ * 2. 复制下方的一个 glob 块，替换其中的目录名。
+ * 3. 将该键添加到 `FRAMES` 记录中，然后在 `./index.ts` 中注册它。
  */
 
-/** Helper: turn a glob result map into a frame-ordered URL array. */
+/** 辅助函数：将 glob 结果映射转换为按帧顺序排列的 URL 数组。 */
 function toFrameList(map: Record<string, string>): string[] {
   return Object.keys(map)
     .sort()
     .map((k) => map[k]);
 }
 
-/** Follow/gaze frames — the cursor-tracking sprite loop (169 frames). */
+/** 跟随 / 注视帧 —— 跟踪光标的精灵循环（169 帧）。 */
 const followFrames = import.meta.glob<string>("../assets/cat-webp/*.webp", {
   eager: true,
   import: "default",
 });
 
-/** Idle frames — the resting loop shown when the cat has nothing to do. */
+/** 空闲帧 —— 当猫无事可做时显示的休息循环。 */
 const idleFrames = import.meta.glob<string>("../assets/cat-idla/*.webp", {
   eager: true,
   import: "default",
 });
 
-/** Action frame sets (one directory per action). */
+/** 动作帧集（每个动作对应一个目录）。 */
 const wikiFrames = import.meta.glob<string>("../assets/cat-wiki/*.webp", {
   eager: true,
   import: "default",
@@ -44,18 +43,18 @@ const sleepFrames = import.meta.glob<string>("../assets/cat-sleep/*.webp", {
 });
 
 /**
- * Frames for the gaze/follow behaviour. Kept separate from action FRAMES
- * because it is driven by cursor angle (see `useGaze`), not a fps timer.
+ * 注视 / 跟随行为所用的帧。与动作的 FRAMES 分开存放，因为它由光标角度
+ * 驱动（见 `useGaze`），而非 fps 定时器。
  */
 export const FOLLOW_FRAMES: string[] = toFrameList(followFrames);
 
 /**
- * Frames for the idle resting loop. Driven by an fps timer (see `useCatBrain`'s
- * idle state), looped forever until the cat wakes to follow or plays an action.
+ * 空闲休息循环所用的帧。由 fps 定时器驱动（见 `useCatBrain` 的空闲状态），
+ * 永久循环，直到猫醒来去跟随或播放某个动作。
  */
 export const IDLE_FRAMES: string[] = toFrameList(idleFrames);
 
-/** Action name → ordered frame URLs. Keys MUST match `ACTIONS` in `./index.ts`. */
+/** 动作名称 → 有序的帧 URL。键必须与 `./index.ts` 中的 `ACTIONS` 一致。 */
 export const FRAMES: Record<string, string[]> = {
   wiki: toFrameList(wikiFrames),
   sleep: toFrameList(sleepFrames),
