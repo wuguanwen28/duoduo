@@ -36,12 +36,8 @@ export interface ActionDef {
    * 随机挑选一个播放。默认值：false。
    */
   idle?: boolean;
-  /**
-   * 对于循环动作，经过这么多毫秒后自动唤醒（结束），使本会无限循环的
-   * 动作能自行结束。睡觉用到了它，因此即使从不点击，猫也会在一段时间后
-   * 醒来。除非 `loop` 否则忽略。默认值：不自动唤醒。
-   */
-  autoWakeMs?: number;
+  // 注：循环动作的「自动唤醒」已迁移到分段运行器（见 `SegmentedActionDef.autoEndMs`），
+  // 故此处不再有 autoWakeMs 字段。
 }
 
 export const ACTIONS: Record<string, ActionDef> = {
