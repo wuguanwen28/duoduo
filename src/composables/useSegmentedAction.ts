@@ -84,7 +84,8 @@ export function useSegmentedAction(): SegmentedController {
 
   /** 进入基底循环，并排期下一次随机插播。 */
   function enterBase() {
-    if (!cfg) return;
+    // 已在退出流程中则不再回到基底（防御：避免插播/intro 的 onDone 在退出后又重启循环）。
+    if (!cfg || exiting) return;
     player.play(baseFrames, { fps: cfg.fps, loop: true });
     scheduleTwitch();
   }
@@ -153,6 +154,7 @@ export function useSegmentedAction(): SegmentedController {
     clearTwitchTimer();
     clearAutoEndTimer();
     if (outroFrames.length > 0) {
+      // 新的 play 会覆盖上一段的 onDone（如 enterBase），故中途打断插播不会回到基底
       player.play(outroFrames, { fps: cfg?.introFps ?? cfg?.fps ?? 24, loop: false }, onDone);
     } else {
       player.stop();
