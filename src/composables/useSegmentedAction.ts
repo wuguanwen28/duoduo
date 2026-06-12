@@ -86,7 +86,8 @@ export function useSegmentedAction(): SegmentedController {
   function enterBase() {
     // 已在退出流程中则不再回到基底（防御：避免插播/intro 的 onDone 在退出后又重启循环）。
     if (!cfg || exiting) return;
-    player.play(baseFrames, { fps: cfg.fps, loop: true });
+    // 基底用 baseFps（呼吸帧少可调慢），未设则回退到动作级 fps。
+    player.play(baseFrames, { fps: cfg.baseFps ?? cfg.fps, loop: true });
     scheduleTwitch();
   }
 

@@ -57,6 +57,8 @@ export interface SegmentedActionDef {
   fps: number;
   /** intro / outro 单独的 fps（趴下/起身可调快），默认取 `fps`。 */
   introFps?: number;
+  /** base 基底单独的 fps（呼吸帧少可调慢），默认取 `fps`。 */
+  baseFps?: number;
   /** base 是否 yoyo 来回，默认 true。 */
   baseYoyo?: boolean;
   /** 自动结束的毫秒数（sleep 的 2 分钟自动醒）；不设＝不自动结束。 */
@@ -73,7 +75,7 @@ export interface SegmentedActionDef {
 export const SLEEP_SEGMENTED: SegmentedActionDef = {
   frames: FRAMES.sleep,
   intro: { start: 0, end: 190 }, // 与 base 故意重叠（大概区间，待逐帧定稿），勿当 off-by-one 修
-  base: { start: 180, end: 196 },
+  base: { start: 187, end: 200 },
   twitches: [
     { name: "ear", range: { start: 195, end: 215 } },
     { name: "tail", range: { start: 215, end: 241 }, yoyo: true },
@@ -82,6 +84,7 @@ export const SLEEP_SEGMENTED: SegmentedActionDef = {
   twitchDelay: [3000, 7000],
   fps: 24,
   introFps: 36, // 趴下/起身稍快，避免 190 帧 @24fps ≈ 8s 过慢
+  baseFps: 8, // 呼吸帧少，单独放慢（约 3 秒一次呼吸循环），可再调
   baseYoyo: true,
   autoEndMs: 120000,
 };
