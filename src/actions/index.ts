@@ -54,15 +54,11 @@ export const ACTIONS: Record<string, ActionDef> = {
   },
   sleep: {
     label: "睡觉",
+    // 播放（趴下/呼吸/插播/起身/自动醒）已由 SLEEP_SEGMENTED + useSegmentedAction 接管，
+    // 这里仅保留状态机用到的元数据：interruptible（鼠标移动不唤醒）、idle（纳入空闲自动播放池）、
+    // label/fps。fps 对分段播放无效，仅为满足 ActionDef 类型而保留。
     fps: 24,
-    loop: true,
-    // 帧 0–189 是坐下 → 躺下的引导动画（播放一次）；190–240 是熟睡循环，
-    // 因此只重复这段尾部，而不会重新播放躺下过程。
-    loopFrom: 190,
-    // 鼠标移动绝不能唤醒猫 —— 只有点击或下方的自动唤醒定时器才能结束
-    // 睡觉（见 `useCatBrain` 的动作处理）。
     interruptible: false,
-    autoWakeMs: 120000, // 2 分钟后自行唤醒
     idle: true,
   },
 } as const;
