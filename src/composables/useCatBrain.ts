@@ -28,9 +28,11 @@ import { computed, onMounted, onUnmounted, ref, type Ref } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { ACTIONS, IDLE_POOL } from "../actions";
-import { FRAMES, IDLE_FRAMES } from "../actions/frames";
+import { FRAMES } from "../actions/frames";
+import { SEGMENTED_ACTIONS, IDLE_SEGMENTED } from "../actions/segments";
 import { useGaze } from "./useGaze";
 import { useSpriteAnimation } from "./useSpriteAnimation";
+import { useSegmentedAction } from "./useSegmentedAction";
 
 /** Rust 端 `pet_cursor_angle` 命令返回的注视采样数据。 */
 interface GazeSample {
@@ -109,38 +111,40 @@ export interface CatBrain {
 export function useCatBrain(opts: BrainOptions): CatBrain {
   const config: BrainConfig = { ...DEFAULT_CONFIG, ...opts.config };
   const gaze = useGaze();
-  const anim = useSpriteAnimation();
+  const anim = useSpriteAnimation();      // 仅供 wiki 等一次性动作使用
+  const seg = useSegmentedAction();       // idle 与 sleep 的分段播放
 
   const state = ref<CatState>({ kind: "idle" });
   const cursorOverCat = ref(false);
 
-  // 只有 `follow` 是由角度驱动的(注视)。`idle` 和 `action` 都是按时序播放的
-  // 动画,因此它们从共享的精灵图播放器读取帧。
-  const currentSrc = computed(() =>
-    state.value.kind === "follow" ? gaze.currentSrc.value : anim.currentSrc.value,
-  );
+  /** 当前帧来源选择子：gaze（注视）/ seg（分段：idle、sleep）/ anim（一次性动作）。 */
+  const activePlayer = ref<"gaze" | "seg" | "anim">("seg");
+
+  // 帧来源由 activePlayer 决定：follow 走注视；idle/sleep 走分段运行器；wiki 走一次性播放器。
+  const currentSrc = computed(() => {
+    switch (activePlayer.value) {
+      case "gaze":
+        return gaze.currentSrc.value;
+      case "anim":
+        return anim.currentSrc.value;
+      case "seg":
+      default:
+        return seg.currentSrc.value;
+    }
+  });
 
   let lastPos: { x: number; y: number } | null = null;
   let lastMoveAt = 0;
   let tickTimer: number | undefined;
   let idleActionTimer: number | undefined;
-  // 针对循环动作(sleep):唤醒时要返回到哪个状态,以及在 `autoWakeMs` 之后
-  // 自行结束循环的自动唤醒定时器。
+  // 针对循环动作(sleep):唤醒时要返回到哪个状态。
   let actionResume: "follow" | "idle" = "follow";
-  let actionWakeTimer: number | undefined;
   let unlisten: UnlistenFn | undefined;
 
   function clearIdleActionTimer() {
     if (idleActionTimer !== undefined) {
       window.clearTimeout(idleActionTimer);
       idleActionTimer = undefined;
-    }
-  }
-
-  function clearActionWakeTimer() {
-    if (actionWakeTimer !== undefined) {
-      window.clearTimeout(actionWakeTimer);
-      actionWakeTimer = undefined;
     }
   }
 
@@ -164,56 +168,72 @@ export function useCatBrain(opts: BrainOptions): CatBrain {
 
   function enterIdle() {
     clearIdleActionTimer();
-    clearActionWakeTimer();
+    anim.stop();
+    activePlayer.value = "seg";
     state.value = { kind: "idle" };
-    // idle 本身就是一个循环播放的休息动画。
-    anim.play(IDLE_FRAMES, { fps: config.idleFps, loop: true });
+    // idle 走分段运行器的退化配置（整段循环、无插播）。
+    seg.start(IDLE_SEGMENTED);
     scheduleIdleAction();
   }
 
   function enterFollow() {
     clearIdleActionTimer();
-    clearActionWakeTimer();
-    anim.stop(); // 跟随期间由注视来驱动帧
+    // 跟随期间由注视驱动帧，停掉两个时序播放器。
+    anim.stop();
+    seg.stop();
+    activePlayer.value = "gaze";
     state.value = { kind: "follow" };
   }
 
-  /** 结束当前动作,并返回到它的恢复目标(follow / idle)。 */
+  /** 结束当前动作，回到恢复目标（follow / idle）。 */
   function finishAction() {
-    clearActionWakeTimer();
     if (actionResume === "follow" && opts.followEnabled()) enterFollow();
     else enterIdle();
   }
 
   /**
-   * 立即把猫从当前动作中唤醒(例如 sleep 期间的一次点击)。若当前不在 action
-   * 中则为空操作。
+   * 立即把猫从当前动作中唤醒（例如 sleep 期间的一次点击）。
+   * 分段动作（sleep）走 requestExit —— 先放起身 outro 再 finishAction；
+   * 一次性动作直接停后结束。若当前不在 action 中则为空操作。
    */
   function wake() {
     if (state.value.kind !== "action") return;
-    anim.stop();
-    finishAction();
+    if (activePlayer.value === "seg") {
+      seg.requestExit(finishAction); // 起身（倒放趴下）后回到 follow/idle
+    } else {
+      anim.stop();
+      finishAction();
+    }
   }
 
   function trigger(name: string, resume: "follow" | "idle" = "follow") {
+    // 分段动作（sleep）：交给运行器，autoEndMs 到点用 finishAction 自动起身。
+    const segCfg = SEGMENTED_ACTIONS[name];
+    if (segCfg) {
+      clearIdleActionTimer();
+      actionResume = resume;
+      activePlayer.value = "seg";
+      state.value = { kind: "action", action: name };
+      anim.stop();
+      seg.start(segCfg, finishAction);
+      return;
+    }
+
+    // 一次性动作（wiki 等）：走通用播放器，结束时 finishAction。
     const def = ACTIONS[name];
     const frames = FRAMES[name];
     if (!def || !frames || frames.length === 0) return;
     clearIdleActionTimer();
-    clearActionWakeTimer();
     actionResume = resume;
+    activePlayer.value = "anim";
+    seg.stop();
     state.value = { kind: "action", action: name };
     const loop = def.loop ?? false;
     anim.play(
       frames,
       { fps: def.fps, loop, loopFrom: def.loopFrom },
-      // onDone 仅对非循环动作触发;finishAction 会在结束时重新评估恢复目标。
       finishAction,
     );
-    // 带自动唤醒的循环动作会在 autoWakeMs 之后自行结束(sleep)。
-    if (loop && def.autoWakeMs && def.autoWakeMs > 0) {
-      actionWakeTimer = window.setTimeout(wake, def.autoWakeMs);
-    }
   }
 
   async function tick() {
@@ -248,10 +268,9 @@ export function useCatBrain(opts: BrainOptions): CatBrain {
 
     switch (state.value.kind) {
       case "action": {
-        // 可打断的动作在鼠标移动时唤醒并切换到 follow。
+        // 可打断的动作在鼠标移动时切换到 follow（sleep 不可打断，此处不会触发）。
         const def = ACTIONS[state.value.action ?? ""];
         if (def?.interruptible !== false && moved && following) {
-          anim.stop();
           enterFollow();
         }
         return;
@@ -288,8 +307,8 @@ export function useCatBrain(opts: BrainOptions): CatBrain {
   onUnmounted(() => {
     if (tickTimer !== undefined) window.clearInterval(tickTimer);
     clearIdleActionTimer();
-    clearActionWakeTimer();
     anim.stop();
+    seg.stop();
     unlisten?.();
   });
 
