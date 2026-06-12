@@ -72,7 +72,7 @@ export interface SegmentedActionDef {
  */
 export const SLEEP_SEGMENTED: SegmentedActionDef = {
   frames: FRAMES.sleep,
-  intro: { start: 0, end: 190 },
+  intro: { start: 0, end: 190 }, // 与 base 故意重叠（大概区间，待逐帧定稿），勿当 off-by-one 修
   base: { start: 180, end: 196 },
   twitches: [
     { name: "ear", range: { start: 195, end: 215 } },
@@ -102,6 +102,8 @@ export const IDLE_SEGMENTED: SegmentedActionDef = {
 /**
  * 可被 `trigger(name)` 触发、且由分段运行器播放的动作。
  * 不在此表中的动作（如 wiki）走 `useCatBrain` 里原有的一次性播放路径。
+ * 注意：`IDLE_SEGMENTED` 故意不在此注册——idle 不通过 `trigger(name)` 触发，
+ * 而是由 `useCatBrain` 的 `enterIdle` 直接消费。
  */
 export const SEGMENTED_ACTIONS: Record<string, SegmentedActionDef> = {
   sleep: SLEEP_SEGMENTED,
