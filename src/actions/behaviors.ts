@@ -39,7 +39,13 @@ export interface Behavior {
 export const BEHAVIORS: Record<string, Behavior> = {
   idle: {
     // idle 是「休息态」本身，不参与 idleAuto 自动挑选。
-    loop: { base: "idleBreathe", random: [], delay: [6000, 14000] },
+    // 呼吸为底，每隔几秒随机眨眼/摇尾巴/动耳朵（摇尾巴与基底接缝相邻＝丝滑，
+    // 眨眼/动耳朵非相邻＝离散播放，见 clips.ts 注释）。
+    loop: {
+      base: "idleBreathe",
+      random: ["idleBlink", "idleTail", "idleEar"],
+      delay: [5000, 11000],
+    },
   },
   sleep: {
     enter: "lieDown",

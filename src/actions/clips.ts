@@ -56,7 +56,10 @@ export const CLIPS: Record<string, Clip> = {
   sleepBreathe: { src: "sleep", range: [187, 200], fps: 10, yoyo: true, label: "睡觉呼吸" },
   sleepEar: { src: "sleep", range: [200, 215], fps: 24, label: "睡觉耳朵" }, // 从接缝出发
   sleepTail: { src: "sleep", range: [200, 241], fps: 24, label: "睡觉尾巴" }, // 从接缝出发，走更远
-  idleBreathe: { src: "idle", range: [0, IDLE_FRAMES.length], fps: 24, label: "空闲呼吸" },
+  idleBlink: { src: "idle", range: [0, 50], fps: 24, label: "空闲眨眼" },
+  idleBreathe: { src: "idle", range: [50, 80], fps: 24, label: "空闲呼吸" }, // 基底
+  idleTail: { src: "idle", range: [80, 97], fps: 24, label: "空闲摇尾巴" }, // 接缝相邻，丝滑
+  idleEar: { src: "idle", range: [97, IDLE_FRAMES.length], fps: 24, label: "空闲动耳朵" }, // 非相邻，离散
   wiki: { src: "wiki", range: [0, FRAMES.wiki.length], fps: 24, label: "wiki" },
   feed: { src: "feed", range: [0, FRAMES.feed.length], fps: 24, label: "投喂" },
 };
