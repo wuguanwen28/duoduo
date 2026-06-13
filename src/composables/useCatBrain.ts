@@ -172,6 +172,9 @@ export function useCatBrain(opts: BrainOptions): CatBrain {
    */
   function wake() {
     if (state.value.kind !== "action") return;
+    // 动作未到「可唤醒点」时忽略点击：一次性动作要完整播完；有 loop 的要先到达
+    // 熟睡(base)才允许唤醒。趴下中、起身中点击均无效，避免「没躺下就被叫起来」。
+    if (!beh.canWake()) return;
     beh.requestExit(finishAction);
   }
 

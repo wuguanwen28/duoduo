@@ -33,6 +33,12 @@ export interface BehaviorController {
   requestExit(onDone: () => void): void;
   /** 硬停：清掉所有定时器与播放，不放 exit、不回调。 */
   stop(): void;
+  /**
+   * 当前是否处于「可被点击唤醒」的点：仅当行为已进入 loop（基底/熟睡）且尚未开始退出时为 true。
+   * enter（趴下中）、exit（起身中）、以及一次性行为（无 loop）全程为 false ——
+   * 用于让 `useCatBrain.wake()` 在动作未到位时忽略点击。
+   */
+  canWake(): boolean;
 }
 
 export function useBehavior(): BehaviorController {
@@ -47,6 +53,8 @@ export function useBehavior(): BehaviorController {
   let behavior: Behavior | null = null;
   let onEnd: (() => void) | undefined;
   let exiting = false;
+  // 是否已进入 loop（基底/熟睡）：仅此时允许点击唤醒。enter/exit/一次性行为期间为 false。
+  let inLoop = false;
 
   // 播放头 / 循环状态
   let srcFrames: string[] = [];
@@ -119,6 +127,7 @@ export function useBehavior(): BehaviorController {
     cur = baseLo;
     phase = "breatheUp";
     pendingAdj = null;
+    inLoop = true; // 已进入熟睡：从此刻起允许点击唤醒
     using.value = "loop";
     loopSrc.value = srcFrames[cur] ?? "";
     scheduleNextTwitch();
@@ -217,6 +226,7 @@ export function useBehavior(): BehaviorController {
     behavior = b;
     onEnd = end;
     exiting = false;
+    inLoop = false; // enter（趴下）阶段不可点击唤醒，进入 loop 后才置 true
     if (b.autoEndMs && b.autoEndMs > 0) {
       autoEndTimer = window.setTimeout(() => requestExit(onEnd ?? (() => {})), b.autoEndMs);
     }
@@ -230,6 +240,7 @@ export function useBehavior(): BehaviorController {
   function requestExit(onDone: () => void) {
     if (exiting) return; // 幂等：自动结束与点击竞态只执行一次
     exiting = true;
+    inLoop = false; // 开始退出（起身）：退出期间不再允许点击唤醒
     clearAllTimers();
     if (behavior?.exit) {
       playClip(behavior.exit, onDone);
@@ -243,10 +254,16 @@ export function useBehavior(): BehaviorController {
     clearAllTimers();
     clip.stop();
     exiting = false;
+    inLoop = false;
     behavior = null;
+  }
+
+  /** 是否处于可点击唤醒的点（已进入 loop 且未退出）。 */
+  function canWake() {
+    return inLoop;
   }
 
   onScopeDispose(stop);
 
-  return { currentSrc, start, requestExit, stop };
+  return { currentSrc, start, requestExit, stop, canWake };
 }
