@@ -14,30 +14,36 @@
     </div>
 
     <div class="menu__row menu__row--slider" @click.stop>
-      <div class="menu__row-label">
-        <span>大小</span>
-        <span class="menu__value">{{ size.toFixed(1) }}x</span>
-      </div>
+      <span class="menu__row-label">📏 大小</span>
+      <!-- 拖动时由 el-slider 自带的 tooltip 显示当前倍数（formatSize 格式化为 "1.0x"）。 -->
       <el-slider
         class="menu__slider"
         :model-value="size"
-        :min="0.5"
+        :min="0.2"
         :max="2"
-        :step="0.1"
-        :show-tooltip="false"
+        :step="0.05"
+        :format-tooltip="formatSize"
         @input="onSliderInput"
       />
     </div>
 
     <div class="menu__row menu__row--toggle" @click.stop>
-      <span>别偷看</span>
+      <span>👀 偷看</span>
       <el-switch :model-value="follow" @change="onToggleChange" />
     </div>
 
     <div class="menu__actions">
-      <el-button text class="menu__btn" @click="emit('calibrate')"
-        >🎯 校准猫头</el-button
+      <!-- 加个提示，否则用户不知道「校准猫头」是做什么的。 -->
+      <el-tooltip
+        content="拖动圆圈对准猫咪头部，校准视线死区，让跟随光标更准"
+        placement="bottom"
+        :teleported="false"
+        :show-after="200"
       >
+        <el-button text class="menu__btn" @click="emit('calibrate')"
+          >🎯 校准猫头</el-button
+        >
+      </el-tooltip>
       <el-button text class="menu__btn menu__btn--warn" @click="emit('boss')">
         🏃 老板来了
       </el-button>
@@ -76,6 +82,11 @@ function onSliderInput(value: number | number[]) {
   if (!Number.isNaN(v)) emit("update:size", v);
 }
 
+/** 格式化滑块 tooltip 文本，如 1x / 0.25x。步长 0.05，最多两位小数并去掉尾随 0。 */
+function formatSize(value: number): string {
+  return `${Number(value.toFixed(2))}x`;
+}
+
 function onToggleChange(value: string | number | boolean) {
   emit("update:follow", Boolean(value));
 }
@@ -86,7 +97,14 @@ function onToggleChange(value: string | number | boolean) {
   width: 100%;
   height: 100%;
   box-sizing: border-box;
-  background: rgba(28, 28, 30, 0.94);
+  /* 背景：底部一只小猫脸水印（icon.png）+ 整面半透明深色叠加层，保证文字可读。 */
+  background-color: rgba(28, 28, 30, 0.92);
+  background-image: linear-gradient(rgba(28, 28, 30, 0.5), rgba(28, 28, 30, 0.7)),
+    url("../../assets/icon.png");
+  background-repeat: no-repeat, no-repeat;
+  /* 叠加层铺满；猫脸缩小并贴到底部居中。 */
+  background-position: center, center bottom;
+  background-size: cover, auto 150px;
   color: #f0f0f0;
   border-radius: 10px;
   border: 1px solid rgba(255, 255, 255, 0.08);
@@ -154,10 +172,10 @@ function onToggleChange(value: string | number | boolean) {
   background: rgba(255, 255, 255, 0.07);
 }
 
+/* 大小行：单行左右布局——标签靠左，滑块占满剩余宽度。 */
 .menu__row--slider {
-  flex-direction: column;
-  align-items: stretch;
-  gap: 6px;
+  align-items: center;
+  gap: 12px;
   cursor: default;
 }
 
@@ -166,16 +184,16 @@ function onToggleChange(value: string | number | boolean) {
 }
 
 .menu__row-label {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
+  flex: none;
+  /* 最小宽度，避免标签与滑块贴在一起。 */
+  min-width: 56px;
   font-size: 13px;
 }
 
-.menu__value {
-  font-size: 11px;
-  color: #888;
-  font-variant-numeric: tabular-nums;
+.menu__slider {
+  flex: 1;
+  /* 留出右侧余量，避免最大值时滑块手柄贴到行边缘。 */
+  margin-right: 4px;
 }
 
 .menu__row--toggle {

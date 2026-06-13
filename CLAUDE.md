@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project: duoduo
 
-A transparent, always-on-top Tauri 2 desktop window (500×500) that displays a 169-frame cat sprite. The cat tracks the cursor with its gaze. Right-clicking the pet toggles an in-window menu panel (size slider, follow-cursor toggle, sleep/feed/quit actions). Quit is available via either the system tray menu's "退出" item, the in-window menu's "下班" item, or the system close button (the window has decorations on).
+A transparent, always-on-top, borderless Tauri 2 desktop window (fixed 620×400 logical px) that displays a 169-frame cat sprite. The cat sits bottom-right-aligned in the window; the empty area is transparent and click-through. The cat tracks the cursor with its gaze. Right-clicking the pet toggles an in-window menu panel (size slider, follow-cursor toggle, sleep/feed/quit actions). Quit is available via either the system tray menu's "退出" item or the in-window menu's "下班" item.
 
 The pet is **clamped to the union of all monitors' areas** at all times — it can be dragged across an extended desktop, but cannot go past the top/bottom/left/right edges of any monitor. The size slider scales the sprite image inside the fixed-size window (it does not resize the OS window).
 
@@ -88,8 +88,8 @@ Right-clicking the sprite toggles `menuOpen` in `Pet.vue`. A full-window backdro
 
 ## Important constraints / quirks
 
-- The window is **decorations: true, transparent: true, shadow: false, alwaysOnTop: true, skipTaskbar: true, resizable: false, 500×500, anchored at (600, 600)** — see `tauri.conf.json`. `resizable: false` is set because the in-window size slider only scales the sprite image (it does not resize the OS window), so user-driven resize would conflict.
-- Quit has three paths: the tray-icon "退出" item, the in-window menu's "下班" item, and the system close button. All three terminate the app.
+- The window is **decorations: false, transparent: true, shadow: false, alwaysOnTop: true, skipTaskbar: true, resizable: false, fixed 620×400 logical px** — see `tauri.conf.json`. The window is **sized once for the largest cat (PET_MAX_SCALE × PET_BASE_PX, right-aligned) + the left-side menu reserve** (`fixed_window_size` in `lib.rs`) and never resizes. The size slider only scales the sprite image inside this fixed window; `pet_set_content_scale` just caches the scale (for gaze/clamp math) and re-clamps — it no longer calls `set_size`. If you change the slider's `:max` in `Menu.vue`, update `PET_MAX_SCALE` in `lib.rs` to match.
+- Quit has two paths: the tray-icon "退出" item and the in-window menu's "下班" item. Both terminate the app. (The window is borderless — `decorations: false` — so there is no system close button.)
 - Bounds: the pet is clamped to the union of all monitors' areas on every move event (see `clamp_to_work_area` in `src-tauri/src/lib.rs`). The pet can be dragged freely across an extended desktop but cannot go past the top/bottom/left/right edge of any monitor.
 - The Tauri identifier `com.example.duoduo` is a placeholder reverse-DNS — change to your own domain before any real distribution.
 - The Rust command's angles and the Vue-side `ANCHORS` table are tuned to a **clockwise** gaze loop. If frame 0 is replaced or frames are re-ordered, both the anchor indices and the `clock = (screen + 90) % 360` conversion must be re-verified — `.tmp_montage/` in the repo root holds scratch images from when the anchor map was calibrated (ignore it; not part of the build).

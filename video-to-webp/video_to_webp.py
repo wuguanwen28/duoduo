@@ -53,6 +53,15 @@ def print_progress(current, total, prefix='', suffix='', length=40):
         if current % 10 == 0 or current == total:
             print(f"{prefix} {current}/{total} ({percent:.1f}%)")
 
+# 默认清除区域：豆包 AI 生成视频的「豆包AI生成」水印。
+# 该水印会在画面内移动——左上角与右下角各出现一段时间。经对 feed.mp4
+# 逐帧核对，这两个角落始终没有猫，故全程清除两处即可、无需限定时间段。
+# 用百分比表示，重导出成任意分辨率也能对齐。坐标：x1,y1,x2,y2[@起-止]
+DEFAULT_CLEAR_REGIONS = [
+    '0,0,20%,9%',          # 左上角水印（含余量）
+    '81%,90%,100%,100%',   # 右下角水印（含余量）
+]
+
 def remove_green_screen(frame, lower_green=None, upper_green=None):
     """
     移除绿色背景，返回带透明通道的图像
@@ -90,8 +99,106 @@ def remove_green_screen(frame, lower_green=None, upper_green=None):
     
     return rgba
 
-def process_video(video_path, output_dir=None, create_zip=False, 
-                  lower_green=None, upper_green=None, webp_quality=90):
+def parse_rect(spec, width, height):
+    """
+    把 "x1,y1,x2,y2" 形式的区域字符串解析为像素矩形 (x1, y1, x2, y2)。
+
+    每个数值支持两种写法：
+        - 像素：直接写数字，如 120
+        - 百分比：带 % 号，按画面宽/高换算，如 80%
+    解析后会自动规整左上/右下顺序，并裁剪到画面范围内。
+    """
+    parts = [p.strip() for p in spec.split(',')]
+    if len(parts) != 4:
+        raise ValueError(f"区域格式应为 x1,y1,x2,y2，收到: {spec}")
+
+    # x 用宽度换算百分比，y 用高度换算
+    dims = [width, height, width, height]
+    coords = []
+    for p, dim in zip(parts, dims):
+        if p.endswith('%'):
+            coords.append(int(round(float(p[:-1]) / 100.0 * dim)))
+        else:
+            coords.append(int(round(float(p))))
+
+    x1, y1, x2, y2 = coords
+    # 规整顺序（允许用户随意写两个角），再裁剪到画面内
+    x1, x2 = sorted((x1, x2))
+    y1, y2 = sorted((y1, y2))
+    x1 = max(0, min(x1, width))
+    x2 = max(0, min(x2, width))
+    y1 = max(0, min(y1, height))
+    y2 = max(0, min(y2, height))
+    return x1, y1, x2, y2
+
+def _to_frame(token, fps, default):
+    """把单个时间端点换算成帧号。空串取默认值；带 f 后缀按帧，否则按秒。"""
+    token = token.strip()
+    if token == '':
+        return default
+    if token.endswith('f'):
+        return int(round(float(token[:-1])))
+    # 否则视为秒，乘以 fps 换算成帧
+    return int(round(float(token) * fps))
+
+def parse_time_range(time_part, fps, frame_count):
+    """
+    解析时间段字符串 "起-止" 为帧区间 (frame_start, frame_end)，左闭右开。
+
+    每端支持：秒（如 2、1.5）、帧（数字后加 f，如 30f）、或留空取默认。
+    空字符串表示「整段视频」。
+    """
+    # 没有时间段 = 全程生效
+    end_default = frame_count if frame_count > 0 else 10 ** 9
+    if time_part.strip() == '':
+        return 0, end_default
+    if '-' not in time_part:
+        raise ValueError(f"时间段格式应为 起-止，收到: {time_part}")
+
+    start_tok, end_tok = time_part.split('-', 1)
+    fstart = _to_frame(start_tok, fps, 0)
+    fend = _to_frame(end_tok, fps, end_default)
+    if fend < fstart:
+        fstart, fend = fend, fstart
+    return max(0, fstart), fend
+
+def parse_clear_spec(spec, width, height, fps, frame_count):
+    """
+    解析单条清除指令，格式： x1,y1,x2,y2[@起-止]
+
+    位置部分 x1,y1,x2,y2：像素或百分比（带 %），见 parse_rect。
+    时间部分（可选，@ 之后）：限定该区域只在这段时间内清除；不写则全程生效。
+
+    返回 (x1, y1, x2, y2, frame_start, frame_end)。
+    """
+    if '@' in spec:
+        rect_part, time_part = spec.split('@', 1)
+    else:
+        rect_part, time_part = spec, ''
+    x1, y1, x2, y2 = parse_rect(rect_part, width, height)
+    fstart, fend = parse_time_range(time_part, fps, frame_count)
+    return x1, y1, x2, y2, fstart, fend
+
+def clear_regions(rgba, rects, frame_num):
+    """
+    把指定矩形区域的 Alpha 通道置 0（完全透明），用于抹掉固定位置的水印 / 文字。
+    仅当当前帧号落在该区域的生效时间段内才清除。
+
+    参数：
+        rgba     : RGBA 格式的 numpy 数组（remove_green_screen 的输出）
+        rects    : 区域列表 [(x1, y1, x2, y2, frame_start, frame_end), ...]
+        frame_num: 当前帧号（从 0 开始）
+    """
+    for (x1, y1, x2, y2, fstart, fend) in rects:
+        if frame_num < fstart or frame_num >= fend:
+            continue  # 不在该区域的生效时间段内
+        if x2 > x1 and y2 > y1:
+            rgba[y1:y2, x1:x2, 3] = 0  # 第 4 通道即 Alpha
+    return rgba
+
+def process_video(video_path, output_dir=None, create_zip=False,
+                  lower_green=None, upper_green=None, webp_quality=90,
+                  clear_specs=None):
     """
     处理视频，生成透明背景WebP序列帧
     
@@ -102,7 +209,8 @@ def process_video(video_path, output_dir=None, create_zip=False,
         lower_green: 绿色下限（HSV）
         upper_green: 绿色上限（HSV）
         webp_quality: WebP质量（0-100，默认90）
-    
+        clear_specs: 需清除（置透明）的区域字符串列表，格式见 parse_rect；None 表示不清除
+
     返回：
         (成功帧数, 总帧数, 输出目录, ZIP路径)
     """
@@ -135,7 +243,17 @@ def process_video(video_path, output_dir=None, create_zip=False,
     print(f"  Total Frames: {frame_count}")
     print(f"  Output Directory: {output_dir}")
     print(f"{'='*60}\n")
-    
+
+    # 解析需要清除的区域（此时已知画面宽高与 fps，才能换算百分比和时间段）
+    clear_rects = []
+    if clear_specs:
+        for spec in clear_specs:
+            clear_rects.append(parse_clear_spec(spec, width, height, fps, frame_count))
+        print("Clear regions (px x1,y1,x2,y2 @ frame[start,end)):")
+        for (x1, y1, x2, y2, fstart, fend) in clear_rects:
+            print(f"  ({x1},{y1},{x2},{y2}) @ [{fstart}, {fend})")
+        print()
+
     # 处理每一帧
     frame_num = 0
     start_time = time.time()
@@ -150,7 +268,11 @@ def process_video(video_path, output_dir=None, create_zip=False,
         try:
             # 移除绿色背景
             rgba = remove_green_screen(frame, lower_green, upper_green)
-            
+
+            # 按区域清除（抹掉左下/右上等固定位置的文字水印，按时间段生效）
+            if clear_rects:
+                rgba = clear_regions(rgba, clear_rects, frame_num)
+
             # 保存为WebP
             img = Image.fromarray(rgba)
             output_path = os.path.join(output_dir, f"frame_{frame_num:04d}.webp")
@@ -243,8 +365,26 @@ Examples:
     parser.add_argument('--upper-h', type=int, default=85, help='Green HSV upper H (default 85)')
     parser.add_argument('--upper-s', type=int, default=255, help='Green HSV upper S (default 255)')
     parser.add_argument('--upper-v', type=int, default=255, help='Green HSV upper V (default 255)')
-    
+    parser.add_argument('--clear-rect', action='append', default=None, metavar='x1,y1,x2,y2[@起-止]',
+                        help='清除（置透明）一个矩形区域，可重复指定多个。'
+                             '坐标支持像素或百分比（带%%）；可选 @起-止 限定生效时间段'
+                             '（秒，或数字后加 f 表示帧，任意一端可留空）。'
+                             '不指定时使用默认水印区域（左上+右下）。'
+                             '例: --clear-rect 0,80%%,25%%,100%% '
+                             '--clear-rect 75%%,0,100%%,15%%@0-3 '
+                             '--clear-rect 0,80%%,25%%,100%%@30f-90f')
+    parser.add_argument('--no-clear', action='store_true',
+                        help='不清除任何区域（关闭默认水印清除）')
+
     args = parser.parse_args()
+
+    # 决定清除区域：未显式指定 --clear-rect 时用默认水印区域；--no-clear 则全关。
+    if args.no_clear:
+        clear_specs = None
+    elif args.clear_rect is not None:
+        clear_specs = args.clear_rect
+    else:
+        clear_specs = DEFAULT_CLEAR_REGIONS
     
     # 设置绿色范围
     lower_green = np.array([args.lower_h, args.lower_s, args.lower_v])
@@ -262,7 +402,8 @@ Examples:
             create_zip=args.zip,
             lower_green=lower_green,
             upper_green=upper_green,
-            webp_quality=args.quality
+            webp_quality=args.quality,
+            clear_specs=clear_specs
         )
         
         print(f"\n{'='*60}")

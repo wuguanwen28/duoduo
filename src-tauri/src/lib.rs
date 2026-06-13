@@ -9,16 +9,33 @@ use tauri::{
 /// in Pet.vue's `imgStyle` (`Math.round(200 * size)`).
 const PET_BASE_PX: f64 = 200.0;
 
+/// The size slider's maximum multiplier — must match `:max` on Menu.vue's
+/// `el-slider`. The window is sized once to fit the cat at this scale, so it
+/// never has to resize as the slider moves (the sprite just scales inside the
+/// fixed, transparent, click-through window).
+const PET_MAX_SCALE: f64 = 2.0;
+
 /// Width / height (logical px) reserved on the LEFT side of the window for the
 /// in-window menu panel. Includes the menu itself (200×~346) + 10 px gap on
-/// each side. The window is always wide enough to hold the cat (right-aligned)
-/// plus this reserve, so the menu can pop up on the left without a dynamic resize.
+/// each side. The window is wide enough to hold the largest cat (right-aligned)
+/// plus this reserve, so the menu pops up on the left without any resize.
 const MENU_EXTRA_W_LP: f64 = 220.0; // 200 menu + 10 gap × 2
 const MENU_EXTRA_H_LP: f64 = 366.0; // ~346 menu + 10 gap × 2
 
-/// Shared app state. `scale` mirrors the in-window size slider so the clamp
-/// logic knows the cat's real on-screen size (the window itself is a fixed
-/// 800×500 box much larger than the centered sprite).
+/// The window's fixed physical size: the cat at PET_MAX_SCALE (right-aligned) +
+/// the left-side menu reserve. Computed once from the monitor's scale factor;
+/// the window keeps this size for its whole lifetime regardless of the slider.
+fn fixed_window_size(scale_factor: f64) -> tauri::PhysicalSize<u32> {
+    let cat_px = (PET_BASE_PX * PET_MAX_SCALE * scale_factor).round() as u32;
+    let menu_w = (MENU_EXTRA_W_LP * scale_factor).round() as u32;
+    let menu_h = (MENU_EXTRA_H_LP * scale_factor).round() as u32;
+    tauri::PhysicalSize::new(cat_px + menu_w, cat_px.max(menu_h))
+}
+
+/// Shared app state. `scale` mirrors the in-window size slider so the gaze and
+/// clamp logic know the cat's real on-screen size (the window itself is a fixed
+/// box sized for the largest cat + menu — see `fixed_window_size`; the sprite
+/// scales inside it without resizing the window).
 ///
 /// `head_offset` stores the ratio of the head-centre offset to the sprite
 /// diameter, calibrated by the user so the dead-zone tracks the actual head.
@@ -38,30 +55,13 @@ fn clampf(v: f64, lo: f64, hi: f64) -> f64 {
 }
 
 /// Bring the pet window back into view: unminimize, show, and focus it.
-/// Resizes to the cat's current sprite size + the left-side menu reserve
-/// (the window always includes space for the menu, even when closed).
-/// Used by the tray "显示多多" item and a left-click on the tray icon.
+/// The window has a fixed size (see `fixed_window_size`), so there's nothing to
+/// resize. Used by the tray "显示多多" item and a left-click on the tray icon.
 fn show_pet(app: &tauri::AppHandle) {
     if let Some(window) = app.get_webview_window("duoduo") {
-        // Restore the window first — set_size on a minimized window may be
-        // ignored by the OS.
         let _ = window.unminimize();
         let _ = window.show();
         let _ = window.set_focus();
-        let scale = window
-            .state::<PetState>()
-            .scale
-            .lock()
-            .map(|g| *g)
-            .unwrap_or(1.0);
-        let sf = window.scale_factor().unwrap_or(1.0);
-        let cat_px = (PET_BASE_PX * scale * sf).round() as u32;
-        let menu_w = (MENU_EXTRA_W_LP * sf).round() as u32;
-        let menu_h = (MENU_EXTRA_H_LP * sf).round() as u32;
-        let _ = window.set_size(tauri::PhysicalSize::new(
-            cat_px + menu_w,
-            cat_px.max(menu_h),
-        ));
     }
 }
 
@@ -225,22 +225,16 @@ fn clamp_to_work_area(window: &tauri::Window) -> Result<(), String> {
     Ok(())
 }
 
-/// Update the cached sprite scale (mirrors the in-window size slider) and
-/// resize the window so it always fits the cat (right-aligned) + the left-side
-/// menu reserve. Re-clamps so growing near an edge doesn't push the cat off-screen.
+/// Update the cached sprite scale (mirrors the in-window size slider). The
+/// window has a fixed size and is NOT resized here — the sprite just scales
+/// inside it. We still re-clamp so that enlarging the cat near a screen edge
+/// doesn't leave part of it hanging off-screen.
 #[tauri::command]
 fn pet_set_content_scale(window: tauri::Window, scale: f64) -> Result<(), String> {
     let s = scale.clamp(0.1, 8.0);
     if let Ok(mut g) = window.state::<PetState>().scale.lock() {
         *g = s;
     }
-    let sf = window.scale_factor().map_err(|e| e.to_string())?;
-    let cat_px = (PET_BASE_PX * s * sf).round() as u32;
-    let menu_w = (MENU_EXTRA_W_LP * sf).round() as u32;
-    let menu_h = (MENU_EXTRA_H_LP * sf).round() as u32;
-    window
-        .set_size(tauri::PhysicalSize::new(cat_px + menu_w, cat_px.max(menu_h)))
-        .map_err(|e| e.to_string())?;
     clamp_to_work_area(&window)?;
     Ok(())
 }
@@ -326,23 +320,15 @@ pub fn run() {
                 .build(app)?;
 
             // Position the pet window at the bottom-right of the primary
-            // monitor's work area (clear of the taskbar). Resize first so the
-            // window includes the left-side menu reserve from the start.
+            // monitor's work area (clear of the taskbar). The window uses its
+            // fixed size (largest cat + menu reserve); we set it explicitly here
+            // so it's correct from the start regardless of the config value.
             if let Some(window) = app.get_webview_window("duoduo") {
                 if let Ok(Some(monitor)) = window.current_monitor() {
                     let area = monitor.work_area();
                     let sf = window.scale_factor().unwrap_or(1.0);
-                    let cat_px = (PET_BASE_PX * sf).round() as u32;
-                    let menu_w = (MENU_EXTRA_W_LP * sf).round() as u32;
-                    let menu_h = (MENU_EXTRA_H_LP * sf).round() as u32;
-                    let _ = window.set_size(tauri::PhysicalSize::new(
-                        cat_px + menu_w,
-                        cat_px.max(menu_h),
-                    ));
-                    let win_size = window.outer_size().unwrap_or(tauri::PhysicalSize::new(
-                        cat_px + menu_w,
-                        cat_px.max(menu_h),
-                    ));
+                    let win_size = fixed_window_size(sf);
+                    let _ = window.set_size(win_size);
                     let x = area.position.x + area.size.width as i32 - win_size.width as i32;
                     let y = area.position.y + area.size.height as i32 - win_size.height as i32;
                     let _ = window.set_position(PhysicalPosition::new(x, y));
