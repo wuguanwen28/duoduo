@@ -242,13 +242,13 @@ function onToggleFollow(v: boolean) {
 
 function onSleep() {
   menuOpen.value = false;
-  brain.trigger("sleep", "follow");
+  brain.trigger("sleep");
 }
 
 function onFeed() {
   menuOpen.value = false;
-  // 喂完直接回 idle（不经 follow），避免结束瞬间闪一下跟随状态。
-  brain.trigger("feed", "idle");
+  // 投喂＝切到 idle 并播一次 feed；睡觉时会先起床再吃，吃完留在 idle。
+  brain.trigger("feed");
 }
 
 function onQuit() {
@@ -305,8 +305,8 @@ function beginActionGesture(e: MouseEvent) {
 
 async function onMouseDown(e: MouseEvent) {
   if (e.button !== 0) return;
-  // 处于动作中（睡觉）时：点击会唤醒猫咪，拖动则仅移动它。
-  if (brain.state.value.kind === "action") {
+  // 当前点击会唤醒猫（睡觉中且已熟睡）时：点击唤醒、拖动则移动它。
+  if (brain.canWake()) {
     beginActionGesture(e);
     return;
   }

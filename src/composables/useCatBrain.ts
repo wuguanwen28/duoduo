@@ -1,30 +1,22 @@
 /**
  * useCatBrain —— 猫的行为状态机。
  *
- * 这里是"猫此刻应该显示哪一帧"的唯一权威来源。它持有一个显式的状态机和一个
- * 约 20fps 的 tick 循环，并组合了两个更底层的行为：
- *   - useGaze       (跟随光标，由角度驱动)
- *   - useBehavior   (按「片段+行为」编排播放，含丝滑链)
+ * 组合 useGaze（光标跟随）与 useBehavior（片段+行为播放）。
  *
- * 状态
- *   idle    : 休息。经过一段随机延迟后，会自动播放 IDLE_POOL 中的某个行为。
- *   follow  : 跟踪光标(注视)。
- *   action  : 播放一个被触发的行为(wiki、sleep 等)。
+ * 状态：
+ *   behavior : 正在运行某个自治行为（idle/sleep…），currentBehavior 记录是哪个。
+ *   follow   : 跟随光标。
  *
- * 状态转换
- *   任意非 action 状态 + 鼠标移动        → follow
- *   follow + 鼠标静止超过 idleTimeoutMs   → idle
- *   idle  + 随机定时器触发                → action(取自 IDLE_POOL)→ idle
- *   trigger(name)                        → action，结束后 → follow 或 idle
- *   action(可打断) + 鼠标移动            → follow
+ * 加权轮换：每个行为有 weight + duration；进入某行为后按其 duration 排定时器，到点按
+ * weight 加权随机挑下一个行为，跨行为切换播离开者 exit→进入者 enter。idle 权重高、sleep 低，
+ * 所以大部分时间待机、偶尔睡。follow 是抢占层（看 interruptible），期间暂停轮换。
  *
- * 预留接口：`trigger(name, resume?)`、后端 `pet-play-action` 事件转发到 `trigger`、
- * 可变 `config`。
+ * 触发：trigger(name) 先查行为（切过去待着）、再查动作（切到归属行为、播一次动作片段、留下）。
  */
 import { computed, onMounted, onUnmounted, ref, type Ref } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import { BEHAVIORS, IDLE_POOL } from "../actions/behaviors";
+import { BEHAVIORS, ACTIONS } from "../actions/behaviors";
 import { useGaze } from "./useGaze";
 import { useBehavior } from "./useBehavior";
 
@@ -36,12 +28,12 @@ interface GazeSample {
   over_cat: boolean;
 }
 
-export type CatStateKind = "idle" | "follow" | "action";
+export type CatStateKind = "behavior" | "follow";
 
 export interface CatState {
   kind: CatStateKind;
-  /** 仅当 kind === "action" 时存在。 */
-  action?: string;
+  /** 仅当 kind === "behavior" 时存在：当前行为名。 */
+  behavior?: string;
 }
 
 export interface BrainConfig {
@@ -51,26 +43,20 @@ export interface BrainConfig {
   moveThreshold: number;
   /** 跟随状态下，光标静止超过这段时间(毫秒)后切回 idle。 */
   idleTimeoutMs: number;
-  /** idle 自动播放动作前的随机延迟区间 [min, max](毫秒)。 */
-  idleActionDelay: [number, number];
-  /** 可用于 idle 自动播放的行为名列表。为空 = 仅循环 idle。 */
-  idlePool: string[];
 }
 
 export const DEFAULT_CONFIG: BrainConfig = {
   tickMs: 50,
   moveThreshold: 2,
   idleTimeoutMs: 5000,
-  idleActionDelay: [6000, 14000],
-  idlePool: IDLE_POOL,
 };
 
 export interface BrainOptions {
   /** 获取是否启用光标跟随("别偷看"开关)。 */
   followEnabled: () => boolean;
   /**
-   * 获取大脑是否被冻结。为 true 时猫被保持在 idle：忽略光标、抑制 idle 自动播放，
-   * 因此头部保持不动。用于头部校准期间。默认：始终为 false。
+   * 获取大脑是否被冻结。为 true 时保持 idle：忽略光标、暂停轮换。用于头部校准期间。
+   * 默认：始终为 false。
    */
   paused?: () => boolean;
   /** 合并到 DEFAULT_CONFIG 上的部分覆盖项。 */
@@ -86,26 +72,25 @@ export interface CatBrain {
   cursorOverCat: Ref<boolean>;
   /** 实时可变的行为配置。 */
   config: BrainConfig;
-  /**
-   * 播放一个行为，覆盖当前任何行为。结束后回到 `resume`(若跟随开启则 "follow"，否则
-   * "idle")。当行为名未知时为空操作。
-   */
-  trigger: (name: string, resume?: "follow" | "idle") => void;
-  /** 立即把猫从当前动作中唤醒。若当前不在 action 中则为空操作。 */
+  /** 触发一个行为名或动作名（菜单/后端事件）。未知名为空操作。 */
+  trigger: (name: string) => void;
+  /** 点击唤醒：若当前行为有 exit 且已进 loop，则起身回 idle。否则空操作。 */
   wake: () => void;
+  /** 当前点击是否会唤醒（供 Pet.vue 决定点击手势）。 */
+  canWake: () => boolean;
 }
 
 export function useCatBrain(opts: BrainOptions): CatBrain {
   const config: BrainConfig = { ...DEFAULT_CONFIG, ...opts.config };
   const gaze = useGaze();
-  const beh = useBehavior(); // idle 与所有被触发的行为都走它
+  const beh = useBehavior();
 
-  const state = ref<CatState>({ kind: "idle" });
+  const state = ref<CatState>({ kind: "behavior", behavior: "idle" });
   const cursorOverCat = ref(false);
+  let currentBehavior = "idle";
 
   /** 当前帧来源：gaze(注视) / beh(行为播放器)。 */
   const activePlayer = ref<"gaze" | "beh">("beh");
-
   const currentSrc = computed(() =>
     activePlayer.value === "gaze" ? gaze.currentSrc.value : beh.currentSrc.value,
   );
@@ -113,80 +98,108 @@ export function useCatBrain(opts: BrainOptions): CatBrain {
   let lastPos: { x: number; y: number } | null = null;
   let lastMoveAt = 0;
   let tickTimer: number | undefined;
-  let idleActionTimer: number | undefined;
-  // 被触发的循环行为(sleep)唤醒后要返回的状态。
-  let actionResume: "follow" | "idle" = "follow";
+  let rotationTimer: number | undefined;
   let unlisten: UnlistenFn | undefined;
 
-  function clearIdleActionTimer() {
-    if (idleActionTimer !== undefined) {
-      window.clearTimeout(idleActionTimer);
-      idleActionTimer = undefined;
+  function clearRotationTimer() {
+    if (rotationTimer !== undefined) {
+      window.clearTimeout(rotationTimer);
+      rotationTimer = undefined;
     }
   }
 
-  function scheduleIdleAction() {
-    clearIdleActionTimer();
-    if (config.idlePool.length === 0) return;
-    const [lo, hi] = config.idleActionDelay;
+  /** 进入某行为后，按其 duration 排下一次轮换。 */
+  function scheduleRotation() {
+    clearRotationTimer();
+    const b = BEHAVIORS[currentBehavior];
+    if (!b) return;
+    const [lo, hi] = b.duration;
     const delay = lo + Math.random() * Math.max(0, hi - lo);
-    idleActionTimer = window.setTimeout(() => {
-      if (state.value.kind !== "idle") return;
-      // 冻结期间被抑制 —— 重新排期，以便在校准结束后恢复。
-      if (opts.paused?.()) {
-        scheduleIdleAction();
-        return;
-      }
-      const pool = config.idlePool;
-      const name = pool[Math.floor(Math.random() * pool.length)];
-      trigger(name, "idle");
+    rotationTimer = window.setTimeout(() => {
+      if (state.value.kind !== "behavior") return; // follow 期间不轮换
+      if (opts.paused?.()) { scheduleRotation(); return; } // 校准期间抑制，稍后重排
+      rotate();
     }, delay);
   }
 
-  function enterIdle() {
-    clearIdleActionTimer();
-    activePlayer.value = "beh";
-    state.value = { kind: "idle" };
-    // idle 是「休息态」本身：播放 idle 行为(整段呼吸循环)。
-    beh.start(BEHAVIORS.idle);
-    scheduleIdleAction();
+  /** 按 weight 加权随机挑一个行为名。 */
+  function pickWeightedBehavior(): string {
+    const names = Object.keys(BEHAVIORS);
+    const weights = names.map((n) => BEHAVIORS[n].weight);
+    const total = weights.reduce((a, b) => a + b, 0);
+    let r = Math.random() * total;
+    for (let i = 0; i < names.length; i++) {
+      r -= weights[i];
+      if (r < 0) return names[i];
+    }
+    return names[names.length - 1];
+  }
+
+  function rotate() {
+    const next = pickWeightedBehavior();
+    if (next === currentBehavior) {
+      scheduleRotation(); // 重选到自己：继续待着，重排定时器
+      return;
+    }
+    goToBehavior(next);
+  }
+
+  /**
+   * 切到某行为：若当前在行为态则先播其 exit，再进入 name（enter→lead?→loop）。
+   * 从 follow 来则不走 exit（抢占层无转场）。
+   */
+  function goToBehavior(name: string, lead?: string) {
+    const b = BEHAVIORS[name];
+    if (!b) return;
+    clearRotationTimer();
+    const enter = () => {
+      currentBehavior = name;
+      activePlayer.value = "beh";
+      state.value = { kind: "behavior", behavior: name };
+      beh.start(b, lead ? { lead } : undefined);
+      scheduleRotation();
+    };
+    if (state.value.kind === "behavior") {
+      beh.requestExit(enter); // 播离开者 exit（idle 无 exit→立即）→ 进入
+    } else {
+      beh.stop(); // 从 follow 来：直接进
+      enter();
+    }
   }
 
   function enterFollow() {
-    clearIdleActionTimer();
-    // 跟随期间由注视驱动帧，停掉行为播放器。
+    clearRotationTimer();
     beh.stop();
     activePlayer.value = "gaze";
     state.value = { kind: "follow" };
   }
 
-  /** 结束当前动作，回到恢复目标(follow / idle)。 */
-  function finishAction() {
-    if (actionResume === "follow" && opts.followEnabled()) enterFollow();
-    else enterIdle();
+  function enterIdle() {
+    goToBehavior("idle");
   }
 
-  /**
-   * 立即把猫从当前动作中唤醒(例如 sleep 期间的一次点击)。先放该行为的 exit
-   * (sleep 的醒来＝趴下倒放)再 finishAction。若当前不在 action 中则为空操作。
-   */
+  function trigger(name: string) {
+    if (BEHAVIORS[name]) {
+      goToBehavior(name); // 行为：切过去待着
+      return;
+    }
+    const a = ACTIONS[name];
+    if (a) {
+      goToBehavior(a.home, a.clip); // 动作：切到归属行为，把动作片段当 lead 播一次
+      return;
+    }
+    // 未知名：空操作
+  }
+
+  /** 点击是否会唤醒：当前行为有 exit 且已进 loop。 */
+  function canWake() {
+    if (state.value.kind !== "behavior") return false;
+    return !!BEHAVIORS[currentBehavior]?.exit && beh.canWake();
+  }
+
   function wake() {
-    if (state.value.kind !== "action") return;
-    // 动作未到「可唤醒点」时忽略点击：一次性动作要完整播完；有 loop 的要先到达
-    // 熟睡(base)才允许唤醒。趴下中、起身中点击均无效，避免「没躺下就被叫起来」。
-    if (!beh.canWake()) return;
-    beh.requestExit(finishAction);
-  }
-
-  function trigger(name: string, resume: "follow" | "idle" = "follow") {
-    const b = BEHAVIORS[name];
-    if (!b) return; // 未知行为名：空操作
-    clearIdleActionTimer();
-    actionResume = resume;
-    activePlayer.value = "beh";
-    state.value = { kind: "action", action: name };
-    // autoEndMs 到点用 finishAction 自动结束(sleep 2 分钟自动醒)。
-    beh.start(b, finishAction);
+    if (!canWake()) return;
+    goToBehavior("idle"); // 播当前 exit（如 wakeUp 起身）→ idle
   }
 
   async function tick() {
@@ -197,10 +210,8 @@ export function useCatBrain(opts: BrainOptions): CatBrain {
       return; // 销毁期间的瞬时 IPC 错误
     }
 
-    // 发布光标是否悬停在猫上(用于驱动点击穿透)。无条件设置以保持实时。
     cursorOverCat.value = sample.over_cat;
 
-    // 根据原始的全局光标位置进行移动检测。
     let moved = false;
     const pos = { x: sample.cursor_x, y: sample.cursor_y };
     if (lastPos) {
@@ -209,36 +220,26 @@ export function useCatBrain(opts: BrainOptions): CatBrain {
     lastPos = pos;
     if (moved) lastMoveAt = Date.now();
 
-    // 冻结状态(头部校准期间):保持 idle，忽略光标。
+    // 校准期间：保持 idle、暂停轮换、忽略光标。
     if (opts.paused?.()) {
-      if (state.value.kind !== "idle") enterIdle();
+      if (state.value.kind !== "behavior" || currentBehavior !== "idle") enterIdle();
       return;
     }
 
     const following = opts.followEnabled();
 
     switch (state.value.kind) {
-      case "action": {
-        // 仅 interruptible 显式为 true 的行为(wiki)在鼠标移动时切回 follow。
-        const b = BEHAVIORS[state.value.action ?? ""];
-        if (b?.interruptible === true && moved && following) {
+      case "behavior": {
+        const b = BEHAVIORS[currentBehavior];
+        // 仅当前行为可打断（idle）+ 鼠标移动 + 光标在死区外，才抢占进 follow。
+        if (b?.interruptible === true && moved && following && sample.angle !== null) {
           enterFollow();
         }
         return;
       }
-      case "idle": {
-        // 仅当鼠标移动且光标在头部死区之外(angle 非 null)时才进入 follow；
-        // 死区内不跟随，避免在死区里晃鼠标导致 idle/follow 每帧来回跳。
-        if (moved && following && sample.angle !== null) enterFollow();
-        return;
-      }
       case "follow": {
-        if (!following || Date.now() - lastMoveAt > config.idleTimeoutMs) {
-          enterIdle();
-          return;
-        }
-        // 光标进入头部死区(angle 为 null)：直接转入 idle，而不是朝前发呆。
-        if (sample.angle === null) {
+        // 不跟随 / 静止超时 / 光标进入头部死区 → 回 idle。
+        if (!following || Date.now() - lastMoveAt > config.idleTimeoutMs || sample.angle === null) {
           enterIdle();
           return;
         }
@@ -250,7 +251,12 @@ export function useCatBrain(opts: BrainOptions): CatBrain {
 
   onMounted(async () => {
     lastMoveAt = Date.now();
-    enterIdle();
+    // 起步：直接进入 idle 行为（无需转场）。
+    currentBehavior = "idle";
+    activePlayer.value = "beh";
+    state.value = { kind: "behavior", behavior: "idle" };
+    beh.start(BEHAVIORS.idle);
+    scheduleRotation();
     tickTimer = window.setInterval(tick, config.tickMs);
     void tick();
     try {
@@ -264,10 +270,10 @@ export function useCatBrain(opts: BrainOptions): CatBrain {
 
   onUnmounted(() => {
     if (tickTimer !== undefined) window.clearInterval(tickTimer);
-    clearIdleActionTimer();
+    clearRotationTimer();
     beh.stop();
     unlisten?.();
   });
 
-  return { state, currentSrc, cursorOverCat, config, trigger, wake };
+  return { state, currentSrc, cursorOverCat, config, trigger, wake, canWake };
 }

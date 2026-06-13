@@ -1,11 +1,12 @@
 /**
- * useBehavior —— 行为播放器（取代 useSegmentedAction）。
+ * useBehavior —— 行为播放器。
  *
- * 把一个 Behavior 编排成：enter（离散放一次）→ loop（呼吸基底 + 随机插播）→ exit。
- * 循环用「播放头」（当前绝对帧索引 cur）驱动：base 在 [baseLo,baseHi] 间来回摆动；与
- * base 同源且接缝相邻（起始帧＝baseHi+1）的插播，从接缝续进、走到头再走回来 —— 全程
- * 相邻帧、无跳帧（丝滑链）。enter/exit/非相邻插播是离散片段，用通用播放器
- * useSpriteAnimation 整段播放。`using` 决定当前帧取离散播放器还是播放头。
+ * 把一个 Behavior 编排成：enter?（离散放一次）→ lead?（一次性动作片段，可选）→ loop。
+ * loop 用「播放头」（绝对帧 cur ±1）驱动：base 在 [baseLo,baseHi] 来回摆动；与 base 同源
+ * 且接缝相邻（起始帧＝baseHi+1）的插播从接缝续进、走到头再走回（丝滑链）。enter/exit/lead/
+ * 非相邻插播是离散片段，用 useSpriteAnimation 整段播放。`using` 决定当前帧取哪一路。
+ *
+ * 行为本身不会自动结束 —— 何时退出/轮换由 useCatBrain 的轮换定时器调 requestExit 驱动。
  */
 import { computed, onScopeDispose, ref, type Ref } from "vue";
 import { useSpriteAnimation } from "./useSpriteAnimation";
@@ -27,22 +28,18 @@ interface PreparedTwitch {
 export interface BehaviorController {
   /** 当前要显示的帧 URL。绑定到 <CatSprite :src>。 */
   currentSrc: Ref<string>;
-  /** 开始一个行为：enter → loop（含丝滑插播）。autoEndMs 到点调用 onEnd。 */
-  start(behavior: Behavior, onEnd?: () => void): void;
+  /** 开始一个行为：enter? → lead?（一次性动作片段）→ loop。一直循环到 requestExit/stop。 */
+  start(behavior: Behavior, opts?: { lead?: string }): void;
   /** 请求退出：有 exit 则放完再 onDone，否则立即 onDone。退出期间重复调用被忽略。 */
   requestExit(onDone: () => void): void;
   /** 硬停：清掉所有定时器与播放，不放 exit、不回调。 */
   stop(): void;
-  /**
-   * 当前是否处于「可被点击唤醒」的点：仅当行为已进入 loop（基底/熟睡）且尚未开始退出时为 true。
-   * enter（趴下中）、exit（起身中）、以及一次性行为（无 loop）全程为 false ——
-   * 用于让 `useCatBrain.wake()` 在动作未到位时忽略点击。
-   */
+  /** 是否处于可点击唤醒的点（已进入 loop 且未退出）。enter/lead/exit 期间为 false。 */
   canWake(): boolean;
 }
 
 export function useBehavior(): BehaviorController {
-  const clip = useSpriteAnimation(); // 离散片段：enter / exit / 非相邻插播
+  const clip = useSpriteAnimation(); // 离散片段：enter / lead / exit / 非相邻插播
   const loopSrc = ref(""); // 播放头当前帧
   const using = ref<"clip" | "loop">("loop");
 
@@ -51,9 +48,8 @@ export function useBehavior(): BehaviorController {
   );
 
   let behavior: Behavior | null = null;
-  let onEnd: (() => void) | undefined;
   let exiting = false;
-  // 是否已进入 loop（基底/熟睡）：仅此时允许点击唤醒。enter/exit/一次性行为期间为 false。
+  // 是否已进入 loop：仅此时允许点击唤醒。enter/lead/exit 期间为 false。
   let inLoop = false;
 
   // 播放头 / 循环状态
@@ -70,7 +66,6 @@ export function useBehavior(): BehaviorController {
 
   let stepTimer: number | undefined;
   let twitchTimer: number | undefined;
-  let autoEndTimer: number | undefined;
 
   function clearStepTimer() {
     if (stepTimer !== undefined) { window.clearTimeout(stepTimer); stepTimer = undefined; }
@@ -78,16 +73,12 @@ export function useBehavior(): BehaviorController {
   function clearTwitchTimer() {
     if (twitchTimer !== undefined) { window.clearTimeout(twitchTimer); twitchTimer = undefined; }
   }
-  function clearAutoEndTimer() {
-    if (autoEndTimer !== undefined) { window.clearTimeout(autoEndTimer); autoEndTimer = undefined; }
-  }
   function clearAllTimers() {
     clearStepTimer();
     clearTwitchTimer();
-    clearAutoEndTimer();
   }
 
-  /** 离散片段（enter/exit/非相邻插播）整段播放一次。 */
+  /** 离散片段（enter/lead/exit/非相邻插播）整段播放一次。 */
   function playClip(name: string, done: () => void) {
     const c = CLIPS[name];
     if (!c) { done(); return; }
@@ -98,17 +89,9 @@ export function useBehavior(): BehaviorController {
   /** 进入循环：建立播放头状态并开始呼吸 + 排期插播。 */
   function beginLoop() {
     const loop = behavior?.loop;
-    if (!loop) {
-      // 一次性行为（无 loop）：直接走退出（含 exit）后结束。
-      requestExit(onEnd ?? (() => {}));
-      return;
-    }
+    if (!loop) return;
     const base = CLIPS[loop.base];
-    if (!base) {
-      // 基底片段名配置错误：优雅结束而非抛错。
-      requestExit(onEnd ?? (() => {}));
-      return;
-    }
+    if (!base) return; // 基底片段名配置错误：优雅停在当前帧而非抛错
     srcFrames = SOURCES[base.src] ?? [];
     baseLo = Math.min(base.range[0], base.range[1]);
     baseHi = Math.max(base.range[0], base.range[1]) - 1;
@@ -127,7 +110,7 @@ export function useBehavior(): BehaviorController {
     cur = baseLo;
     phase = "breatheUp";
     pendingAdj = null;
-    inLoop = true; // 已进入熟睡：从此刻起允许点击唤醒
+    inLoop = true; // 已进入 loop：从此刻起允许点击唤醒
     using.value = "loop";
     loopSrc.value = srcFrames[cur] ?? "";
     scheduleNextTwitch();
@@ -220,25 +203,25 @@ export function useBehavior(): BehaviorController {
     });
   }
 
-  function start(b: Behavior, end?: () => void) {
+  function start(b: Behavior, opts?: { lead?: string }) {
     clearAllTimers();
     clip.stop();
     behavior = b;
-    onEnd = end;
     exiting = false;
-    inLoop = false; // enter（趴下）阶段不可点击唤醒，进入 loop 后才置 true
-    if (b.autoEndMs && b.autoEndMs > 0) {
-      autoEndTimer = window.setTimeout(() => requestExit(onEnd ?? (() => {})), b.autoEndMs);
-    }
-    if (b.enter) {
-      playClip(b.enter, () => { if (!exiting) beginLoop(); });
-    } else {
-      beginLoop();
-    }
+    inLoop = false;
+    const toLoop = () => { if (!exiting) beginLoop(); };
+    const afterEnter = () => {
+      if (exiting) return;
+      // lead：进入 loop 前先把一次性动作片段（如 feed）播一次。
+      if (opts?.lead) playClip(opts.lead, toLoop);
+      else toLoop();
+    };
+    if (b.enter) playClip(b.enter, afterEnter);
+    else afterEnter();
   }
 
   function requestExit(onDone: () => void) {
-    if (exiting) return; // 幂等：自动结束与点击竞态只执行一次
+    if (exiting) return; // 幂等：轮换与点击竞态只执行一次
     exiting = true;
     inLoop = false; // 开始退出（起身）：退出期间不再允许点击唤醒
     clearAllTimers();

@@ -1,73 +1,74 @@
 /**
- * 行为库 —— 像剧本一样按名字引用片段（见 `./clips.ts`）。
+ * 行为库 + 动作库 —— 像剧本一样按名字引用片段（见 ./clips.ts）。
  *
- * 一个行为（Behavior）＝ 可选的 enter（进入放一次）→ 可选的 loop（呼吸基底 + 随机插播）
- * → 可选的 exit（退出放一次）。没有 loop 的行为是「一次性动作」（放完 enter/exit 即结束）。
- * 状态机（`useCatBrain`）读取本表来决定播放与中断。
+ * 行为（Behavior）＝ 自治、可循环的状态：idle / sleep /（将来 walk）。每个有
+ * enter?/loop/exit?，以及参与「加权轮换」的 weight 与 duration。useCatBrain 按 weight
+ * 随机在行为间轮换，跨行为切换播离开者的 exit、进入者的 enter。
  *
- * 新增行为：在 `./clips.ts` 加好片段，然后在此加一条引用这些片段名的行为即可
- *（不必再像旧设计那样登记两遍）。
+ * 动作（Action）＝ 手动触发的一次性动作：feed / wiki。每个归属一个行为(home)，触发时
+ * 切到该行为并把指定片段(clip)播一次，然后留在该行为的 loop 里。
  */
 
 /** 循环段：基底 + 随机插播。 */
 export interface BehaviorLoop {
   /** 基底片段名（呼吸等环境动作）。 */
   base: string;
-  /** 随机插播的片段名列表（可空＝纯基底循环）。 */
+  /** 随机插播片段名列表（可空＝纯基底循环）。 */
   random: string[];
   /** 两次插播之间的随机间隔 [min,max]（毫秒）。 */
   delay: [number, number];
 }
 
-/** 一个行为。 */
+/** 一个自治行为。 */
 export interface Behavior {
-  /** 进入时正放一次的片段名（可选；一次性动作只配它）。 */
+  /** 进入时正放一次的片段名（sleep: lieDown；idle: 无）。 */
   enter?: string;
-  /** 环境循环（可选；纯一次性动作不配）。 */
-  loop?: BehaviorLoop;
-  /** 退出时正放一次的片段名（可选；如 sleep 的 wakeUp）。 */
+  /** 环境循环（自治行为必有，轮换期间持续播放）。 */
+  loop: BehaviorLoop;
+  /** 离开时正放一次的片段名（sleep: wakeUp；idle: 无）。 */
   exit?: string;
-  /** 多少毫秒后自动结束（sleep 2 分钟自动醒）；不设＝不自动结束。仅对有 loop 的行为有意义。 */
-  autoEndMs?: number;
-  /** 鼠标移动能否打断并切回跟随，默认 false（只能点击/自动结束）。 */
+  /** 加权轮换被选中的相对权重（idle 高、sleep 低）。 */
+  weight: number;
+  /** 本行为持续多久(ms)后触发下一次轮换，随机区间 [min,max]。 */
+  duration: [number, number];
+  /** 鼠标移动能否抢占进 follow，默认 false。 */
   interruptible?: boolean;
-  /** 能否被空闲自动播放挑中，默认 false。 */
-  idleAuto?: boolean;
 }
 
-/** 行为库。 */
+/** 一个手动一次性动作。 */
+export interface ActionDef {
+  /** 归属行为名。 */
+  home: string;
+  /** 触发时要播放的片段名。 */
+  clip: string;
+}
+
+/** 行为库（参与加权轮换）。 */
 export const BEHAVIORS: Record<string, Behavior> = {
   idle: {
-    // idle 是「休息态」本身，不参与 idleAuto 自动挑选。
-    // 呼吸为底，每隔几秒随机眨眼/摇尾巴/动耳朵（摇尾巴与基底接缝相邻＝丝滑，
-    // 眨眼/动耳朵非相邻＝离散播放，见 clips.ts 注释）。
+    // 呼吸为底，待机时随机眨眼/摇尾巴/动耳朵/吃一下/wiki 一下。
     loop: {
       base: "idleBreathe",
-      random: ["idleBlink", "idleTail", "idleEar"],
+      random: ["idleBlink", "idleTail", "idleEar", "feed", "wiki"],
       delay: [5000, 11000],
     },
+    weight: 10, // 大部分时间待机
+    duration: [15000, 40000],
+    interruptible: true, // 鼠标移动可抢占进 follow
   },
   sleep: {
     enter: "lieDown",
     loop: { base: "sleepBreathe", random: ["sleepEar", "sleepTail"], delay: [3000, 7000] },
     exit: "wakeUp", // 醒来＝趴下倒放（靠片段 range 方向实现）
-    autoEndMs: 120000,
-    // interruptible 默认 false：睡觉不被鼠标移动打断，只能点击/2 分钟自动醒。
-    idleAuto: true,
+    weight: 2, // 偶尔睡
+    duration: [60000, 120000], // 睡 1–2 分钟（取代旧的 autoEndMs）
+    // interruptible 默认 false：睡觉不被鼠标移动打断，只能点击/时长到。
   },
-  wiki: {
-    enter: "wiki", // 只有 enter ＝ 一次性动作：放完即结束
-    interruptible: true, // wiki 可被鼠标移动打断（覆盖默认 false）
-    idleAuto: true,
-  },
-  feed: {
-    enter: "feed", // 一次性投喂：放完即结束
-    // interruptible 默认 false：投喂是用户主动行为，鼠标移动/点击都不打断，须完整播完。
-    // 不设 idleAuto：只由菜单「投喂」触发，不会自动播放。
-  },
+  // walk: 将来加，需 cat-walk 素材。
 };
 
-/** 空闲自动播放池：`idleAuto` 为 true 的行为名。 */
-export const IDLE_POOL: string[] = Object.entries(BEHAVIORS)
-  .filter(([, b]) => b.idleAuto)
-  .map(([name]) => name);
+/** 动作库（手动触发的一次性动作）。 */
+export const ACTIONS: Record<string, ActionDef> = {
+  feed: { home: "idle", clip: "feed" },
+  wiki: { home: "idle", clip: "wiki" },
+};
