@@ -54,7 +54,7 @@ export const FOLLOW_FRAMES: string[] = toFrameList(followFrames);
  */
 export const IDLE_FRAMES: string[] = toFrameList(idleFrames);
 
-/** 动作名称 → 有序的帧 URL。键必须与 `./index.ts` 中的 `ACTIONS` 一致。 */
+/** 动作帧来源 → 有序的帧 URL。键由 `./clips.ts` 的 `SOURCES` 引用（如 sleep、wiki）。 */
 export const FRAMES: Record<string, string[]> = {
   wiki: toFrameList(wikiFrames),
   sleep: toFrameList(sleepFrames),
