@@ -227,11 +227,18 @@ export function useCatBrain(opts: BrainOptions): CatBrain {
         return;
       }
       case "idle": {
-        if (moved && following) enterFollow();
+        // 仅当鼠标移动且光标在头部死区之外(angle 非 null)时才进入 follow；
+        // 死区内不跟随，避免在死区里晃鼠标导致 idle/follow 每帧来回跳。
+        if (moved && following && sample.angle !== null) enterFollow();
         return;
       }
       case "follow": {
         if (!following || Date.now() - lastMoveAt > config.idleTimeoutMs) {
+          enterIdle();
+          return;
+        }
+        // 光标进入头部死区(angle 为 null)：直接转入 idle，而不是朝前发呆。
+        if (sample.angle === null) {
           enterIdle();
           return;
         }
