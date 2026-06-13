@@ -9,7 +9,7 @@
  * 添加新动作的步骤：
  * 1. 将帧以 `frame_XXXXXX.webp` 命名放入 `src/assets/<new-dir>/`。
  * 2. 复制下方的一个 glob 块，替换其中的目录名。
- * 3. 将该键添加到 `FRAMES` 记录中，然后在 `./index.ts` 中注册它。
+ * 3. 将该键添加到 `FRAMES` 记录中，然后在 `./clips.ts` 的 `SOURCES` 里登记它。
  */
 
 /** 辅助函数：将 glob 结果映射转换为按帧顺序排列的 URL 数组。 */

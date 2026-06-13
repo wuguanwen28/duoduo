@@ -112,6 +112,8 @@ export function useBehavior(): BehaviorController {
         const lo = Math.min(c.range[0], c.range[1]);
         const hi = Math.max(c.range[0], c.range[1]) - 1;
         const adjacent = c.src === base.src && lo === baseHi + 1;
+        // 相邻插播走播放头「出去再回来」本身就是 yoyo，故忽略其 yoyo 标志、也不预切帧；
+        // 非相邻插播才离散播放（此时才用其 yoyo，由 resolveClip 处理）。
         return { name, hi, fps: c.fps, adjacent, frames: adjacent ? [] : resolveClip(c) };
       });
     cur = baseLo;
