@@ -96,17 +96,24 @@ export function useBehavior(): BehaviorController {
       return;
     }
     const base = CLIPS[loop.base];
+    if (!base) {
+      // 基底片段名配置错误：优雅结束而非抛错。
+      requestExit(onEnd ?? (() => {}));
+      return;
+    }
     srcFrames = SOURCES[base.src] ?? [];
     baseLo = Math.min(base.range[0], base.range[1]);
     baseHi = Math.max(base.range[0], base.range[1]) - 1;
     baseFps = base.fps;
-    twitches = loop.random.map((name) => {
-      const c = CLIPS[name];
-      const lo = Math.min(c.range[0], c.range[1]);
-      const hi = Math.max(c.range[0], c.range[1]) - 1;
-      const adjacent = c.src === base.src && lo === baseHi + 1;
-      return { name, hi, fps: c.fps, adjacent, frames: adjacent ? [] : resolveClip(c) };
-    });
+    twitches = loop.random
+      .map((name) => CLIPS[name] ? { name, clip: CLIPS[name] } : null)
+      .filter((x): x is { name: string; clip: typeof CLIPS[string] } => x !== null)
+      .map(({ name, clip: c }) => {
+        const lo = Math.min(c.range[0], c.range[1]);
+        const hi = Math.max(c.range[0], c.range[1]) - 1;
+        const adjacent = c.src === base.src && lo === baseHi + 1;
+        return { name, hi, fps: c.fps, adjacent, frames: adjacent ? [] : resolveClip(c) };
+      });
     cur = baseLo;
     phase = "breatheUp";
     pendingAdj = null;
@@ -155,12 +162,18 @@ export function useBehavior(): BehaviorController {
       case "back":
         if (cur > baseHi) cur--;
         if (cur <= baseHi) {
-          cur = baseHi;
-          phase = "breatheDown"; // 回到接缝，从尾帧继续呼吸（向下）
+          resumeBreatheFromSeam(); // 回到接缝，从尾帧继续呼吸（向下）
           scheduleNextTwitch();
         }
         break;
     }
+    loopSrc.value = srcFrames[cur] ?? "";
+  }
+
+  /** 回到接缝（baseHi）并从尾帧继续呼吸（向下）。base 与插播两条返回路径共用。 */
+  function resumeBreatheFromSeam() {
+    cur = baseHi;
+    phase = "breatheDown";
     loopSrc.value = srcFrames[cur] ?? "";
   }
 
@@ -189,10 +202,8 @@ export function useBehavior(): BehaviorController {
     using.value = "clip";
     clip.play(t.frames, { fps: t.fps, loop: false }, () => {
       if (exiting) return;
-      cur = baseHi; // 回到接缝（此处一次硬切，属非相邻兜底）
-      phase = "breatheDown";
       using.value = "loop";
-      loopSrc.value = srcFrames[cur] ?? "";
+      resumeBreatheFromSeam(); // 回到接缝（此处一次硬切，属非相邻兜底）
       scheduleNextTwitch();
       scheduleStep();
     });
