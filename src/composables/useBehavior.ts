@@ -16,6 +16,8 @@ import type { Behavior } from "../actions/behaviors";
 /** 预处理好的插播信息。 */
 interface PreparedTwitch {
   name: string;
+  /** 加权随机挑选时的相对权重（来自 BehaviorLoop.random[i].weight，默认 1）。 */
+  weight: number;
   /** 该插播覆盖的最大绝对帧索引（excursion 走到这里）。 */
   hi: number;
   fps: number;
@@ -97,15 +99,19 @@ export function useBehavior(): BehaviorController {
     baseHi = Math.max(base.range[0], base.range[1]) - 1;
     baseFps = base.fps;
     twitches = loop.random
-      .map((name) => CLIPS[name] ? { name, clip: CLIPS[name] } : null)
-      .filter((x): x is { name: string; clip: typeof CLIPS[string] } => x !== null)
-      .map(({ name, clip: c }) => {
+      .map((item) =>
+        CLIPS[item.clip] ? { name: item.clip, weight: item.weight ?? 1, clip: CLIPS[item.clip] } : null,
+      )
+      .filter(
+        (x): x is { name: string; weight: number; clip: typeof CLIPS[string] } => x !== null,
+      )
+      .map(({ name, weight, clip: c }) => {
         const lo = Math.min(c.range[0], c.range[1]);
         const hi = Math.max(c.range[0], c.range[1]) - 1;
         const adjacent = c.src === base.src && lo === baseHi + 1;
         // 相邻插播走播放头「出去再回来」本身就是 yoyo，故忽略其 yoyo 标志、也不预切帧；
         // 非相邻插播才离散播放（此时才用其 yoyo，由 resolveClip 处理）。
-        return { name, hi, fps: c.fps, adjacent, frames: adjacent ? [] : resolveClip(c) };
+        return { name, weight, hi, fps: c.fps, adjacent, frames: adjacent ? [] : resolveClip(c) };
       });
     cur = baseLo;
     phase = "breatheUp";
@@ -171,6 +177,18 @@ export function useBehavior(): BehaviorController {
     loopSrc.value = srcFrames[cur] ?? "";
   }
 
+  /** 按各插播项的 weight 加权随机挑一个下标。权重和为 0 时退化为等概率。 */
+  function pickWeightedTwitch(): number {
+    const total = twitches.reduce((sum, t) => sum + t.weight, 0);
+    if (total <= 0) return Math.floor(Math.random() * twitches.length);
+    let r = Math.random() * total;
+    for (let i = 0; i < twitches.length; i++) {
+      r -= twitches[i].weight;
+      if (r < 0) return i;
+    }
+    return twitches.length - 1; // 浮点兜底
+  }
+
   /** 排期下一次随机插播。 */
   function scheduleNextTwitch() {
     clearTwitchTimer();
@@ -180,7 +198,7 @@ export function useBehavior(): BehaviorController {
     const delay = lo + Math.random() * Math.max(0, hi - lo);
     twitchTimer = window.setTimeout(() => {
       if (exiting) return;
-      const idx = Math.floor(Math.random() * twitches.length);
+      const idx = pickWeightedTwitch();
       if (twitches[idx].adjacent) {
         pendingAdj = idx; // 等播放头摆到接缝再出发（见 advance）
       } else {

@@ -62,41 +62,64 @@ DEFAULT_CLEAR_REGIONS = [
     '81%,90%,100%,100%',   # 右下角水印（含余量）
 ]
 
-def remove_green_screen(frame, lower_green=None, upper_green=None):
+def remove_green_screen(frame, lower_green=None, upper_green=None, erode_px=2):
     """
-    移除绿色背景，返回带透明通道的图像
-    
+    移除绿色背景，返回带透明通道的 RGBA 图像。
+
+    针对两类常见问题做了改进：
+      1) 「猫身上被抠出空洞」——金色/偏黄绿的毛发会落进绿色范围被误抠。这里用 flood fill
+         填洞：只把「连通到画面边缘」的绿当作背景，猫身上孤立的绿块（不连边缘）补回前景。
+      2) 「绿边没抠干净」——轮廓内缩 erode_px 像素 + 羽化削掉绿边；再做去绿溢色（despill）：
+         把「绿为最强通道」的像素（g>r 且 g>b，典型溢色）的绿压到 max(R,B)；
+         奶油/黄毛是 R≥G，不会被误伤。
+
     参数：
-        frame: OpenCV读取的视频帧（BGR格式）
-        lower_green: HSV颜色空间下绿色下限，默认[35, 40, 40]
-        upper_green: HSV颜色空间下绿色上限，默认[85, 255, 255]
-    
+        frame      : OpenCV 读取的视频帧（BGR）
+        lower_green: HSV 绿色下限，默认 [35, 30, 40]（S 下限放低以纳入边缘淡绿）
+        upper_green: HSV 绿色上限，默认 [85, 255, 255]
+        erode_px   : 轮廓内缩像素数（削绿边），默认 2；设 0 则不内缩
     返回：
-        RGBA格式的numpy数组
+        RGBA 格式的 numpy 数组
     """
     if lower_green is None:
-        lower_green = np.array([35, 40, 40])  # H, S, V下限
+        lower_green = np.array([35, 30, 40])  # H, S, V 下限
     if upper_green is None:
-        upper_green = np.array([85, 255, 255])  # H, S, V上限
-    
-    # 转换到HSV颜色空间（更容易分离绿色）
+        upper_green = np.array([85, 255, 255])  # H, S, V 上限
+
+    # 转换到 HSV 并生成绿色掩码（255=绿）
     hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
-    
-    # 创建绿色掩码
-    mask = cv2.inRange(hsv, lower_green, upper_green)
-    
-    # 形态学操作：去除噪点，填充空洞
+    green = cv2.inRange(hsv, lower_green, upper_green)
+
+    # 形态学去噪
     kernel = np.ones((3, 3), np.uint8)
-    mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel, iterations=1)
-    mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel, iterations=1)
-    
-    # 反色掩码（前景为白色）
-    mask_inv = cv2.bitwise_not(mask)
-    
-    # 转换为RGB并添加Alpha通道
-    frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-    rgba = np.dstack((frame_rgb, mask_inv))
-    
+    green = cv2.morphologyEx(green, cv2.MORPH_OPEN, kernel, iterations=1)
+    green = cv2.morphologyEx(green, cv2.MORPH_CLOSE, kernel, iterations=1)
+
+    # 前景 = 非绿
+    fg = cv2.bitwise_not(green)
+
+    # 填洞：从画面角 (0,0) 对背景区灌水，连通到边缘的才算真背景；
+    # 猫身上被误判为绿的「洞」不连边缘、灌不到，于是补回前景。
+    h, w = fg.shape
+    flood = fg.copy()
+    ff_mask = np.zeros((h + 2, w + 2), np.uint8)
+    cv2.floodFill(flood, ff_mask, (0, 0), 255)
+    holes = cv2.bitwise_not(flood)
+    fg = cv2.bitwise_or(fg, holes)
+
+    # 内缩去绿边 + 羽化得到柔和 alpha
+    if erode_px > 0:
+        fg = cv2.erode(fg, kernel, iterations=erode_px)
+    alpha = cv2.GaussianBlur(fg, (3, 3), 0)
+
+    # 去绿溢色：绿为最强通道的像素，把绿压到 max(R,B)
+    rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB).astype(np.int16)
+    r, g, b = rgb[:, :, 0], rgb[:, :, 1], rgb[:, :, 2]
+    spill = (g > r) & (g > b)
+    rgb[:, :, 1] = np.where(spill, np.maximum(r, b), g)
+    rgb = np.clip(rgb, 0, 255).astype(np.uint8)
+
+    rgba = np.dstack((rgb, alpha)).astype(np.uint8)
     return rgba
 
 def parse_rect(spec, width, height):
@@ -360,7 +383,7 @@ Examples:
     parser.add_argument('--zip', action='store_true', help='Pack into ZIP file')
     parser.add_argument('--quality', type=int, default=90, help='WebP quality (0-100, default 90)')
     parser.add_argument('--lower-h', type=int, default=35, help='Green HSV lower H (default 35)')
-    parser.add_argument('--lower-s', type=int, default=40, help='Green HSV lower S (default 40)')
+    parser.add_argument('--lower-s', type=int, default=30, help='Green HSV lower S (default 30)')
     parser.add_argument('--lower-v', type=int, default=40, help='Green HSV lower V (default 40)')
     parser.add_argument('--upper-h', type=int, default=85, help='Green HSV upper H (default 85)')
     parser.add_argument('--upper-s', type=int, default=255, help='Green HSV upper S (default 255)')

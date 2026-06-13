@@ -26,7 +26,7 @@ const followFrames = import.meta.glob<string>("../assets/cat-webp/*.webp", {
 });
 
 /** 空闲帧 —— 当猫无事可做时显示的休息循环。 */
-const idleFrames = import.meta.glob<string>("../assets/cat-idla/*.webp", {
+const idleFrames = import.meta.glob<string>("../assets/cat-idla-hd/*.webp", {
   eager: true,
   import: "default",
 });

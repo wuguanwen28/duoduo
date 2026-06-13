@@ -21,7 +21,7 @@
           @mousedown="onMouseDown"
           @contextmenu.prevent
         >
-          <CatSprite :src="currentSrc" />
+          <CatSprite :src="currentSrc" :style="spriteTransform" />
         </div>
       </template>
       <Menu
@@ -71,6 +71,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import Menu from "../Menu/Menu.vue";
 import CatSprite from "../CatSprite/CatSprite.vue";
 import { useCatBrain } from "../../composables/useCatBrain";
+import { sourceOfFrame, transformOfSource } from "../../actions/clips";
 
 // ── 行为状态机 ──────────────────────────────────────────
 // 所有"显示哪一帧"的逻辑都集中在 brain 中；Pet.vue 只负责
@@ -90,6 +91,22 @@ const size = ref(1.0);
 const imgStyle = computed(() => {
   const px = Math.round(200 * size.value);
   return { width: `${px}px`, height: `${px}px` };
+});
+
+// 按当前帧所属来源做视觉对齐：不同文件夹素材里猫的位置/大小不一致，
+// 这里把该来源的偏移/缩放（见 clips.ts 的 SOURCE_TRANSFORMS）应用到精灵图上。
+// 偏移以精灵直径(200*size)为基准换算成像素，故缩放滑块拉动时相对位置不变；
+// 缩放以底部中心为锚（猫脚不动、向上伸缩）。变换只作用在 <img> 视觉层，
+// 不影响外层 wrap 的点击命中、菜单锚点与 Rust 注视计算。
+const spriteTransform = computed(() => {
+  const t = transformOfSource(sourceOfFrame(currentSrc.value));
+  const base = 200 * size.value;
+  const tx = Math.round(base * t.offsetX);
+  const ty = Math.round(base * t.offsetY);
+  return {
+    transform: `translate(${tx}px, ${ty}px) scale(${t.scale})`,
+    transformOrigin: "bottom center",
+  };
 });
 
 // 校准圆圈：与死区大小相同，使用绿色，可拖动。

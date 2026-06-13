@@ -9,12 +9,20 @@
  * 切到该行为并把指定片段(clip)播一次，然后留在该行为的 loop 里。
  */
 
+/** 一个随机插播项：片段名 + 相对权重。 */
+export interface TwitchItem {
+  /** 插播片段名。 */
+  clip: string;
+  /** 被选中的相对权重（同一 loop 内归一化比较），省略默认 1。 */
+  weight?: number;
+}
+
 /** 循环段：基底 + 随机插播。 */
 export interface BehaviorLoop {
   /** 基底片段名（呼吸等环境动作）。 */
   base: string;
-  /** 随机插播片段名列表（可空＝纯基底循环）。 */
-  random: string[];
+  /** 随机插播项列表（可空＝纯基底循环），按各自 weight 加权随机挑选。 */
+  random: TwitchItem[];
   /** 两次插播之间的随机间隔 [min,max]（毫秒）。 */
   delay: [number, number];
 }
@@ -47,10 +55,17 @@ export interface ActionDef {
 export const BEHAVIORS: Record<string, Behavior> = {
   idle: {
     // 呼吸为底，待机时随机眨眼/摇尾巴/动耳朵/吃一下/wiki 一下。
+    // 眨眼/摇尾/动耳是高频小动作给高权重；feed/wiki 较「重」故低权重、偶尔出现。
     loop: {
       base: "idleBreathe",
-      random: ["idleBlink", "idleTail", "idleEar", "feed", "wiki"],
-      delay: [5000, 11000],
+      random: [
+        { clip: "idleBlink", weight: 5 },
+        { clip: "idleTail", weight: 5 },
+        { clip: "idleEar", weight: 5 },
+        { clip: "feed", weight: 1 },
+        { clip: "wiki", weight: 1 },
+      ],
+      delay: [3000, 8000],
     },
     weight: 10, // 大部分时间待机
     duration: [15000, 40000],
@@ -58,7 +73,14 @@ export const BEHAVIORS: Record<string, Behavior> = {
   },
   sleep: {
     enter: "lieDown",
-    loop: { base: "sleepBreathe", random: ["sleepEar", "sleepTail"], delay: [3000, 7000] },
+    loop: {
+      base: "sleepBreathe",
+      random: [
+        { clip: "sleepEar", weight: 1 },
+        { clip: "sleepTail", weight: 1 },
+      ],
+      delay: [3000, 7000],
+    },
     exit: "wakeUp", // 醒来＝趴下倒放（靠片段 range 方向实现）
     weight: 2, // 偶尔睡
     duration: [60000, 120000], // 睡 1–2 分钟（取代旧的 autoEndMs）
