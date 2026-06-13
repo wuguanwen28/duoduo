@@ -15,6 +15,7 @@ export const SOURCES: Record<string, string[]> = {
   sleep: FRAMES.sleep,
   idle: IDLE_FRAMES,
   wiki: FRAMES.wiki,
+  feed: FRAMES.feed,
 };
 
 /** 一个最小动画单元。 */
@@ -57,4 +58,5 @@ export const CLIPS: Record<string, Clip> = {
   sleepTail: { src: "sleep", range: [200, 241], fps: 24, label: "睡觉尾巴" }, // 从接缝出发，走更远
   idleBreathe: { src: "idle", range: [0, IDLE_FRAMES.length], fps: 24, label: "空闲呼吸" },
   wiki: { src: "wiki", range: [0, FRAMES.wiki.length], fps: 24, label: "wiki" },
+  feed: { src: "feed", range: [0, FRAMES.feed.length], fps: 24, label: "投喂" },
 };

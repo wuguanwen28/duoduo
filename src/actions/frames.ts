@@ -42,6 +42,11 @@ const sleepFrames = import.meta.glob<string>("../assets/cat-sleep/*.webp", {
   import: "default",
 });
 
+const feedFrames = import.meta.glob<string>("../assets/cat-feed/*.webp", {
+  eager: true,
+  import: "default",
+});
+
 /**
  * 注视 / 跟随行为所用的帧。与动作的 FRAMES 分开存放，因为它由光标角度
  * 驱动（见 `useGaze`），而非 fps 定时器。
@@ -58,4 +63,5 @@ export const IDLE_FRAMES: string[] = toFrameList(idleFrames);
 export const FRAMES: Record<string, string[]> = {
   wiki: toFrameList(wikiFrames),
   sleep: toFrameList(sleepFrames),
+  feed: toFrameList(feedFrames),
 };

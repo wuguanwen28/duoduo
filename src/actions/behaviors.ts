@@ -54,6 +54,11 @@ export const BEHAVIORS: Record<string, Behavior> = {
     interruptible: true, // wiki 可被鼠标移动打断（覆盖默认 false）
     idleAuto: true,
   },
+  feed: {
+    enter: "feed", // 一次性投喂：放完即结束
+    // interruptible 默认 false：投喂是用户主动行为，鼠标移动/点击都不打断，须完整播完。
+    // 不设 idleAuto：只由菜单「投喂」触发，不会自动播放。
+  },
 };
 
 /** 空闲自动播放池：`idleAuto` 为 true 的行为名。 */

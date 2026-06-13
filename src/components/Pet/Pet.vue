@@ -247,7 +247,7 @@ function onSleep() {
 
 function onFeed() {
   menuOpen.value = false;
-  showToast("投喂功能暂未开发");
+  brain.trigger("feed", "follow");
 }
 
 function onQuit() {
