@@ -247,7 +247,8 @@ function onSleep() {
 
 function onFeed() {
   menuOpen.value = false;
-  brain.trigger("feed", "follow");
+  // 喂完直接回 idle（不经 follow），避免结束瞬间闪一下跟随状态。
+  brain.trigger("feed", "idle");
 }
 
 function onQuit() {
