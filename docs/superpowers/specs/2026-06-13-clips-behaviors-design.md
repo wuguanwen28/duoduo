@@ -101,7 +101,7 @@ interface Behavior {
   exit?: string;
   /** 多少毫秒后自动结束（sleep 2 分钟自动醒）；不设＝不自动结束。仅对有 loop 的行为有意义。 */
   autoEndMs?: number;
-  /** 鼠标移动能否打断并切回跟随，默认 true。 */
+  /** 鼠标移动能否打断并切回跟随，默认 false（默认不被鼠标打断，只能点击/自动结束）。 */
   interruptible?: boolean;
   /** 能否被空闲自动播放挑中，默认 false。 */
   idleAuto?: boolean;
@@ -120,12 +120,12 @@ const BEHAVIORS: Record<string, Behavior> = {
     loop:  { base:'sleepBreathe', random:['sleepEar','sleepTail'], delay:[3000,7000] },
     exit:  'wakeUp',
     autoEndMs: 120000,
-    interruptible: false,
+    // interruptible 默认 false：睡觉不被鼠标移动打断，只能点击/2 分钟自动醒
     idleAuto: true,
   },
   wiki: {
-    enter: 'wiki',          // 只有 enter ＝ 一次性动作：放完即结束
-    interruptible: true,
+    enter: 'wiki',           // 只有 enter ＝ 一次性动作：放完即结束
+    interruptible: true,     // wiki 可被鼠标移动打断（覆盖默认 false）
     idleAuto: true,
   },
 };
@@ -191,7 +191,7 @@ interface BehaviorController {
 - `enterIdle()` → `beh.start(BEHAVIORS.idle)`。
 - `trigger(name)` → `beh.start(BEHAVIORS[name], finishAction)`，记录 `actionResume`；`name` 不存在则空操作。**不再有"先查分段表再查老表"的双路**。
 - `wake()` → `beh.requestExit(finishAction)`。
-- tick 的可打断判定读 `BEHAVIORS[name].interruptible`。
+- tick 的可打断判定读 `BEHAVIORS[name].interruptible`：默认 false，仅当显式为 `true`（如 wiki）时，鼠标移动才打断动作切回 follow（判定写成 `=== true`）。
 - idle 自动播放从 `IDLE_POOL` 随机挑（`idleAuto` 的行为）。
 - `pet-play-action` 事件仍转发到 `trigger(name)`。
 - 卸载 `beh.stop()`。
