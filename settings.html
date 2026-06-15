@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>资源设置</title>
+    <style>
+      /* Vue 挂载前的静态加载占位（挂载时会被替换掉），避免首屏空白。 */
+      #app-loading {
+        position: fixed;
+        inset: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 14px;
+        background: #f5f6f8;
+        color: #909399;
+        font-family: -apple-system, "Microsoft YaHei", "Segoe UI", sans-serif;
+        font-size: 13px;
+      }
+      .app-spinner {
+        width: 34px;
+        height: 34px;
+        border: 3px solid #dcdfe6;
+        border-top-color: #409eff;
+        border-radius: 50%;
+        animation: app-spin 0.8s linear infinite;
+      }
+      @keyframes app-spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app">
+      <div id="app-loading">
+        <div class="app-spinner"></div>
+        <div>资源设置加载中…</div>
+      </div>
+    </div>
+    <script type="module" src="/src/settings/main.ts"></script>
+  </body>
+</html>

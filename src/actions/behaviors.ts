@@ -17,3 +17,6 @@ export type { Behavior, TwitchItem, BehaviorLoop };
 export function getBehaviors(): Record<string, Behavior> {
   return getModel().behaviors;
 }
+
+/** 取默认/兜底行为名（启动、follow 回落、触发动作的归属都用它）。 */
+export { getDefaultBehavior } from "../resources/store";

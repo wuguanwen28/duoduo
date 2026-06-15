@@ -1,7 +1,7 @@
 /**
  * useCatBrain —— 猫的行为状态机。
  *
- * 组合 useGaze（光标跟随）与 useBehavior（片段+行为播放）。
+ * 组合 useGaze（光标跟随）与 useBehavior（动作 + 行为播放）。
  *
  * 状态：
  *   behavior : 正在运行某个自治行为（idle/sleep…），currentBehavior 记录是哪个。
@@ -11,12 +11,16 @@
  * weight 加权随机挑下一个行为，跨行为切换播离开者 exit→进入者 enter。idle 权重高、sleep 低，
  * 所以大部分时间待机、偶尔睡。follow 是抢占层（看 interruptible），期间暂停轮换。
  *
- * 触发：trigger(name) 先查行为（切过去待着）、再查动作（切到归属行为、播一次动作片段、留下）。
+ * 触发：trigger(name) 先查行为（切过去待着）、再查动作（切到 idle 把该动作播一次）。
+ *
+ * 行为/动作数据来自外置资源（`getBehaviors`/`getClip`），故 useCatBrain 必须在
+ * 资源加载成功后才被实例化（由 App.vue 保证：就绪才挂载 <Pet>）。
  */
 import { computed, onMounted, onUnmounted, ref, type Ref } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import { BEHAVIORS, ACTIONS } from "../actions/behaviors";
+import { getBehaviors, getDefaultBehavior } from "../actions/behaviors";
+import { getClip } from "../actions/clips";
 import { useGaze } from "./useGaze";
 import { useBehavior } from "./useBehavior";
 
@@ -84,12 +88,16 @@ export interface CatBrain {
 
 export function useCatBrain(opts: BrainOptions): CatBrain {
   const config: BrainConfig = { ...DEFAULT_CONFIG, ...opts.config };
+  // 行为库一次性读取（资源加载后不变）。
+  const behaviors = getBehaviors();
+  // 默认/兜底行为名（启动、follow 回落、触发动作的归属都用它）。
+  const defaultBehavior = getDefaultBehavior();
   const gaze = useGaze();
   const beh = useBehavior();
 
-  const state = ref<CatState>({ kind: "behavior", behavior: "idle" });
+  const state = ref<CatState>({ kind: "behavior", behavior: defaultBehavior });
   const cursorOverCat = ref(false);
-  let currentBehavior = "idle";
+  let currentBehavior = defaultBehavior;
 
   /** 当前帧来源：gaze(注视) / beh(行为播放器)。 */
   const activePlayer = ref<"gaze" | "beh">("beh");
@@ -113,7 +121,7 @@ export function useCatBrain(opts: BrainOptions): CatBrain {
   /** 进入某行为后，按其 duration 排下一次轮换。 */
   function scheduleRotation() {
     clearRotationTimer();
-    const b = BEHAVIORS[currentBehavior];
+    const b = behaviors[currentBehavior];
     if (!b) return;
     const [lo, hi] = b.duration;
     const delay = lo + Math.random() * Math.max(0, hi - lo);
@@ -126,8 +134,8 @@ export function useCatBrain(opts: BrainOptions): CatBrain {
 
   /** 按 weight 加权随机挑一个行为名。 */
   function pickWeightedBehavior(): string {
-    const names = Object.keys(BEHAVIORS);
-    const weights = names.map((n) => BEHAVIORS[n].weight);
+    const names = Object.keys(behaviors);
+    const weights = names.map((n) => behaviors[n].weight);
     const total = weights.reduce((a, b) => a + b, 0);
     let r = Math.random() * total;
     for (let i = 0; i < names.length; i++) {
@@ -151,7 +159,7 @@ export function useCatBrain(opts: BrainOptions): CatBrain {
    * 从 follow 来则不走 exit（抢占层无转场）。
    */
   function goToBehavior(name: string, lead?: string) {
-    const b = BEHAVIORS[name];
+    const b = behaviors[name];
     if (!b) return;
     clearRotationTimer();
     const enter = () => {
@@ -177,17 +185,17 @@ export function useCatBrain(opts: BrainOptions): CatBrain {
   }
 
   function enterIdle() {
-    goToBehavior("idle");
+    goToBehavior(defaultBehavior);
   }
 
   function trigger(name: string) {
-    if (BEHAVIORS[name]) {
+    if (behaviors[name]) {
       goToBehavior(name); // 行为：切过去待着
       return;
     }
-    const a = ACTIONS[name];
-    if (a) {
-      goToBehavior(a.home, a.clip); // 动作：切到归属行为，把动作片段当 lead 播一次
+    // 动作名：切到默认行为并把该动作当 lead 播一次（feed/wiki 等）。
+    if (getClip(name)) {
+      goToBehavior(defaultBehavior, name);
       return;
     }
     // 未知名：空操作
@@ -196,17 +204,17 @@ export function useCatBrain(opts: BrainOptions): CatBrain {
   /** 点击是否会唤醒：当前行为有 exit 且已进 loop。 */
   function canWake() {
     if (state.value.kind !== "behavior") return false;
-    return !!BEHAVIORS[currentBehavior]?.exit && beh.canWake();
+    return !!behaviors[currentBehavior]?.exit && beh.canWake();
   }
 
   function wake() {
     if (!canWake()) return;
-    goToBehavior("idle"); // 播当前 exit（如 wakeUp 起身）→ idle
+    goToBehavior(defaultBehavior); // 播当前 exit（如 wakeUp 起身）→ 默认行为
   }
 
   /** 从 idle 的随机插播池里按权重挑一个动作。 */
   function pickIdleTwitch() {
-    const items = BEHAVIORS.idle.loop.random;
+    const items = behaviors[defaultBehavior]?.loop.random ?? [];
     if (items.length === 0) return null;
     const total = items.reduce((sum, item) => sum + (item.weight ?? 1), 0);
     if (total <= 0) return items[Math.floor(Math.random() * items.length)];
@@ -221,12 +229,12 @@ export function useCatBrain(opts: BrainOptions): CatBrain {
   function poke() {
     const pick = pickIdleTwitch();
     if (!pick) return;
-    if (state.value.kind === "behavior" && currentBehavior === "idle" && beh.canWake()) {
+    if (state.value.kind === "behavior" && currentBehavior === defaultBehavior && beh.canWake()) {
       beh.playOneShot(pick.clip);
       return;
     }
     if (state.value.kind === "follow") {
-      goToBehavior("idle", pick.clip);
+      goToBehavior(defaultBehavior, pick.clip);
     }
   }
 
@@ -248,9 +256,9 @@ export function useCatBrain(opts: BrainOptions): CatBrain {
     lastPos = pos;
     if (moved) lastMoveAt = Date.now();
 
-    // 校准期间：保持 idle、暂停轮换、忽略光标。
+    // 校准期间：保持默认行为、暂停轮换、忽略光标。
     if (opts.paused?.()) {
-      if (state.value.kind !== "behavior" || currentBehavior !== "idle") enterIdle();
+      if (state.value.kind !== "behavior" || currentBehavior !== defaultBehavior) enterIdle();
       return;
     }
 
@@ -258,7 +266,7 @@ export function useCatBrain(opts: BrainOptions): CatBrain {
 
     switch (state.value.kind) {
       case "behavior": {
-        const b = BEHAVIORS[currentBehavior];
+        const b = behaviors[currentBehavior];
         // 仅当前行为可打断（idle）+ 鼠标移动 + 光标在死区外，才抢占进 follow。
         if (b?.interruptible === true && moved && following && sample.angle !== null) {
           enterFollow();
@@ -279,11 +287,11 @@ export function useCatBrain(opts: BrainOptions): CatBrain {
 
   onMounted(async () => {
     lastMoveAt = Date.now();
-    // 起步：直接进入 idle 行为（无需转场）。
-    currentBehavior = "idle";
+    // 起步：直接进入默认行为（无需转场）。
+    currentBehavior = defaultBehavior;
     activePlayer.value = "beh";
-    state.value = { kind: "behavior", behavior: "idle" };
-    beh.start(BEHAVIORS.idle);
+    state.value = { kind: "behavior", behavior: defaultBehavior };
+    beh.start(behaviors[defaultBehavior]);
     scheduleRotation();
     tickTimer = window.setInterval(tick, config.tickMs);
     void tick();

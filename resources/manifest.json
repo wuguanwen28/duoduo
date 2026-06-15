@@ -1,0 +1,131 @@
+{
+  "version": 1,
+  "defaultBehavior": "idle",
+  "follow": {
+    "dir": "follow",
+    "clockwise": true,
+    "startAngle": 0
+  },
+  "actions": {
+    "idleBreathe": {
+      "dir": "idle/breathe",
+      "fps": 24,
+      "yoyo": true,
+      "offsetX": -0.01,
+      "offsetY": -0.01
+    },
+    "idleBlink": {
+      "dir": "idle/blink",
+      "fps": 24,
+      "offsetX": -0.01,
+      "offsetY": -0.01
+    },
+    "idleTail": {
+      "dir": "idle/tail",
+      "fps": 24,
+      "name": "摇尾巴",
+      "offsetX": -0.01,
+      "offsetY": -0.01
+    },
+    "idleEar": {
+      "dir": "idle/ear",
+      "fps": 24,
+      "offsetX": -0.01,
+      "offsetY": -0.01
+    },
+    "feed": {
+      "dir": "idle/feed",
+      "fps": 24
+    },
+    "wiki": {
+      "dir": "idle/wiki",
+      "fps": 24
+    },
+    "lieDown": {
+      "dir": "sleep/lieDown",
+      "fps": 36
+    },
+    "wakeUp": {
+      "dir": "sleep/lieDown",
+      "fps": 36,
+      "reverse": true
+    },
+    "sleepBreathe": {
+      "dir": "sleep/breathe",
+      "fps": 10,
+      "yoyo": true
+    },
+    "sleepEar": {
+      "dir": "sleep/ear",
+      "fps": 24,
+      "yoyo": true
+    },
+    "sleepTail": {
+      "dir": "sleep/tail",
+      "fps": 24
+    }
+  },
+  "behaviors": {
+    "idle": {
+      "weight": 10,
+      "duration": [
+        15000,
+        40000
+      ],
+      "base": "idleBreathe",
+      "random": [
+        {
+          "action": "idleBlink",
+          "weight": 5
+        },
+        {
+          "action": "idleTail",
+          "weight": 5
+        },
+        {
+          "action": "idleEar",
+          "weight": 5
+        },
+        {
+          "action": "feed",
+          "weight": 1
+        },
+        {
+          "action": "wiki",
+          "weight": 1
+        }
+      ],
+      "delay": [
+        3000,
+        8000
+      ],
+      "name": "发呆",
+      "interruptible": true
+    },
+    "sleep": {
+      "weight": 2,
+      "duration": [
+        60000,
+        120000
+      ],
+      "base": "sleepBreathe",
+      "random": [
+        {
+          "action": "sleepEar",
+          "weight": 1
+        },
+        {
+          "action": "sleepTail",
+          "weight": 1
+        }
+      ],
+      "delay": [
+        3000,
+        7000
+      ],
+      "name": "睡觉",
+      "enter": "lieDown",
+      "exit": "wakeUp"
+    }
+  }
+}

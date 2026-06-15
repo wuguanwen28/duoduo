@@ -1,0 +1,17 @@
+/* 资源设置窗：普通不透明窗口（区别于主窗的全透明穿透样式）。 */
+html,
+body,
+#app {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  background: #f5f6f8;
+  color: #1c1c1e;
+  font-family: -apple-system, "Microsoft YaHei", "Segoe UI", sans-serif;
+  font-size: 14px;
+}
+
+#app {
+  overflow-y: auto;
+}

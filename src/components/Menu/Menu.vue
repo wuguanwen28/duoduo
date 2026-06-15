@@ -52,6 +52,8 @@
     </div>
 
     <div class="menu__actions">
+      <el-button text class="menu__btn" @click="emit('sleep')">😴 睡觉</el-button>
+      <el-button text class="menu__btn" @click="emit('feed')">🍚 投喂</el-button>
       <!-- 加个提示，否则用户不知道「校准猫头」是做什么的。 -->
       <el-tooltip
         content="拖动圆圈对准猫咪头部，校准视线死区，让跟随光标更准"

@@ -81,8 +81,19 @@ import { actionOfFrame, transformOfAction } from "../../actions/clips";
 // ── 行为状态机 ──────────────────────────────────────────
 // 所有"显示哪一帧"的逻辑都集中在 brain 中；Pet.vue 只负责
 // 窗口层面的事务（拖动、菜单、校准、提示、尺寸缩放）。
+/** 从 localStorage 读数字/布尔设置；缺失或非法时用默认值。用于热重载（重挂）后恢复用户设置。 */
+function loadSetting<T extends number | boolean>(key: string, def: T): T {
+  const raw = localStorage.getItem(key);
+  if (raw === null) return def;
+  if (typeof def === "number") {
+    const n = Number(raw);
+    return (Number.isFinite(n) ? n : def) as T;
+  }
+  return (raw === "true") as T;
+}
+
 /** 为 false 时，猫咪会忽略光标（即"别偷看"开关）。 */
-const followCursor = ref(true);
+const followCursor = ref(loadSetting<boolean>("pet-follow", true));
 const brain = useCatBrain({
   followEnabled: () => followCursor.value,
   // 校准期间让猫咪停留在 idle 状态，使其头部停止跟踪光标
@@ -92,10 +103,10 @@ const brain = useCatBrain({
 });
 const currentSrc = brain.currentSrc;
 
-const size = ref(0.5);
-const opacity = ref(0.5);
+const size = ref(loadSetting<number>("pet-size", 0.5));
+const opacity = ref(loadSetting<number>("pet-opacity", 0.5));
 /** 穿透点击：开启后鼠标事件穿透到下层窗口，按住 Ctrl 时临时恢复交互。 */
-const passthrough = ref(false);
+const passthrough = ref(loadSetting<boolean>("pet-passthrough", true));
 const ctrlPressed = ref(false);
 const imgStyle = computed(() => {
   const px = Math.round(200 * size.value);
@@ -152,6 +163,12 @@ watch(
   },
   { immediate: true },
 );
+
+// 持久化用户设置：热重载重挂 <Pet> 后自动恢复（headOffset 另有持久化）。
+watch(size, (v) => localStorage.setItem("pet-size", String(v)));
+watch(opacity, (v) => localStorage.setItem("pet-opacity", String(v)));
+watch(passthrough, (v) => localStorage.setItem("pet-passthrough", String(v)));
+watch(followCursor, (v) => localStorage.setItem("pet-follow", String(v)));
 
 /** 窗口内菜单的状态。 */
 const menuOpen = ref(false);

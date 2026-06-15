@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use tauri::{
     menu::{Menu, MenuItem},
@@ -70,18 +72,6 @@ fn clampf(v: f64, lo: f64, hi: f64) -> f64 {
     }
 }
 
-/// Bring the pet window back into view: unminimize, show, and focus it.
-/// The window has a fixed size (see `fixed_window_size`), so there's nothing to
-/// resize. Used by the "设置" tray menu item to restore the window before
-/// opening the settings panel.
-fn show_pet(app: &tauri::AppHandle) {
-    if let Some(window) = app.get_webview_window("duoduo") {
-        let _ = window.unminimize();
-        let _ = window.show();
-        let _ = window.set_focus();
-    }
-}
-
 /// Toggle the pet window: if visible and not minimized, minimize it;
 /// otherwise restore (unminimize + show + focus).
 fn toggle_pet(app: &tauri::AppHandle) {
@@ -96,11 +86,37 @@ fn toggle_pet(app: &tauri::AppHandle) {
     }
 }
 
-/// Show the pet window and open the in-window menu panel, so the user can
-/// access settings (e.g. disable invisibility mode) from the tray.
+/// Open (or focus, if already open) the settings window — a normal decorated
+/// window hosting the visual manifest editor. Created lazily the first time the
+/// tray "设置" item is clicked, then reused.
 fn open_settings(app: &tauri::AppHandle) {
-    show_pet(app);
-    let _ = app.emit("pet-open-menu", ());
+    if let Some(win) = app.get_webview_window("settings") {
+        let _ = win.unminimize();
+        let _ = win.show();
+        let _ = win.set_focus();
+        return;
+    }
+    // 设置窗加载独立入口 settings.html（vite 多入口构建），渲染 <SettingsApp>。
+    let url = tauri::WebviewUrl::App("settings.html".into());
+    // 使用 256×256 高清图标，避免任务栏显示模糊。
+    let icon = tauri::image::Image::from_bytes(include_bytes!("../icons/128x128@2x.png"))
+        .expect("加载窗口图标失败");
+    match tauri::WebviewWindowBuilder::new(app, "settings", url)
+        .title("多多 · 设置")
+        .inner_size(720.0, 600.0)
+        .min_inner_size(560.0, 420.0)
+        .resizable(true)
+        .center()
+        .icon(icon)
+        .unwrap()
+        .build()
+    {
+        Ok(win) => {
+            let _ = win.show();
+            let _ = win.set_focus();
+        }
+        Err(e) => eprintln!("open settings window failed: {e}"),
+    }
 }
 
 /// Fraction of the sprite's radius treated as a "look forward" dead zone around
@@ -292,9 +308,199 @@ fn pet_play_action(app: tauri::AppHandle, action: String) -> Result<(), String> 
     app.emit("pet-play-action", action).map_err(|e| e.to_string())
 }
 
+/// 外置资源根目录的定位优先级：
+/// 1) 环境变量 `DUODUO_RESOURCES`（手动覆盖，便于调试/多套素材）；
+/// 2) 开发模式（debug）：项目根下的 `resources/`；
+/// 3) 发布模式：exe 同级的 `resources/`。
+fn resource_root() -> PathBuf {
+    if let Ok(p) = std::env::var("DUODUO_RESOURCES") {
+        if !p.trim().is_empty() {
+            return PathBuf::from(p);
+        }
+    }
+    #[cfg(debug_assertions)]
+    {
+        // 开发模式下 CARGO_MANIFEST_DIR 指向 src-tauri，其父目录即项目根。
+        if let Some(root) = Path::new(env!("CARGO_MANIFEST_DIR")).parent() {
+            return root.join("resources");
+        }
+    }
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(dir) = exe.parent() {
+            return dir.join("resources");
+        }
+    }
+    PathBuf::from("resources")
+}
+
+/// 受支持的帧图片扩展名（统一按小写比较）。
+const FRAME_EXTS: [&str; 6] = ["webp", "png", "jpg", "jpeg", "gif", "bmp"];
+
+/// 列出某动作目录下、按文件名排序的帧文件绝对路径。
+/// `dir` 是绝对路径时直接使用，否则拼接到资源根下。
+fn list_frames(root: &Path, dir: &str) -> Vec<PathBuf> {
+    let p = Path::new(dir);
+    let full = if p.is_absolute() { p.to_path_buf() } else { root.join(p) };
+    let mut out: Vec<PathBuf> = Vec::new();
+    if let Ok(entries) = std::fs::read_dir(&full) {
+        for e in entries.flatten() {
+            let path = e.path();
+            if !path.is_file() {
+                continue;
+            }
+            let ok = path
+                .extension()
+                .and_then(|x| x.to_str())
+                .map(|x| FRAME_EXTS.contains(&x.to_lowercase().as_str()))
+                .unwrap_or(false);
+            if ok {
+                out.push(path);
+            }
+        }
+    }
+    out.sort();
+    out
+}
+
+/// `pet_scan_resources` 的返回结构。
+#[derive(serde::Serialize)]
+struct ScanResult {
+    /// 资源根目录的绝对路径（便于前端展示/排错）。
+    root: String,
+    /// manifest.json 原样返回，强类型解析放在前端做。
+    manifest: serde_json::Value,
+    /// 动作名 → 帧文件绝对路径数组；跟随帧用特殊键 `"follow"`。
+    frames: HashMap<String, Vec<String>>,
+    /// 出错信息：读不到或解析失败时填入，前端据此显示「缺资源引导」。
+    error: Option<String>,
+}
+
+/// 扫描外置资源：读取 manifest.json，按 follow / actions 里各自的 `dir`
+/// 列出帧文件绝对路径，并把这些目录加入 asset 协议白名单，使前端能用
+/// `convertFileSrc` 直接加载磁盘上的图片。一次性返回，减少前后端往返。
+#[tauri::command]
+fn pet_scan_resources(app: tauri::AppHandle) -> ScanResult {
+    let root = resource_root();
+    let root_str = root.display().to_string();
+    let manifest_path = root.join("manifest.json");
+
+    let text = match std::fs::read_to_string(&manifest_path) {
+        Ok(t) => t,
+        Err(e) => {
+            return ScanResult {
+                root: root_str,
+                manifest: serde_json::Value::Null,
+                frames: HashMap::new(),
+                error: Some(format!(
+                    "读不到 manifest.json（{}）：{e}",
+                    manifest_path.display()
+                )),
+            }
+        }
+    };
+    let manifest: serde_json::Value = match serde_json::from_str(&text) {
+        Ok(v) => v,
+        Err(e) => {
+            return ScanResult {
+                root: root_str,
+                manifest: serde_json::Value::Null,
+                frames: HashMap::new(),
+                error: Some(format!("manifest.json 解析失败：{e}")),
+            }
+        }
+    };
+
+    // 资源根递归加入 asset 白名单；绝对路径的动作目录下面再逐个补授权。
+    let scope = app.asset_protocol_scope();
+    let _ = scope.allow_directory(&root, true);
+
+    // 先汇总所有 (键, 目录)，再统一扫描，避免闭包对 frames 的可变借用冲突。
+    let mut dirs: Vec<(String, String)> = Vec::new();
+    if let Some(dir) = manifest
+        .get("follow")
+        .and_then(|f| f.get("dir"))
+        .and_then(|d| d.as_str())
+    {
+        dirs.push(("follow".to_string(), dir.to_string()));
+    }
+    if let Some(actions) = manifest.get("actions").and_then(|a| a.as_object()) {
+        for (name, def) in actions {
+            if let Some(dir) = def.get("dir").and_then(|d| d.as_str()) {
+                dirs.push((name.clone(), dir.to_string()));
+            }
+        }
+    }
+
+    let mut frames: HashMap<String, Vec<String>> = HashMap::new();
+    for (key, dir) in dirs {
+        if Path::new(&dir).is_absolute() {
+            let _ = scope.allow_directory(Path::new(&dir), false);
+        }
+        let paths = list_frames(&root, &dir);
+        frames.insert(
+            key,
+            paths
+                .iter()
+                .map(|p| p.to_string_lossy().to_string())
+                .collect(),
+        );
+    }
+
+    ScanResult {
+        root: root_str,
+        manifest,
+        frames,
+        error: None,
+    }
+}
+
+/// `pet_read_manifest` 的返回结构。
+#[derive(serde::Serialize)]
+struct ManifestFile {
+    /// 资源根目录绝对路径。
+    root: String,
+    /// manifest.json 的绝对路径。
+    path: String,
+    /// 文件文本内容；不存在时为空串。
+    content: String,
+    /// 文件是否已存在。
+    exists: bool,
+}
+
+/// 读取资源根目录下的 manifest.json 原文（供设置窗编辑）。不存在不报错，
+/// 返回 exists=false + 空内容，由前端给出默认模板。
+#[tauri::command]
+fn pet_read_manifest() -> ManifestFile {
+    let root = resource_root();
+    let path = root.join("manifest.json");
+    let exists = path.is_file();
+    let content = if exists {
+        std::fs::read_to_string(&path).unwrap_or_default()
+    } else {
+        String::new()
+    };
+    ManifestFile {
+        root: root.display().to_string(),
+        path: path.display().to_string(),
+        content,
+        exists,
+    }
+}
+
+/// 把内容写回资源根目录下的 manifest.json（目录不存在则创建）。
+/// 「没有就直接创建」即由此实现。
+#[tauri::command]
+fn pet_write_manifest(content: String) -> Result<(), String> {
+    let root = resource_root();
+    std::fs::create_dir_all(&root).map_err(|e| e.to_string())?;
+    std::fs::write(root.join("manifest.json"), content).map_err(|e| e.to_string())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_fs::init())
         .manage(PetState {
             scale: Mutex::new(1.0),
             head_offset: Mutex::new((0.0, 0.0)),
@@ -305,7 +511,10 @@ pub fn run() {
             pet_set_content_scale,
             pet_set_head_offset,
             pet_quit,
-            pet_play_action
+            pet_play_action,
+            pet_scan_resources,
+            pet_read_manifest,
+            pet_write_manifest
         ])
         .on_window_event(|window, event| {
             // Clamp the pet to the union of all monitors. There is only one
@@ -328,12 +537,15 @@ pub fn run() {
         })
         .setup(|app| {
             // 托盘菜单：设置（打开菜单面板）/ 退出。
-            let settings = MenuItem::with_id(app, "settings", "⚙ 设置", true, None::<&str>)?;
+            let settings = MenuItem::with_id(app, "settings", "设置", true, None::<&str>)?;
             let quit = MenuItem::with_id(app, "quit", "退出", true, None::<&str>)?;
             let menu = Menu::with_items(app, &[&settings, &quit])?;
 
+            // 托盘使用 32×32 图标，系统托盘区本身就是小尺寸。
+            let tray_icon = tauri::image::Image::from_bytes(include_bytes!("../icons/32x32.png"))
+                .expect("加载托盘图标失败");
             TrayIconBuilder::new()
-                .icon(app.default_window_icon().unwrap().clone())
+                .icon(tray_icon)
                 .menu(&menu)
                 // 左键点击托盘图标 → 最小化/恢复来回切换；右键显示菜单。
                 .show_menu_on_left_click(false)
