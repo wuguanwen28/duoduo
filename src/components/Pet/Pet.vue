@@ -76,7 +76,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import Menu from "../Menu/Menu.vue";
 import CatSprite from "../CatSprite/CatSprite.vue";
 import { useCatBrain } from "../../composables/useCatBrain";
-import { sourceOfFrame, transformOfSource } from "../../actions/clips";
+import { actionOfFrame, transformOfAction } from "../../actions/clips";
 
 // ── 行为状态机 ──────────────────────────────────────────
 // 所有"显示哪一帧"的逻辑都集中在 brain 中；Pet.vue 只负责
@@ -92,8 +92,8 @@ const brain = useCatBrain({
 });
 const currentSrc = brain.currentSrc;
 
-const size = ref(1.0);
-const opacity = ref(1.0);
+const size = ref(0.5);
+const opacity = ref(0.5);
 /** 穿透点击：开启后鼠标事件穿透到下层窗口，按住 Ctrl 时临时恢复交互。 */
 const passthrough = ref(false);
 const ctrlPressed = ref(false);
@@ -112,7 +112,7 @@ const imgStyle = computed(() => {
 // 缩放以底部中心为锚（猫脚不动、向上伸缩）。变换只作用在 <img> 视觉层，
 // 不影响外层 wrap 的点击命中、菜单锚点与 Rust 注视计算。
 const spriteTransform = computed(() => {
-  const t = transformOfSource(sourceOfFrame(currentSrc.value));
+  const t = transformOfAction(actionOfFrame(currentSrc.value));
   const base = 200 * size.value;
   const tx = Math.round(base * t.offsetX);
   const ty = Math.round(base * t.offsetY);
@@ -307,7 +307,7 @@ function onSleep() {
 
 function onFeed() {
   menuOpen.value = false;
-  // 投喂＝切到 idle 并播一次 feed；睡觉时会先起床再吃，吃完留在 idle。
+  // 投喂＝切到 idle 并播一次 feed。
   brain.trigger("feed");
 }
 
