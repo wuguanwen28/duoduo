@@ -23,7 +23,21 @@
         :max="2"
         :step="0.05"
         :format-tooltip="formatSize"
-        @input="onSliderInput"
+        @input="onSizeInput"
+      />
+    </div>
+
+    <div class="menu__row menu__row--slider" @click.stop>
+      <span class="menu__row-label">🌫️ 透明</span>
+      <!-- 透明度最小保留 10%，避免误拖到完全看不见。 -->
+      <el-slider
+        class="menu__slider"
+        :model-value="opacity"
+        :min="0.1"
+        :max="1"
+        :step="0.05"
+        :format-tooltip="formatOpacity"
+        @input="onOpacityInput"
       />
     </div>
 
@@ -33,8 +47,8 @@
     </div>
 
     <div class="menu__row menu__row--toggle" @click.stop>
-      <span>🫥 隐身</span>
-      <el-switch :model-value="invisible" @change="onInvisibleChange" />
+      <span>🖱️ 穿透点击</span>
+      <el-switch :model-value="passthrough" @change="onPassthroughChange" />
     </div>
 
     <div class="menu__actions">
@@ -52,12 +66,6 @@
       <el-button text class="menu__btn menu__btn--warn" @click="emit('boss')">
         🏃 老板来了
       </el-button>
-      <el-button text class="menu__btn" @click="emit('sleep')"
-        >😴 睡觉</el-button
-      >
-      <el-button text class="menu__btn" @click="emit('feed')"
-        >🍗 投喂</el-button
-      >
       <el-button text class="menu__btn menu__btn--danger" @click="emit('quit')">
         👋 下班！！
       </el-button>
@@ -68,15 +76,17 @@
 <script setup lang="ts">
 defineProps<{
   size: number;
+  opacity: number;
   follow: boolean;
-  invisible: boolean;
+  passthrough: boolean;
 }>();
 
 const emit = defineEmits<{
   (e: "close"): void;
   (e: "update:size", value: number): void;
+  (e: "update:opacity", value: number): void;
   (e: "update:follow", value: boolean): void;
-  (e: "update:invisible", value: boolean): void;
+  (e: "update:passthrough", value: boolean): void;
   (e: "calibrate"): void;
   (e: "boss"): void;
   (e: "sleep"): void;
@@ -84,22 +94,32 @@ const emit = defineEmits<{
   (e: "quit"): void;
 }>();
 
-function onSliderInput(value: number | number[]) {
+function onSizeInput(value: number | number[]) {
   const v = Array.isArray(value) ? value[0] : value;
   if (!Number.isNaN(v)) emit("update:size", v);
 }
 
-/** 格式化滑块 tooltip 文本，如 1x / 0.25x。步长 0.05，最多两位小数并去掉尾随 0。 */
+function onOpacityInput(value: number | number[]) {
+  const v = Array.isArray(value) ? value[0] : value;
+  if (!Number.isNaN(v)) emit("update:opacity", v);
+}
+
+/** 格式化大小滑块 tooltip 文本，如 1x / 0.25x。步长 0.05，最多两位小数并去掉尾随 0。 */
 function formatSize(value: number): string {
   return `${Number(value.toFixed(2))}x`;
+}
+
+/** 格式化透明度滑块 tooltip 文本，如 85%。 */
+function formatOpacity(value: number): string {
+  return `${Math.round(value * 100)}%`;
 }
 
 function onToggleChange(value: string | number | boolean) {
   emit("update:follow", Boolean(value));
 }
 
-function onInvisibleChange(value: string | number | boolean) {
-  emit("update:invisible", Boolean(value));
+function onPassthroughChange(value: string | number | boolean) {
+  emit("update:passthrough", Boolean(value));
 }
 </script>
 

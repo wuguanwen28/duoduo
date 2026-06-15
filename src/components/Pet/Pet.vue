@@ -26,11 +26,13 @@
       </template>
       <Menu
         :size="size"
+        :opacity="opacity"
         :follow="followCursor"
-        :invisible="invisible"
+        :passthrough="passthrough"
         @update:size="size = $event"
+        @update:opacity="opacity = $event"
         @update:follow="onToggleFollow"
-        @update:invisible="invisible = $event"
+        @update:passthrough="passthrough = $event"
         @calibrate="startCalibrate"
         @boss="onMinimize"
         @close="menuOpen = false"
@@ -91,19 +93,17 @@ const brain = useCatBrain({
 const currentSrc = brain.currentSrc;
 
 const size = ref(1.0);
-/** 隐身模式：开启后鼠标进入猫咪区域时猫咪变透明且点击穿透。 */
-const invisible = ref(false);
+const opacity = ref(1.0);
+/** 穿透点击：开启后鼠标事件穿透到下层窗口，按住 Ctrl 时临时恢复交互。 */
+const passthrough = ref(false);
+const ctrlPressed = ref(false);
 const imgStyle = computed(() => {
   const px = Math.round(200 * size.value);
-  const style: Record<string, string> = {
+  return {
     width: `${px}px`,
     height: `${px}px`,
+    opacity: `${opacity.value}`,
   };
-  // 隐身模式 + 鼠标在猫咪区域上 → 猫咪完全透明
-  if (invisible.value && brain.cursorOverCat.value) {
-    style.opacity = "0";
-  }
-  return style;
 });
 
 // 按当前帧所属来源做视觉对齐：不同文件夹素材里猫的位置/大小不一致，
@@ -235,15 +235,14 @@ watch(calibrating, (on) => {
 // ── 点击穿透 ─────────────────────────────────────────────────────
 // 窗口大部分区域是透明的；只有猫咪（以及打开时的菜单/校准界面）
 // 应当响应点击——其余区域的点击都穿透到后方的应用。
-// `setIgnoreCursorEvents` 作用于整个窗口，因此我们结合注视轮询
-//（即便在忽略事件时它仍会上报光标是否悬停在猫咪上）和自身的 UI 状态来切换它。
+// `setIgnoreCursorEvents` 作用于整个窗口。穿透点击开启后直接穿透，
+// 但按住 Ctrl 时临时恢复交互，方便重新打开菜单或拖动猫咪。
 // 仅在状态变化时切换，以避免每个 tick 都产生 IPC 抖动。
-/** 窗口是否应响应鼠标事件（非穿透）。
- *  隐身模式 + 鼠标在猫咪上 → 穿透，让用户点到底层应用；
- *  其他情况（菜单打开、校准中、鼠标在猫上）→ 正常交互。 */
+/** 窗口是否应响应鼠标事件（非穿透）。 */
 const interactive = computed(() => {
-  if (invisible.value && brain.cursorOverCat.value) return false;
-  return menuOpen.value || calibrating.value || brain.cursorOverCat.value;
+  if (menuOpen.value || calibrating.value) return true;
+  if (passthrough.value && !ctrlPressed.value) return false;
+  return brain.cursorOverCat.value;
 });
 watch(
   interactive,
@@ -253,6 +252,33 @@ watch(
       .catch(() => {
         // 忽略——窗口可能正在销毁。
       });
+  },
+  { immediate: true },
+);
+
+let ctrlPollTimer: number | undefined;
+
+async function pollCtrlPressed() {
+  try {
+    ctrlPressed.value = await invoke<boolean>("pet_ctrl_pressed");
+  } catch {
+    ctrlPressed.value = false;
+  }
+}
+
+watch(
+  passthrough,
+  (on) => {
+    if (ctrlPollTimer !== undefined) {
+      window.clearInterval(ctrlPollTimer);
+      ctrlPollTimer = undefined;
+    }
+    ctrlPressed.value = false;
+    if (on) {
+      void pollCtrlPressed();
+      // 穿透状态下窗口可能收不到键盘事件，所以主动轮询 Ctrl 状态。
+      ctrlPollTimer = window.setInterval(() => void pollCtrlPressed(), 80);
+    }
   },
   { immediate: true },
 );
@@ -375,6 +401,7 @@ onMounted(async () => {
 
 onUnmounted(() => {
   unlistenOpenMenu?.();
+  if (ctrlPollTimer !== undefined) window.clearInterval(ctrlPollTimer);
 });
 </script>
 

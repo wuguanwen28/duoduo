@@ -5,6 +5,9 @@ use tauri::{
     Emitter, Manager, PhysicalPosition,
 };
 
+#[cfg(target_os = "windows")]
+use windows_sys::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_CONTROL};
+
 /// The cat sprite's base size in logical (CSS) pixels — must match the `200`
 /// in Pet.vue's `imgStyle` (`Math.round(200 * size)`).
 const PET_BASE_PX: f64 = 200.0;
@@ -42,6 +45,19 @@ fn fixed_window_size(scale_factor: f64) -> tauri::PhysicalSize<u32> {
 struct PetState {
     scale: Mutex<f64>,
     head_offset: Mutex<(f64, f64)>,
+}
+
+#[tauri::command]
+fn pet_ctrl_pressed() -> bool {
+    #[cfg(target_os = "windows")]
+    {
+        // SAFETY: GetAsyncKeyState 只读取当前键盘状态，不持有指针或跨线程资源。
+        unsafe { (GetAsyncKeyState(VK_CONTROL as i32) as u16 & 0x8000) != 0 }
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        false
+    }
 }
 
 /// Clamp helper that tolerates an inverted range (lo > hi), which happens when
@@ -285,6 +301,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             pet_cursor_angle,
+            pet_ctrl_pressed,
             pet_set_content_scale,
             pet_set_head_offset,
             pet_quit,
