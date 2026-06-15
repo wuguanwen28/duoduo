@@ -38,6 +38,8 @@ export interface BehaviorController {
   stop(): void;
   /** 是否处于可点击唤醒的点（已进入 loop 且未退出）。enter/lead/exit 期间为 false。 */
   canWake(): boolean;
+  /** 在当前循环中插播一次指定片段，播完后从接缝恢复循环。 */
+  playOneShot(clipName: string): void;
 }
 
 export function useBehavior(): BehaviorController {
@@ -221,6 +223,19 @@ export function useBehavior(): BehaviorController {
     });
   }
 
+  function playOneShot(clipName: string) {
+    if (exiting || !inLoop) return;
+    clearStepTimer();
+    clearTwitchTimer();
+    playClip(clipName, () => {
+      if (exiting) return;
+      using.value = "loop";
+      resumeBreatheFromSeam();
+      scheduleNextTwitch();
+      scheduleStep();
+    });
+  }
+
   function start(b: Behavior, opts?: { lead?: string }) {
     clearAllTimers();
     clip.stop();
@@ -266,5 +281,5 @@ export function useBehavior(): BehaviorController {
 
   onScopeDispose(stop);
 
-  return { currentSrc, start, requestExit, stop, canWake };
+  return { currentSrc, start, requestExit, stop, canWake, playOneShot };
 }

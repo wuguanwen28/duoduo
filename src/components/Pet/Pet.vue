@@ -295,32 +295,26 @@ function onMinimize() {
 }
 
 /**
- * 按下左键即启动原生 OS 窗口拖动。Tauri 的 `startDragging`
- * 会接管该手势：点击但不移动仍会触发正常的点击事件，
- * 而按住并移动则会移动窗口。右键则保留用于
- * 切换窗口内菜单。
- *
- * 双击需手动检测，因为 `startDragging()` 会吞掉
- * 浏览器的 dblclick 事件——300 毫秒内的两次点击会最小化窗口。
+ * 左键手势统一区分点击、拖动与双击：干净点击交给大脑处理，
+ * 移动超过阈值才交由 Tauri 原生拖动接管；双击需手动检测，
+ * 因为 `startDragging()` 会吞掉浏览器的 dblclick 事件。
  */
 let lastClickTime = 0;
 
-/**
- * 在猫咪正处于某个动作中（例如睡觉）时区分点击与拖动：
- * 干净的点击（按下 → 未移动即释放）会唤醒它；按住并拖动
- * 则会重新定位窗口而*不*唤醒它。此处我们刻意*不*在按下时调用
- * startDragging()——否则它会吞掉我们用于检测点击的 mouseup 事件——
- * 只有当移动距离超过阈值时才交由原生拖动接管。
- */
-const ACTION_DRAG_THRESHOLD = 5; // 达到该移动像素数即视为拖动
+/** 达到该移动像素数即视为拖动。 */
+const ACTION_DRAG_THRESHOLD = 5;
 
-function beginActionGesture(e: MouseEvent) {
+function onMouseDown(e: MouseEvent) {
+  if (e.button !== 0) return;
+
   const start = { x: e.clientX, y: e.clientY };
   let dragging = false;
+
   function cleanup() {
     window.removeEventListener("mousemove", onMove);
     window.removeEventListener("mouseup", onUp);
   }
+
   function onMove(ev: MouseEvent) {
     if (dragging) return;
     if (Math.hypot(ev.clientX - start.x, ev.clientY - start.y) > ACTION_DRAG_THRESHOLD) {
@@ -329,34 +323,28 @@ function beginActionGesture(e: MouseEvent) {
       getCurrentWindow().startDragging().catch(() => {});
     }
   }
+
   function onUp() {
     cleanup();
-    if (!dragging) brain.wake(); // 干净的点击，无拖动 → 唤醒
+    if (dragging) return;
+
+    if (brain.canWake()) {
+      brain.wake();
+      return;
+    }
+
+    const now = Date.now();
+    if (now - lastClickTime < 300) {
+      lastClickTime = 0;
+      onMinimize();
+      return;
+    }
+    lastClickTime = now;
+    brain.poke();
   }
+
   window.addEventListener("mousemove", onMove);
   window.addEventListener("mouseup", onUp);
-}
-
-async function onMouseDown(e: MouseEvent) {
-  if (e.button !== 0) return;
-  // 当前点击会唤醒猫（睡觉中且已熟睡）时：点击唤醒、拖动则移动它。
-  if (brain.canWake()) {
-    beginActionGesture(e);
-    return;
-  }
-  const now = Date.now();
-  if (now - lastClickTime < 300) {
-    // 双击 → 最小化。
-    lastClickTime = 0;
-    onMinimize();
-    return;
-  }
-  lastClickTime = now;
-  try {
-    await getCurrentWindow().startDragging();
-  } catch {
-    // 忽略——窗口可能正在销毁。
-  }
 }
 
 let unlistenOpenMenu: UnlistenFn | undefined;

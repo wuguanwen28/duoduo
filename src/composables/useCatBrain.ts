@@ -76,6 +76,8 @@ export interface CatBrain {
   trigger: (name: string) => void;
   /** 点击唤醒：若当前行为有 exit 且已进 loop，则起身回 idle。否则空操作。 */
   wake: () => void;
+  /** 点击互动：idle/follow 状态下随机播放一个空闲小动作。 */
+  poke: () => void;
   /** 当前点击是否会唤醒（供 Pet.vue 决定点击手势）。 */
   canWake: () => boolean;
 }
@@ -202,6 +204,32 @@ export function useCatBrain(opts: BrainOptions): CatBrain {
     goToBehavior("idle"); // 播当前 exit（如 wakeUp 起身）→ idle
   }
 
+  /** 从 idle 的随机插播池里按权重挑一个动作。 */
+  function pickIdleTwitch() {
+    const items = BEHAVIORS.idle.loop.random;
+    if (items.length === 0) return null;
+    const total = items.reduce((sum, item) => sum + (item.weight ?? 1), 0);
+    if (total <= 0) return items[Math.floor(Math.random() * items.length)];
+    let r = Math.random() * total;
+    for (const item of items) {
+      r -= item.weight ?? 1;
+      if (r < 0) return item;
+    }
+    return items[items.length - 1];
+  }
+
+  function poke() {
+    const pick = pickIdleTwitch();
+    if (!pick) return;
+    if (state.value.kind === "behavior" && currentBehavior === "idle" && beh.canWake()) {
+      beh.playOneShot(pick.clip);
+      return;
+    }
+    if (state.value.kind === "follow") {
+      goToBehavior("idle", pick.clip);
+    }
+  }
+
   async function tick() {
     let sample: GazeSample;
     try {
@@ -275,5 +303,5 @@ export function useCatBrain(opts: BrainOptions): CatBrain {
     unlisten?.();
   });
 
-  return { state, currentSrc, cursorOverCat, config, trigger, wake, canWake };
+  return { state, currentSrc, cursorOverCat, config, trigger, wake, poke, canWake };
 }
