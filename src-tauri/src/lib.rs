@@ -56,13 +56,35 @@ fn clampf(v: f64, lo: f64, hi: f64) -> f64 {
 
 /// Bring the pet window back into view: unminimize, show, and focus it.
 /// The window has a fixed size (see `fixed_window_size`), so there's nothing to
-/// resize. Used by the tray "显示多多" item and a left-click on the tray icon.
+/// resize. Used by the "设置" tray menu item to restore the window before
+/// opening the settings panel.
 fn show_pet(app: &tauri::AppHandle) {
     if let Some(window) = app.get_webview_window("duoduo") {
         let _ = window.unminimize();
         let _ = window.show();
         let _ = window.set_focus();
     }
+}
+
+/// Toggle the pet window: if visible and not minimized, minimize it;
+/// otherwise restore (unminimize + show + focus).
+fn toggle_pet(app: &tauri::AppHandle) {
+    if let Some(window) = app.get_webview_window("duoduo") {
+        if window.is_visible().unwrap_or(false) && !window.is_minimized().unwrap_or(true) {
+            let _ = window.minimize();
+        } else {
+            let _ = window.unminimize();
+            let _ = window.show();
+            let _ = window.set_focus();
+        }
+    }
+}
+
+/// Show the pet window and open the in-window menu panel, so the user can
+/// access settings (e.g. disable invisibility mode) from the tray.
+fn open_settings(app: &tauri::AppHandle) {
+    show_pet(app);
+    let _ = app.emit("pet-open-menu", ());
 }
 
 /// Fraction of the sprite's radius treated as a "look forward" dead zone around
@@ -288,22 +310,18 @@ pub fn run() {
             }
         })
         .setup(|app| {
-            // Tray icon with a Quit item — the window has system decorations
-            // (close button), but this is a redundant way to close the pet
-            // (the other being the in-window menu's "下班" button).
-            let show = MenuItem::with_id(app, "show", "显示多多", true, None::<&str>)?;
+            // 托盘菜单：设置（打开菜单面板）/ 退出。
+            let settings = MenuItem::with_id(app, "settings", "⚙ 设置", true, None::<&str>)?;
             let quit = MenuItem::with_id(app, "quit", "退出", true, None::<&str>)?;
-            let menu = Menu::with_items(app, &[&show, &quit])?;
+            let menu = Menu::with_items(app, &[&settings, &quit])?;
 
             TrayIconBuilder::new()
                 .icon(app.default_window_icon().unwrap().clone())
                 .menu(&menu)
-                // Left-click restores the window; right-click shows the menu
-                // (显示多多 / 退出). Keep these on separate buttons so they
-                // don't fight each other.
+                // 左键点击托盘图标 → 最小化/恢复来回切换；右键显示菜单。
                 .show_menu_on_left_click(false)
                 .on_menu_event(|app, event| match event.id.as_ref() {
-                    "show" => show_pet(app),
+                    "settings" => open_settings(app),
                     "quit" => app.exit(0),
                     _ => {}
                 })
@@ -314,7 +332,7 @@ pub fn run() {
                         ..
                     } = event
                     {
-                        show_pet(tray.app_handle());
+                        toggle_pet(tray.app_handle());
                     }
                 })
                 .build(app)?;

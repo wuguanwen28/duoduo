@@ -27,8 +27,10 @@
       <Menu
         :size="size"
         :follow="followCursor"
+        :invisible="invisible"
         @update:size="size = $event"
         @update:follow="onToggleFollow"
+        @update:invisible="invisible = $event"
         @calibrate="startCalibrate"
         @boss="onMinimize"
         @close="menuOpen = false"
@@ -65,8 +67,9 @@
 </template>
 
 <script lang="ts" setup>
-import { computed, onMounted, ref, watch } from "vue";
+import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { invoke } from "@tauri-apps/api/core";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import Menu from "../Menu/Menu.vue";
 import CatSprite from "../CatSprite/CatSprite.vue";
@@ -88,9 +91,19 @@ const brain = useCatBrain({
 const currentSrc = brain.currentSrc;
 
 const size = ref(1.0);
+/** 隐身模式：开启后鼠标进入猫咪区域时猫咪变透明且点击穿透。 */
+const invisible = ref(false);
 const imgStyle = computed(() => {
   const px = Math.round(200 * size.value);
-  return { width: `${px}px`, height: `${px}px` };
+  const style: Record<string, string> = {
+    width: `${px}px`,
+    height: `${px}px`,
+  };
+  // 隐身模式 + 鼠标在猫咪区域上 → 猫咪完全透明
+  if (invisible.value && brain.cursorOverCat.value) {
+    style.opacity = "0";
+  }
+  return style;
 });
 
 // 按当前帧所属来源做视觉对齐：不同文件夹素材里猫的位置/大小不一致，
@@ -225,9 +238,13 @@ watch(calibrating, (on) => {
 // `setIgnoreCursorEvents` 作用于整个窗口，因此我们结合注视轮询
 //（即便在忽略事件时它仍会上报光标是否悬停在猫咪上）和自身的 UI 状态来切换它。
 // 仅在状态变化时切换，以避免每个 tick 都产生 IPC 抖动。
-const interactive = computed(
-  () => menuOpen.value || calibrating.value || brain.cursorOverCat.value,
-);
+/** 窗口是否应响应鼠标事件（非穿透）。
+ *  隐身模式 + 鼠标在猫咪上 → 穿透，让用户点到底层应用；
+ *  其他情况（菜单打开、校准中、鼠标在猫上）→ 正常交互。 */
+const interactive = computed(() => {
+  if (invisible.value && brain.cursorOverCat.value) return false;
+  return menuOpen.value || calibrating.value || brain.cursorOverCat.value;
+});
 watch(
   interactive,
   (on) => {
@@ -342,7 +359,9 @@ async function onMouseDown(e: MouseEvent) {
   }
 }
 
-onMounted(() => {
+let unlistenOpenMenu: UnlistenFn | undefined;
+
+onMounted(async () => {
   // 启动时将已持久化的头部偏移量同步给 Rust。
   if (headOffset.value.x !== 0 || headOffset.value.y !== 0) {
     invoke("pet_set_head_offset", {
@@ -351,10 +370,23 @@ onMounted(() => {
     }).catch(() => {});
   }
 
+  // 监听托盘"设置"菜单项：显示窗口并打开菜单面板（隐身模式下也能操作）。
+  try {
+    unlistenOpenMenu = await listen("pet-open-menu", () => {
+      menuOpen.value = true;
+    });
+  } catch {
+    // 忽略——事件绑定不可用。
+  }
+
   // 根元素上的 @keydown.esc 需要该元素可获得焦点。
   const root = document.querySelector(".pet") as HTMLElement | null;
   root?.setAttribute("tabindex", "-1");
   root?.focus();
+});
+
+onUnmounted(() => {
+  unlistenOpenMenu?.();
 });
 </script>
 

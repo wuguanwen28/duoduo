@@ -32,6 +32,11 @@
       <el-switch :model-value="follow" @change="onToggleChange" />
     </div>
 
+    <div class="menu__row menu__row--toggle" @click.stop>
+      <span>🫥 隐身</span>
+      <el-switch :model-value="invisible" @change="onInvisibleChange" />
+    </div>
+
     <div class="menu__actions">
       <!-- 加个提示，否则用户不知道「校准猫头」是做什么的。 -->
       <el-tooltip
@@ -64,12 +69,14 @@
 defineProps<{
   size: number;
   follow: boolean;
+  invisible: boolean;
 }>();
 
 const emit = defineEmits<{
   (e: "close"): void;
   (e: "update:size", value: number): void;
   (e: "update:follow", value: boolean): void;
+  (e: "update:invisible", value: boolean): void;
   (e: "calibrate"): void;
   (e: "boss"): void;
   (e: "sleep"): void;
@@ -89,6 +96,10 @@ function formatSize(value: number): string {
 
 function onToggleChange(value: string | number | boolean) {
   emit("update:follow", Boolean(value));
+}
+
+function onInvisibleChange(value: string | number | boolean) {
+  emit("update:invisible", Boolean(value));
 }
 </script>
 
