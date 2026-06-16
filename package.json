@@ -9,7 +9,8 @@
     "preview": "vite preview",
     "tauri": "tauri",
     "app:dev": "tauri dev",
-    "app:build": "tauri build"
+    "app:build": "tauri build",
+    "pack:only": "node scripts/package.mjs"
   },
   "dependencies": {
     "@element-plus/icons-vue": "^2.3.2",

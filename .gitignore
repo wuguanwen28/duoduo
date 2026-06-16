@@ -8,6 +8,9 @@ dist-ssr
 src-tauri/target/
 target/
 
+# 打包产物（pnpm app:build 生成的绿色版 zip）
+dist-package/
+
 # Generated Tauri files
 src-tauri/gen/schemas/
 

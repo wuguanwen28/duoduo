@@ -1,0 +1,59 @@
+# 推送 v* 标签时：在 Windows 上构建 → 生成绿色版 zip → 发布到 GitHub Releases。
+#
+# 用法：
+#   1. 改好版本号（package.json / tauri.conf.json）；
+#   2. git tag v0.1.0 && git push github v0.1.0
+#   3. Actions 自动跑完后，Releases 页面即出现带 zip 的发行版。
+#
+# 注意：远程 origin 是 Gitee，本工作流只在 GitHub 远程上生效，
+# 所以推标签要推到 github 远程（git push github v0.1.0）。
+name: release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+# 需要写 Releases 的权限。
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: 安装 Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: 安装 Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: 缓存 Rust 构建产物
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: 安装前端依赖
+        run: pnpm install --frozen-lockfile
+
+      # tauri build 会触发 afterBuildCommand（scripts/package.mjs），
+      # 编译完即在 dist-package/ 生成 duoduo-<版本>-windows.zip。
+      - name: 构建并打包 zip
+        run: pnpm app:build
+
+      - name: 发布到 GitHub Releases
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist-package/*.zip
+          generate_release_notes: true
