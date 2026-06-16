@@ -4,6 +4,10 @@ dist-ssr
 *.local
 .DS_Store
 
+.vscode/
+!.vscode/settings.json
+.claude/
+
 # Rust / Tauri build output (huge, generated)
 src-tauri/target/
 target/
