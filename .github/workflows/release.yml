@@ -24,6 +24,8 @@ jobs:
     steps:
       - name: 检出代码
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # git-cliff 需要完整历史与标签
 
       - name: 安装 pnpm
         uses: pnpm/action-setup@v4
@@ -52,8 +54,17 @@ jobs:
       - name: 构建并打包 zip
         run: pnpm app:build
 
+      # 用 git-cliff 根据 conventional commits 生成本次版本的分类发行说明。
+      - name: 生成发行说明
+        uses: orhun/git-cliff-action@v4
+        with:
+          config: cliff.toml
+          args: --latest --strip all
+        env:
+          OUTPUT: RELEASE_NOTES.md
+
       - name: 发布到 GitHub Releases
         uses: softprops/action-gh-release@v2
         with:
           files: dist-package/*.zip
-          generate_release_notes: true
+          body_path: RELEASE_NOTES.md

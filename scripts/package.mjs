@@ -4,7 +4,8 @@
 // 这里在 tauri build 之后，把两者收集到 dist-package/duoduo/ 再压成
 // dist-package/duoduo-<版本>-windows.zip。解压即用，换猫只改 resources/。
 //
-// 用法：pnpm run pack（见 package.json 的 "pack" 脚本，会先 app:build 再跑本脚本）。
+// 用法：pnpm app:build 会自动在 tauri build 之后串联运行本脚本；
+// 也可单独跑 pnpm pack:only（已 build 过、只想重新压 zip 时）。
 import { execFileSync } from "node:child_process";
 import {
   existsSync,
