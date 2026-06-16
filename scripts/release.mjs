@@ -53,15 +53,24 @@ bump("package.json", /"version":\s*"[^"]*"/);
 bump("src-tauri/tauri.conf.json", /"version":\s*"[^"]*"/);
 bump("src-tauri/Cargo.toml", /version\s*=\s*"[^"]*"/);
 
-// 3) 生成 CHANGELOG（把未发布提交归到新标签）。失败不阻断。
-console.log("→ 生成 CHANGELOG.md ...");
-try {
-  execSync(`npx -y git-cliff --tag ${tag} -o CHANGELOG.md`, {
-    cwd: root,
-    stdio: "inherit",
-  });
-} catch {
-  console.warn("⚠ git-cliff 生成失败，跳过本地 CHANGELOG（CI 仍会生成 Release 说明）。");
+// 3) 增量更新 CHANGELOG：仅当已有更早的版本标签时，才把「上个标签之后的新提交」
+//    插到 CHANGELOG.md 顶部（--unreleased --prepend，保留已有手写历史段，绝不覆盖）。
+//    首个版本（无任何前序标签）跳过——约定首版 CHANGELOG 由人工撰写。
+const priorTags = git(["tag", "--list", "v*"])
+  .split(/\r?\n/)
+  .filter((t) => t && t !== tag);
+if (priorTags.length === 0) {
+  console.log("→ 首个版本：保留手写 CHANGELOG.md，不自动生成。");
+} else {
+  console.log("→ 增量更新 CHANGELOG.md（仅新提交，保留历史）...");
+  try {
+    execSync(`npx -y git-cliff --tag ${tag} --unreleased --prepend CHANGELOG.md`, {
+      cwd: root,
+      stdio: "inherit",
+    });
+  } catch {
+    console.warn("⚠ git-cliff 生成失败，跳过本地 CHANGELOG（CI 仍会生成 Release 说明）。");
+  }
 }
 
 // 4) 提交并打标签。
