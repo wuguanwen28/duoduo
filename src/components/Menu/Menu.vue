@@ -1,7 +1,7 @@
 <template>
-  <div class="menu" @click.stop>
+  <div class="menu" :style="menuBackgroundStyle" @click.stop>
     <div class="menu__header">
-      <span>多多</span>
+      <span>{{ basicSettings.name }}</span>
       <div
         class="menu__close"
         role="button"
@@ -76,6 +76,18 @@
 </template>
 
 <script setup lang="ts">
+import { computed } from "vue";
+import { basicSettings } from "../../composables/useBasicSettings";
+import iconUrl from "../../assets/icon.png";
+
+/** 菜单背景样式：使用头像图片（如果设置），否则使用默认 icon.png */
+const menuBackgroundStyle = computed(() => {
+  const bgImage = basicSettings.value.avatar || iconUrl;
+  return {
+    backgroundImage: `linear-gradient(rgba(28, 28, 30, 0.5), rgba(28, 28, 30, 0.7)), url("${bgImage}")`,
+  };
+});
+
 defineProps<{
   size: number;
   opacity: number;
@@ -130,13 +142,11 @@ function onPassthroughChange(value: string | number | boolean) {
   width: 100%;
   height: 100%;
   box-sizing: border-box;
-  /* 背景：底部一只小猫脸水印（icon.png）+ 整面半透明深色叠加层，保证文字可读。 */
+  /* 背景：半透明深色叠加层 + 头像水印（由内联样式动态设置）。 */
   background-color: rgba(28, 28, 30, 0.92);
-  background-image: linear-gradient(rgba(28, 28, 30, 0.5), rgba(28, 28, 30, 0.7)),
-    url("../../assets/icon.png");
   background-repeat: no-repeat, no-repeat;
-  /* 叠加层铺满；猫脸缩小并贴到底部居中。 */
-  background-position: center, center bottom;
+  /* 叠加层铺满；头像缩小并贴到底部右侧。 */
+  background-position: center, right bottom;
   background-size: cover, auto 150px;
   color: #f0f0f0;
   border-radius: 10px;
