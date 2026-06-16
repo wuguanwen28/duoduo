@@ -71,12 +71,25 @@
 <script lang="ts" setup>
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { invoke } from "@tauri-apps/api/core";
-import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { listen, emit, type UnlistenFn } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import {
+  register,
+  unregisterAll,
+} from "@tauri-apps/plugin-global-shortcut";
 import Menu from "../Menu/Menu.vue";
 import CatSprite from "../CatSprite/CatSprite.vue";
 import { useCatBrain } from "../../composables/useCatBrain";
 import { actionOfFrame, transformOfAction } from "../../actions/clips";
+import {
+  SHORTCUT_DEFS,
+  SHORTCUTS_CHANGED_EVENT,
+  SHORTCUTS_RESULT_EVENT,
+  loadShortcutMap,
+  matchesKey,
+  toAccelerator,
+  type ShortcutResult,
+} from "../../composables/useShortcuts";
 
 // ── 行为状态机 ──────────────────────────────────────────
 // 所有"显示哪一帧"的逻辑都集中在 brain 中；Pet.vue 只负责
@@ -390,7 +403,81 @@ function onMouseDown(e: MouseEvent) {
   window.addEventListener("mouseup", onUp);
 }
 
+// ── 快捷键 ───────────────────────────────────────────────────────
+// 全局键（如「老板来了」）经 global-shortcut 插件在系统层注册，任何程序活跃时都触发；
+// 应用内键仅在主窗口聚焦时由 keydown 捕获。两类按键的动作集中在此分发。
+/** id → 动作。全局与应用内共用同一套动作实现。 */
+const shortcutActions: Record<string, () => void> = {
+  "open-settings": () => {
+    invoke("pet_open_settings").catch(() => {});
+  },
+  "boss-coming": () => {
+    invoke("pet_toggle_visibility").catch(() => {});
+  },
+  "toggle-passthrough": () => {
+    passthrough.value = !passthrough.value;
+    showToast(passthrough.value ? "已开启穿透" : "已关闭穿透");
+  },
+};
+
+/** 当前生效的应用内快捷键：按键串 → 动作 id。每次应用时重建。 */
+let appShortcutMap: Record<string, string> = {};
+
+/**
+ * 按最新配置（重新）应用全部快捷键：
+ * 1) 注销此前注册的全部全局键；
+ * 2) 逐条注册全局键，注册失败（多半被其他程序占用）记入 failedIds；
+ * 3) 重建应用内键查找表，交由窗口 keydown 监听匹配；
+ * 4) 把 failedIds 回传给设置窗，用于标红提示。
+ */
+async function applyShortcuts() {
+  const map = loadShortcutMap();
+
+  // 全局键：先清空我们注册过的全部全局键，再逐条注册。
+  try {
+    await unregisterAll();
+  } catch {
+    // 忽略——可能此前未注册过任何全局键。
+  }
+
+  const failedIds: string[] = [];
+  appShortcutMap = {};
+
+  for (const def of SHORTCUT_DEFS) {
+    const key = map[def.id];
+    if (!key) continue;
+    if (def.scope === "global") {
+      try {
+        // 注册时绑定回调；按下（而非松开）时触发一次。
+        await register(toAccelerator(key), (e) => {
+          if (e.state === "Pressed") shortcutActions[def.id]?.();
+        });
+      } catch {
+        // 注册失败＝该组合键已被其他程序占用，系统层无法抢占，记下供前端提示。
+        failedIds.push(def.id);
+      }
+    } else {
+      appShortcutMap[key] = def.id;
+    }
+  }
+
+  // 回传注册结果给设置窗（若其打开着），用于标记被占用的全局键。
+  emit(SHORTCUTS_RESULT_EVENT, { failedIds } as ShortcutResult).catch(() => {});
+}
+
+/** 窗口级 keydown：匹配应用内快捷键。仅主窗口聚焦时触发，故不与其他软件全局冲突。 */
+function onAppShortcutKeydown(e: KeyboardEvent) {
+  for (const key in appShortcutMap) {
+    if (matchesKey(e, key)) {
+      e.preventDefault();
+      shortcutActions[appShortcutMap[key]]?.();
+      return;
+    }
+  }
+}
+
 let unlistenOpenMenu: UnlistenFn | undefined;
+let unlistenShortcuts: UnlistenFn | undefined;
 
 onMounted(async () => {
   // 启动时将已持久化的头部偏移量同步给 Rust。
@@ -414,10 +501,26 @@ onMounted(async () => {
   const root = document.querySelector(".pet") as HTMLElement | null;
   root?.setAttribute("tabindex", "-1");
   root?.focus();
+
+  // 应用快捷键：注册全局键 + 启用应用内 keydown 匹配。
+  window.addEventListener("keydown", onAppShortcutKeydown);
+  applyShortcuts();
+  // 设置窗保存快捷键后会广播该事件，主窗收到即重新应用。
+  try {
+    unlistenShortcuts = await listen(SHORTCUTS_CHANGED_EVENT, () => {
+      applyShortcuts();
+    });
+  } catch {
+    // 忽略——事件绑定不可用。
+  }
 });
 
 onUnmounted(() => {
   unlistenOpenMenu?.();
+  unlistenShortcuts?.();
+  window.removeEventListener("keydown", onAppShortcutKeydown);
+  // 注销本窗口注册的全部全局键，避免热重载重挂后重复注册。
+  unregisterAll().catch(() => {});
   if (ctrlPollTimer !== undefined) window.clearInterval(ctrlPollTimer);
 });
 </script>

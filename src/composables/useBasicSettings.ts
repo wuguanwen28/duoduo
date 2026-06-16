@@ -6,7 +6,7 @@
  * 通过 Tauri 事件系统实现跨窗口同步。
  */
 import { ref, watch } from "vue";
-import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { listen } from "@tauri-apps/api/event";
 
 const STORAGE_KEY = "pet-basic-settings";
 
@@ -74,9 +74,7 @@ watch(
  * 跨窗口同步：监听 Tauri 事件，当其他窗口（如设置页）修改了基础设置时，
  * 自动更新当前窗口的 basicSettings 响应式数据。
  */
-let unlistenBasicSettings: UnlistenFn | undefined;
+// 模块级监听，生命周期与应用一致，无需保存注销句柄。
 listen<BasicSettings>(BASIC_SETTINGS_CHANGED_EVENT, (event) => {
   basicSettings.value = { ...event.payload };
-}).then((unlisten) => {
-  unlistenBasicSettings = unlisten;
 });

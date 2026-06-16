@@ -104,7 +104,7 @@ fn open_settings(app: &tauri::AppHandle) {
         .expect("加载窗口图标失败");
     match tauri::WebviewWindowBuilder::new(app, "settings", url)
         .title("设置")
-        .inner_size(720.0, 600.0)
+        .inner_size(800.0, 600.0)
         .min_inner_size(560.0, 420.0)
         .resizable(true)
         .center()
@@ -299,6 +299,28 @@ fn pet_set_content_scale(window: tauri::Window, scale: f64) -> Result<(), String
 #[tauri::command]
 fn pet_quit(app: tauri::AppHandle) {
     app.exit(0);
+}
+
+/// 切换主窗口显隐（最小化 ⇄ 恢复）。供「老板来了」全局快捷键调用，
+/// 复用托盘左键的 `toggle_pet` 逻辑，因此即使窗口已被快捷键隐藏，也能
+/// 在任意程序活跃时再次按键恢复——这正是全局快捷键的意义所在。
+///
+/// **必须声明为 `async`**：同步命令运行在主线程上，而本命令由前端
+/// keydown / 全局快捷键回调经 IPC 触发，在主线程里操作/创建窗口会重入
+/// 事件循环导致死锁。async 命令在独立任务线程执行，窗口操作再分派回主线程。
+#[tauri::command]
+async fn pet_toggle_visibility(app: tauri::AppHandle) {
+    toggle_pet(&app);
+}
+
+/// 打开（或聚焦）设置窗口。供「打开设置」快捷键调用，复用托盘菜单的
+/// `open_settings` 逻辑。
+///
+/// 同样**必须 `async`**：本命令由 IPC（快捷键）触发，若在主线程同步
+/// `build()` 新建 webview 窗口会开启嵌套消息循环、卡死整个应用。
+#[tauri::command]
+async fn pet_open_settings(app: tauri::AppHandle) {
+    open_settings(&app);
 }
 
 /// Trigger a sprite animation on the frontend by emitting a "pet-play-action"
@@ -605,6 +627,9 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
+        // 全局快捷键插件。具体按键由前端按用户配置经 JS 插件 API
+        //（@tauri-apps/plugin-global-shortcut）注册，故此处无需 Rust 端 handler。
+        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .manage(PetState {
             scale: Mutex::new(1.0),
             head_offset: Mutex::new((0.0, 0.0)),
@@ -616,6 +641,8 @@ pub fn run() {
             pet_set_content_scale,
             pet_set_head_offset,
             pet_quit,
+            pet_toggle_visibility,
+            pet_open_settings,
             pet_play_action,
             pet_scan_resources,
             pet_read_manifest,
