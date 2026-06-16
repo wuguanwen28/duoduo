@@ -25,7 +25,7 @@ jobs:
       - name: 检出代码
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0 # git-cliff 需要完整历史与标签
+          fetch-depth: 0 # 拉全历史与标签（供发版脚本/构建使用）
 
       - name: 安装 pnpm
         uses: pnpm/action-setup@v4
@@ -54,14 +54,11 @@ jobs:
       - name: 构建并打包 zip
         run: pnpm app:build
 
-      # 用 git-cliff 根据 conventional commits 生成本次版本的分类发行说明。
-      - name: 生成发行说明
-        uses: orhun/git-cliff-action@v4
-        with:
-          config: cliff.toml
-          args: --latest --strip all
-        env:
-          OUTPUT: RELEASE_NOTES.md
+      # 从 CHANGELOG.md 抠出当前版本段作为发行说明，使 release 与 CHANGELOG 一致：
+      # 首版人工撰写，后续由发版脚本（scripts/release.mjs）用 git-cliff 增量更新。
+      - name: 提取发行说明
+        shell: bash
+        run: node scripts/extract-changelog.mjs "${{ github.ref_name }}" > RELEASE_NOTES.md
 
       - name: 发布到 GitHub Releases
         uses: softprops/action-gh-release@v2
