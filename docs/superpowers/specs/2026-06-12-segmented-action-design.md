@@ -144,16 +144,16 @@ idle 接入后表现与现状一致（整段循环、无插播），但插播 / 
 
 `useCatBrain` 持有一个 `useSegmentedAction` 实例，idle 状态与 sleep 动作都走它：
 
-- `enterIdle()`：改为 `seg.start(IDLE_SEGMENTED_CFG)`（退化配置）。其余 idle 自动播放动作（IDLE_POOL，如 wiki）逻辑不变，仍走原有一次性 `useSpriteAnimation` 路径。
+- `enterIdle()`：改为 `seg.start(IDLE_SEGMENTED_CFG)`（退化配置）。其余 idle 自动播放动作（IDLE_POOL，如 wink）逻辑不变，仍走原有一次性 `useSpriteAnimation` 路径。
 - `trigger('sleep')`：改为 `seg.start(SLEEP_CFG)`，记录 `actionResume`。
 - `wake()`（点击 / 程序触发）：改为 `seg.requestExit(finishAction)` —— 先放起身 outro，再回到 follow / idle。
 - `autoEndMs`：到点由运行器调用 `requestExit`，回调同 `wake()`。
 - 销毁（`onUnmounted`）：`seg.stop()`。
 - `interruptible`：sleep 仍为不可打断（鼠标移动不唤醒，只有点击 / 自动醒）；该判定保留在 `useCatBrain` 的 action 分支。
 
-`currentSrc` 计算属性：用一个 `activePlayer` 选择子（`'gaze' | 'seg' | 'anim'`）决定取哪一路——`follow` 取 gaze；idle 与分段动作（sleep）取 `seg.currentSrc`；一次性动作（wiki）取原 `anim.currentSrc`。每次状态切换时设置 `activePlayer`，并停掉非活跃的播放器。
+`currentSrc` 计算属性：用一个 `activePlayer` 选择子（`'gaze' | 'seg' | 'anim'`）决定取哪一路——`follow` 取 gaze；idle 与分段动作（sleep）取 `seg.currentSrc`；一次性动作（wink）取原 `anim.currentSrc`。每次状态切换时设置 `activePlayer`，并停掉非活跃的播放器。
 
-> 取舍：wiki 等「一次性、无分段」的 IDLE_POOL 动作**暂不**迁移到分段机制（YAGNI），继续走现有简单路径，只有 idle 和 sleep 用分段运行器。
+> 取舍：wink 等「一次性、无分段」的 IDLE_POOL 动作**暂不**迁移到分段机制（YAGNI），继续走现有简单路径，只有 idle 和 sleep 用分段运行器。
 
 ## 7. 边界与注意点
 
@@ -176,7 +176,7 @@ idle 接入后表现与现状一致（整段循环、无插播），但插播 / 
 ## 9. 不在本次范围
 
 - idle 的具体插播区间（老大以后填）。
-- wiki 等一次性动作迁移到分段机制。
+- wink 等一次性动作迁移到分段机制。
 - 逐帧精修段边界（先用大概区间）。
 - 修改 `useSpriteAnimation`（保持通用、零改动）。
 

@@ -210,7 +210,7 @@ export function useCatBrain(opts: BrainOptions): CatBrain {
       goToBehavior(name); // 行为：切过去待着
       return;
     }
-    // 动作名：有默认行为则切过去并把该动作当 lead 播一次（feed/wiki 等）；
+    // 动作名：有默认行为则切过去并把该动作当 lead 播一次（feed/wink 等）；
     // 无默认行为（纯跟随）则脱离行为独立播一次，否则会无任何效果。
     if (getClip(name)) {
       if (behaviors[defaultBehavior]) goToBehavior(defaultBehavior, name);

@@ -5,7 +5,7 @@
  * enter?/loop/exit?，以及参与「加权轮换」的 weight 与 duration。useCatBrain 按
  * weight 随机在行为间轮换，跨行为切换播离开者的 exit、进入者的 enter。
  *
- * 旧版的「手动一次性动作」(ACTIONS：feed/wiki) 已取消 —— feed/wiki 现在是 idle
+ * 旧版的「手动一次性动作」(ACTIONS：feed/wink) 已取消 —— feed/wink 现在是 idle
  * 行为的随机插播动作；需要手动触发某个动作时，由 useCatBrain.trigger 直接按
  * 动作名在当前行为里播一次。
  */

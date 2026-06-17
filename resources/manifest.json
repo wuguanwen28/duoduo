@@ -8,6 +8,7 @@
   },
   "actions": {
     "idleBreathe": {
+      "label": "待机呼吸",
       "dir": "idle/breathe",
       "fps": 24,
       "yoyo": true,
@@ -15,52 +16,61 @@
       "offsetY": -0.01
     },
     "idleBlink": {
+      "label": "眨眼",
       "dir": "idle/blink",
       "fps": 24,
       "offsetX": -0.01,
       "offsetY": -0.01
     },
     "idleTail": {
+      "label": "摇尾巴",
       "dir": "idle/tail",
       "fps": 24,
-      "name": "摇尾巴",
       "offsetX": -0.01,
       "offsetY": -0.01
     },
     "idleEar": {
+      "label": "抖耳朵",
       "dir": "idle/ear",
       "fps": 24,
       "offsetX": -0.01,
       "offsetY": -0.01
     },
     "feed": {
+      "label": "投喂",
       "dir": "idle/feed",
       "fps": 24
     },
-    "wiki": {
-      "dir": "idle/wiki",
+    "wink": {
+      "label": "wink",
+      "dir": "idle/wink",
       "fps": 24
     },
     "lieDown": {
+      "label": "趴下",
       "dir": "sleep/lieDown",
       "fps": 36
     },
     "wakeUp": {
+      "label": "起床",
       "dir": "sleep/lieDown",
       "fps": 36,
       "reverse": true
     },
     "sleepBreathe": {
+      "label": "睡觉呼吸",
       "dir": "sleep/breathe",
       "fps": 10,
       "yoyo": true
     },
     "sleepEar": {
+      "label": "睡觉抖耳",
       "dir": "sleep/ear",
       "fps": 24,
       "yoyo": true
     },
     "sleepTail": {
+      "label": "睡觉摇尾",
       "dir": "sleep/tail",
       "fps": 24
     }
@@ -91,7 +101,7 @@
           "weight": 1
         },
         {
-          "action": "wiki",
+          "action": "wink",
           "weight": 1
         }
       ],

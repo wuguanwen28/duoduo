@@ -12,14 +12,14 @@
 - 想加 walk（走路）这类平级行为时，没有一致的轮换 / 转场机制。
 - 手动触发（菜单"投喂"）和自动行为是两套路径。
 
-**目标**：把所有"自治行为"做成**平级**，按各自**权重 + 时长**随机轮换；跨行为切换统一走"离开者的 exit → 进入者的 enter"转场；手动触发（投喂/wiki）作为**归属某行为的一次性动作**纳入同一套转场规则。去掉 `idleAuto`、`autoEndMs`。
+**目标**：把所有"自治行为"做成**平级**，按各自**权重 + 时长**随机轮换；跨行为切换统一走"离开者的 exit → 进入者的 enter"转场；手动触发（投喂/wink）作为**归属某行为的一次性动作**纳入同一套转场规则。去掉 `idleAuto`、`autoEndMs`。
 
 ## 2. 三层概念
 
 ```
 CLIPS      —— 最小动画片段（不变：src/range/fps/yoyo），见 clips.ts
 BEHAVIORS  —— 自治行为：idle / sleep /（将来 walk）。有 loop + 时长 + 权重，参与随机轮换
-ACTIONS    —— 手动一次性动作：feed / wiki。归属某个行为，触发时切到该行为、播一次片段、留下
+ACTIONS    —— 手动一次性动作：feed / wink。归属某个行为，触发时切到该行为、播一次片段、留下
 ```
 
 ## 3. 数据结构
@@ -29,7 +29,7 @@ ACTIONS    —— 手动一次性动作：feed / wiki。归属某个行为，触
 ```ts
 interface BehaviorLoop {
   base: string;          // 基底片段名（呼吸）
-  random: string[];      // 随机插播片段名（含 feed/wiki 这类，做环境随机）
+  random: string[];      // 随机插播片段名（含 feed/wink 这类，做环境随机）
   delay: [number, number]; // 两次插播随机间隔(ms)
 }
 
@@ -48,7 +48,7 @@ interface Behavior {
 
 ```ts
 interface ActionDef {
-  home: string;  // 归属行为名（feed/wiki → 'idle'）
+  home: string;  // 归属行为名（feed/wink → 'idle'）
   clip: string;  // 要播放的片段名
 }
 ```
@@ -58,7 +58,7 @@ interface ActionDef {
 ```ts
 const BEHAVIORS: Record<string, Behavior> = {
   idle: {
-    loop: { base: "idleBreathe", random: ["idleBlink", "idleTail", "idleEar", "feed", "wiki"], delay: [5000, 11000] },
+    loop: { base: "idleBreathe", random: ["idleBlink", "idleTail", "idleEar", "feed", "wink"], delay: [5000, 11000] },
     weight: 10,                 // 大部分时间待机
     duration: [15000, 40000],
     interruptible: true,        // 鼠标移动可进 follow
@@ -76,11 +76,11 @@ const BEHAVIORS: Record<string, Behavior> = {
 
 const ACTIONS: Record<string, ActionDef> = {
   feed: { home: "idle", clip: "feed" },
-  wiki: { home: "idle", clip: "wiki" },
+  wink: { home: "idle", clip: "wink" },
 };
 ```
 
-> 注：`feed`/`wiki` 既在 `idle.loop.random` 里做环境随机（待机时偶尔吃一下/wiki 一下），又登记在 `ACTIONS` 里供菜单手动触发。两处含义不同（环境随机 vs 手动），各自登记。
+> 注：`feed`/`wink` 既在 `idle.loop.random` 里做环境随机（待机时偶尔吃一下/wink 一下），又登记在 `ACTIONS` 里供菜单手动触发。两处含义不同（环境随机 vs 手动），各自登记。
 
 ## 4. 自治轮换（替代 idleAuto + autoEndMs）
 
@@ -145,7 +145,7 @@ tick 逻辑：
 | 文件 | 改动 |
 |---|---|
 | `src/actions/behaviors.ts` | 重写：`Behavior`（加 weight/duration，去 idleAuto/autoEndMs）、`ACTIONS` 表、`BEHAVIORS`（idle/sleep）。`IDLE_POOL` 删除（轮换取代） |
-| `src/actions/clips.ts` | 不变（feed/wiki/idle 各片段已在） |
+| `src/actions/clips.ts` | 不变（feed/wink/idle 各片段已在） |
 | `src/composables/useBehavior.ts` | `start` 加 `lead`、去 `onAutoEnd`/autoEndMs；其余保留 |
 | `src/composables/useCatBrain.ts` | 重写状态机：behavior/follow 两态、currentBehavior、加权轮换定时器、转场串联、trigger 双查 BEHAVIORS/ACTIONS、wake 改为"有 exit 才唤醒到 idle"。`BrainConfig` 移除 `idlePool`/`idleActionDelay`（被行为的 weight/duration 取代），保留 `tickMs`/`moveThreshold`/`idleTimeoutMs` |
 | `src/components/Pet/Pet.vue` | onFeed → `trigger("feed")`（去掉 resume 参数语义）；onSleep → `trigger("sleep")` |
@@ -161,7 +161,7 @@ tick 逻辑：
 ## 12. 验证方式（无测试运行器）
 
 `pnpm build`（vue-tsc）+ `pnpm app:dev` 手动观察：
-1. 待机大部分时间 idle（呼吸 + 偶尔眨眼/摇尾巴/动耳朵/吃/wiki）。
+1. 待机大部分时间 idle（呼吸 + 偶尔眨眼/摇尾巴/动耳朵/吃/wink）。
 2. 偶尔自动进入 sleep（趴下→熟睡→1–2 分钟后起身→回轮换）。
 3. 菜单睡觉/投喂：投喂时若在睡觉先起床再吃、吃完留 idle。
 4. 鼠标移动（死区外）抢占进 follow；睡觉时鼠标移动不打断；点击睡觉中的猫起身。
@@ -171,5 +171,5 @@ tick 逻辑：
 
 - walk 行为（缺素材）。
 - 逐帧精修片段区间、权重/时长手感（先给默认值）。
-- feed/wiki 与 idle 不同源的丝滑（离散播放，靠首尾同姿态过渡，可接受）。
+- feed/wink 与 idle 不同源的丝滑（离散播放，靠首尾同姿态过渡，可接受）。
 </content>

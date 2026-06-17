@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 把"特例式"的 idleAuto/autoEndMs 换成统一的「加权轮换 + 转场 + 一次性动作」模型：行为（idle/sleep）平级、按 weight/duration 随机轮换，跨行为切换走 exit→enter；feed/wiki 作为归属 idle 的一次性动作（ACTIONS）。
+**Goal:** 把"特例式"的 idleAuto/autoEndMs 换成统一的「加权轮换 + 转场 + 一次性动作」模型：行为（idle/sleep）平级、按 weight/duration 随机轮换，跨行为切换走 exit→enter；feed/wink 作为归属 idle 的一次性动作（ACTIONS）。
 
 **Architecture:** `behaviors.ts` 重定义 `Behavior`（加 weight/duration，去 idleAuto/autoEndMs）+ 新增 `ACTIONS` 表。`useBehavior.ts` 的 `start` 改为 `start(behavior, {lead?})`（enter→lead→loop），去掉 autoEndMs。`useCatBrain.ts` 重写成 `behavior|follow` 两态 + `currentBehavior` + 加权轮换定时器 + `goToBehavior` 转场串联（`requestExit→start`）+ `trigger` 双查 BEHAVIORS/ACTIONS + `canWake`。`Pet.vue` 改触发调用与点击手势判定。
 
@@ -22,7 +22,7 @@
 | `src/composables/useBehavior.ts` | 行为播放器：`start(behavior,{lead})`、enter→lead→loop、去 autoEndMs | 改写 |
 | `src/composables/useCatBrain.ts` | 状态机：behavior/follow、currentBehavior、加权轮换、转场、trigger、wake/canWake | 重写 |
 | `src/components/Pet/Pet.vue` | `trigger("sleep")`/`trigger("feed")`、点击手势用 `brain.canWake()` | 改 3 处 |
-| `src/actions/clips.ts` | feed/wiki/idle 片段已在 | 不改 |
+| `src/actions/clips.ts` | feed/wink/idle 片段已在 | 不改 |
 
 > 这 4 个文件是**一次原子契约变更**（类型/签名互相依赖，中间态不编译），故合并为一个任务，结尾统一 `pnpm build`。
 
@@ -46,7 +46,7 @@
  * enter?/loop/exit?，以及参与「加权轮换」的 weight 与 duration。useCatBrain 按 weight
  * 随机在行为间轮换，跨行为切换播离开者的 exit、进入者的 enter。
  *
- * 动作（Action）＝ 手动触发的一次性动作：feed / wiki。每个归属一个行为(home)，触发时
+ * 动作（Action）＝ 手动触发的一次性动作：feed / wink。每个归属一个行为(home)，触发时
  * 切到该行为并把指定片段(clip)播一次，然后留在该行为的 loop 里。
  */
 
@@ -87,10 +87,10 @@ export interface ActionDef {
 /** 行为库（参与加权轮换）。 */
 export const BEHAVIORS: Record<string, Behavior> = {
   idle: {
-    // 呼吸为底，待机时随机眨眼/摇尾巴/动耳朵/吃一下/wiki 一下。
+    // 呼吸为底，待机时随机眨眼/摇尾巴/动耳朵/吃一下/wink 一下。
     loop: {
       base: "idleBreathe",
-      random: ["idleBlink", "idleTail", "idleEar", "feed", "wiki"],
+      random: ["idleBlink", "idleTail", "idleEar", "feed", "wink"],
       delay: [5000, 11000],
     },
     weight: 10, // 大部分时间待机
@@ -111,7 +111,7 @@ export const BEHAVIORS: Record<string, Behavior> = {
 /** 动作库（手动触发的一次性动作）。 */
 export const ACTIONS: Record<string, ActionDef> = {
   feed: { home: "idle", clip: "feed" },
-  wiki: { home: "idle", clip: "wiki" },
+  wink: { home: "idle", clip: "wink" },
 };
 ```
 
@@ -716,7 +716,7 @@ Expected: 窗口出现，猫默认 idle 呼吸、能跟随光标。
 
 - [ ] **Step 2: 逐项观察**
 
-1. **待机**：大部分时间 idle（呼吸 + 偶尔眨眼/摇尾巴/动耳朵/吃/wiki）。
+1. **待机**：大部分时间 idle（呼吸 + 偶尔眨眼/摇尾巴/动耳朵/吃/wink）。
 2. **自动轮换**：偶尔自动进入 sleep（趴下→熟睡→1–2 分钟后起身→回 idle/轮换）。idle 停留约 15–40 秒区间。
 3. **菜单睡觉**：点「😴 睡觉」→ 趴下→熟睡。
 4. **菜单投喂**：点「🍗 投喂」→ 若在睡觉**先起床(wakeUp)再吃(feed)**、吃完留 idle；若在 idle 直接吃。

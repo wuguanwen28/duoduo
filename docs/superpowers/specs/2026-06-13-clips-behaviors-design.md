@@ -18,7 +18,7 @@
 ## 2. 目标
 
 1. **一套**声明式模型：先定义所有「片段」（最小动画单元，各带 帧/fps/yoyo），再定义「行为」（像剧本一样按名字引用片段）。
-2. **干掉双注册表**：一个行为一条；`idle`/`sleep`/`wiki` 全统一为行为；sleep 不再登记两遍。
+2. **干掉双注册表**：一个行为一条；`idle`/`sleep`/`wink` 全统一为行为；sleep 不再登记两遍。
 3. **丝滑链**：同源且接缝相邻的片段之间无跳帧续播（呼吸↔耳朵↔尾巴）。
 4. 方向藏进区间：`range:[0,190]` 正放、`range:[190,0]` 倒放；取消 `reverse` 参数。
 5. 区间/速度仍是集中常量，便于逐帧微调。
@@ -33,7 +33,7 @@
 const SOURCES: Record<string, string[]> = {
   sleep: FRAMES.sleep,   // cat-sleep（241 帧 0..240）
   idle:  IDLE_FRAMES,    // cat-idla
-  wiki:  FRAMES.wiki,    // cat-wiki
+  wink:  FRAMES.wink,    // cat-wink
 };
 ```
 
@@ -78,7 +78,7 @@ const CLIPS = {
   sleepEar:     { src:'sleep', range:[200,215], fps:24, label:'睡觉耳朵' },     // 从接缝出发
   sleepTail:    { src:'sleep', range:[200,241], fps:24, label:'睡觉尾巴' },     // 从接缝出发，走更远
   idleBreathe:  { src:'idle',  range:[0, IDLE_LEN], fps:24, label:'空闲呼吸' }, // IDLE_LEN = IDLE_FRAMES.length
-  wiki:         { src:'wiki',  range:[0, WIKI_LEN], fps:24, label:'wiki' },     // WIKI_LEN = FRAMES.wiki.length
+  wink:         { src:'wink',  range:[0, WIKI_LEN], fps:24, label:'wink' },     // WIKI_LEN = FRAMES.wink.length
 } as const;
 ```
 
@@ -123,9 +123,9 @@ const BEHAVIORS: Record<string, Behavior> = {
     // interruptible 默认 false：睡觉不被鼠标移动打断，只能点击/2 分钟自动醒
     idleAuto: true,
   },
-  wiki: {
-    enter: 'wiki',           // 只有 enter ＝ 一次性动作：放完即结束
-    interruptible: true,     // wiki 可被鼠标移动打断（覆盖默认 false）
+  wink: {
+    enter: 'wink',           // 只有 enter ＝ 一次性动作：放完即结束
+    interruptible: true,     // wink 可被鼠标移动打断（覆盖默认 false）
     idleAuto: true,
   },
 };
@@ -134,7 +134,7 @@ const BEHAVIORS: Record<string, Behavior> = {
 const IDLE_POOL = Object.entries(BEHAVIORS).filter(([, b]) => b.idleAuto).map(([n]) => n);
 ```
 
-**一次性 vs 循环**：没有 `loop` 的行为（wiki）＝放完 `enter`（再放 `exit` 若有）就 `finish`；有 `loop` 的行为（idle、sleep）进入循环，直到被唤醒/打断/自动结束。
+**一次性 vs 循环**：没有 `loop` 的行为（wink）＝放完 `enter`（再放 `exit` 若有）就 `finish`；有 `loop` 的行为（idle、sleep）进入循环，直到被唤醒/打断/自动结束。
 
 ## 4. 丝滑链（引擎自动，配置不操心）
 
@@ -191,7 +191,7 @@ interface BehaviorController {
 - `enterIdle()` → `beh.start(BEHAVIORS.idle)`。
 - `trigger(name)` → `beh.start(BEHAVIORS[name], finishAction)`，记录 `actionResume`；`name` 不存在则空操作。**不再有"先查分段表再查老表"的双路**。
 - `wake()` → `beh.requestExit(finishAction)`。
-- tick 的可打断判定读 `BEHAVIORS[name].interruptible`：默认 false，仅当显式为 `true`（如 wiki）时，鼠标移动才打断动作切回 follow（判定写成 `=== true`）。
+- tick 的可打断判定读 `BEHAVIORS[name].interruptible`：默认 false，仅当显式为 `true`（如 wink）时，鼠标移动才打断动作切回 follow（判定写成 `=== true`）。
 - idle 自动播放从 `IDLE_POOL` 随机挑（`idleAuto` 的行为）。
 - `pet-play-action` 事件仍转发到 `trigger(name)`。
 - 卸载 `beh.stop()`。
@@ -228,7 +228,7 @@ idle 速度可继续用 `config.idleFps`：`beh.start({ ...BEHAVIORS.idle, loop:
 2. 熟睡：呼吸为底，每隔几秒随机耳朵/尾巴；**呼吸↔耳朵↔尾巴之间无跳帧**（重点验证丝滑）。
 3. 点击 → 起身（wakeUp＝lieDown 倒放）后回 follow/idle。
 4. 静置 2 分钟 → 自动起身。
-5. idle 与改动前一致（整段循环）；wiki 一次性播放正常。
+5. idle 与改动前一致（整段循环）；wink 一次性播放正常。
 
 ## 10. 不在本次范围
 
