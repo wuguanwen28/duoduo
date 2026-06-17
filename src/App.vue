@@ -16,7 +16,7 @@ import { onMounted, onUnmounted, ref } from "vue";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import Pet from "./components/Pet/Pet.vue";
 import MissingResources from "./components/MissingResources/MissingResources.vue";
-import { loadResources, getResourceRoot } from "./resources/store";
+import { loadResources, getResourceRoot } from "./store/resources";
 
 /** 启动状态：加载中 / 就绪 / 失败。 */
 const status = ref<"loading" | "ready" | "error">("loading");

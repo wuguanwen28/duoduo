@@ -44,10 +44,13 @@ fn fixed_window_size(scale_factor: f64) -> tauri::PhysicalSize<u32> {
 ///
 /// `head_offset` stores the ratio of the head-centre offset to the sprite
 /// diameter, calibrated by the user so the dead-zone tracks the actual head.
+///
+/// `pending_tab` stores the tab to navigate to when settings window opens.
 struct PetState {
     scale: Mutex<f64>,
     head_offset: Mutex<(f64, f64)>,
     tray_icon: Mutex<Option<tauri::tray::TrayIconId>>,
+    pending_tab: Mutex<Option<String>>,
 }
 
 #[tauri::command]
@@ -90,11 +93,22 @@ fn toggle_pet(app: &tauri::AppHandle) {
 /// Open (or focus, if already open) the settings window — a normal decorated
 /// window hosting the visual manifest editor. Created lazily the first time the
 /// tray "设置" item is clicked, then reused.
-fn open_settings(app: &tauri::AppHandle) {
+/// `tab` 可选，指定打开时自动切换到的标签页（如 "resources"）。
+fn open_settings(app: &tauri::AppHandle, tab: Option<String>) {
+    // 存储待导航的标签页，供前端 onMounted 时获取。
+    if let Some(t) = tab {
+        if let Ok(mut pending) = app.state::<PetState>().pending_tab.lock() {
+            *pending = Some(t);
+        }
+    }
     if let Some(win) = app.get_webview_window("settings") {
         let _ = win.unminimize();
         let _ = win.show();
         let _ = win.set_focus();
+        // 窗口已存在时，直接发送导航事件。
+        if let Some(t) = app.state::<PetState>().pending_tab.lock().ok().and_then(|mut p| p.take()) {
+            let _ = win.emit("navigate-to", t);
+        }
         return;
     }
     // 设置窗加载独立入口 settings.html（vite 多入口构建），渲染 <SettingsApp>。
@@ -314,13 +328,20 @@ async fn pet_toggle_visibility(app: tauri::AppHandle) {
 }
 
 /// 打开（或聚焦）设置窗口。供「打开设置」快捷键调用，复用托盘菜单的
-/// `open_settings` 逻辑。
+/// `open_settings` 逻辑。`tab` 可选，指定自动切换到的标签页。
 ///
 /// 同样**必须 `async`**：本命令由 IPC（快捷键）触发，若在主线程同步
 /// `build()` 新建 webview 窗口会开启嵌套消息循环、卡死整个应用。
 #[tauri::command]
-async fn pet_open_settings(app: tauri::AppHandle) {
-    open_settings(&app);
+async fn pet_open_settings(app: tauri::AppHandle, tab: Option<String>) {
+    open_settings(&app, tab);
+}
+
+/// 获取并清除待导航的标签页。设置窗口 onMounted 时调用，
+/// 返回打开时指定的 tab（如 "resources"），无则返回 None。
+#[tauri::command]
+fn pet_consume_pending_tab(app: tauri::AppHandle) -> Option<String> {
+    app.state::<PetState>().pending_tab.lock().ok().and_then(|mut p| p.take())
 }
 
 /// Trigger a sprite animation on the frontend by emitting a "pet-play-action"
@@ -331,15 +352,53 @@ fn pet_play_action(app: tauri::AppHandle, action: String) -> Result<(), String> 
     app.emit("pet-play-action", action).map_err(|e| e.to_string())
 }
 
+/// 用户选定的资源目录持久化文件（存于系统 AppData 配置目录下，单行绝对路径）。
+fn resource_path_config(app: &tauri::AppHandle) -> Option<PathBuf> {
+    app.path()
+        .app_config_dir()
+        .ok()
+        .map(|d| d.join("resource_path.txt"))
+}
+
+/// 读取持久化的用户选定资源目录；文件不存在/为空/目录已失效时返回 None。
+fn read_saved_resource_root(app: &tauri::AppHandle) -> Option<PathBuf> {
+    let cfg = resource_path_config(app)?;
+    let text = std::fs::read_to_string(&cfg).ok()?;
+    let trimmed = text.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    let p = PathBuf::from(trimmed);
+    if p.is_dir() {
+        Some(p)
+    } else {
+        None
+    }
+}
+
+/// 把用户选定的资源目录写入 AppData 配置（下次启动仍生效）。
+fn write_saved_resource_root(app: &tauri::AppHandle, dir: &Path) -> Result<(), String> {
+    let cfg = resource_path_config(app)
+        .ok_or_else(|| "无法定位配置目录".to_string())?;
+    if let Some(parent) = cfg.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+    std::fs::write(&cfg, dir.to_string_lossy().as_bytes()).map_err(|e| e.to_string())
+}
+
 /// 外置资源根目录的定位优先级：
 /// 1) 环境变量 `DUODUO_RESOURCES`（手动覆盖，便于调试/多套素材）；
-/// 2) 开发模式（debug）：项目根下的 `resources/`；
-/// 3) 发布模式：exe 同级的 `resources/`。
-fn resource_root() -> PathBuf {
+/// 2) AppData 持久化的用户选定目录（设置页「更换目录」写入）；
+/// 3) 开发模式（debug）：项目根下的 `resources/`；
+/// 4) 发布模式：exe 同级的 `resources/`。
+fn resource_root(app: &tauri::AppHandle) -> PathBuf {
     if let Ok(p) = std::env::var("DUODUO_RESOURCES") {
         if !p.trim().is_empty() {
             return PathBuf::from(p);
         }
+    }
+    if let Some(p) = read_saved_resource_root(app) {
+        return p;
     }
     #[cfg(debug_assertions)]
     {
@@ -403,7 +462,7 @@ struct ScanResult {
 /// `convertFileSrc` 直接加载磁盘上的图片。一次性返回，减少前后端往返。
 #[tauri::command]
 fn pet_scan_resources(app: tauri::AppHandle) -> ScanResult {
-    let root = resource_root();
+    let root = resource_root(&app);
     let root_str = root.display().to_string();
     let manifest_path = root.join("manifest.json");
 
@@ -493,8 +552,8 @@ struct ManifestFile {
 /// 读取资源根目录下的 manifest.json 原文（供设置窗编辑）。不存在不报错，
 /// 返回 exists=false + 空内容，由前端给出默认模板。
 #[tauri::command]
-fn pet_read_manifest() -> ManifestFile {
-    let root = resource_root();
+fn pet_read_manifest(app: tauri::AppHandle) -> ManifestFile {
+    let root = resource_root(&app);
     let path = root.join("manifest.json");
     let exists = path.is_file();
     let content = if exists {
@@ -513,15 +572,102 @@ fn pet_read_manifest() -> ManifestFile {
 /// 把内容写回资源根目录下的 manifest.json（目录不存在则创建）。
 /// 「没有就直接创建」即由此实现。
 #[tauri::command]
-fn pet_write_manifest(content: String) -> Result<(), String> {
-    let root = resource_root();
+fn pet_write_manifest(app: tauri::AppHandle, content: String) -> Result<(), String> {
+    let root = resource_root(&app);
     std::fs::create_dir_all(&root).map_err(|e| e.to_string())?;
     std::fs::write(root.join("manifest.json"), content).map_err(|e| e.to_string())
 }
 
-/// 自定义图标的保存路径（exe 同级或项目根下）。
-fn icon_path() -> PathBuf {
-    let root = resource_root();
+/// 资源根下没有 manifest.json 时写入的空白模板。用户更换目录到空文件夹后由
+/// `pet_set_resource_root` 自动创建，使其能在设置页从零配置动作/行为。
+const BLANK_MANIFEST: &str = r#"{
+  "version": 1,
+  "follow": { "dir": "follow", "clockwise": true, "startAngle": 0 },
+  "actions": {},
+  "behaviors": {}
+}
+"#;
+
+/// 设置用户选定的资源目录：校验目录 → 写入 AppData 持久化 → 若缺 manifest.json
+/// 则创建空白模板 → 返回采用后的资源根绝对路径。
+#[tauri::command]
+fn pet_set_resource_root(app: tauri::AppHandle, path: String) -> Result<String, String> {
+    let dir = PathBuf::from(path.trim());
+    if dir.as_os_str().is_empty() {
+        return Err("目录路径为空".into());
+    }
+    if !dir.is_dir() {
+        return Err(format!("目录不存在：{}", dir.display()));
+    }
+    write_saved_resource_root(&app, &dir)?;
+    // 缺 manifest.json 就创建空白模板，让用户能直接进设置页配置。
+    let manifest = dir.join("manifest.json");
+    if !manifest.is_file() {
+        std::fs::write(&manifest, BLANK_MANIFEST)
+            .map_err(|e| format!("创建 manifest.json 失败：{e}"))?;
+    }
+    Ok(dir.display().to_string())
+}
+
+/// 返回当前生效的资源根目录绝对路径（设置页顶栏展示用）。
+#[tauri::command]
+fn pet_get_resource_root(app: tauri::AppHandle) -> String {
+    resource_root(&app).display().to_string()
+}
+
+/// 目录树节点：`label` 为目录名，`value` 为相对资源根的 POSIX 风格相对路径。
+#[derive(serde::Serialize)]
+struct DirNode {
+    label: String,
+    value: String,
+    children: Vec<DirNode>,
+}
+
+/// 递归列出 `dir` 下的子目录，`rel` 是相对资源根的前缀路径（用 `/` 分隔）。
+/// 跳过隐藏目录（`.` 开头）；限制递归深度避免异常深目录。
+fn list_subdirs(dir: &Path, rel: &str, depth: usize) -> Vec<DirNode> {
+    if depth == 0 {
+        return Vec::new();
+    }
+    let mut out: Vec<DirNode> = Vec::new();
+    if let Ok(entries) = std::fs::read_dir(dir) {
+        for e in entries.flatten() {
+            let path = e.path();
+            if !path.is_dir() {
+                continue;
+            }
+            let name = match path.file_name().and_then(|n| n.to_str()) {
+                Some(n) if !n.starts_with('.') => n.to_string(),
+                _ => continue,
+            };
+            let value = if rel.is_empty() {
+                name.clone()
+            } else {
+                format!("{rel}/{name}")
+            };
+            let children = list_subdirs(&path, &value, depth - 1);
+            out.push(DirNode {
+                label: name,
+                value,
+                children,
+            });
+        }
+    }
+    out.sort_by(|a, b| a.label.cmp(&b.label));
+    out
+}
+
+/// 以资源根为根，递归列出所有子目录，供设置页的目录树形下拉使用。
+/// 根目录不存在/不可读时返回空数组（不报错）。
+#[tauri::command]
+fn pet_list_dirs(app: tauri::AppHandle) -> Vec<DirNode> {
+    let root = resource_root(&app);
+    list_subdirs(&root, "", 8)
+}
+
+/// 自定义图标的保存路径（资源根下）。
+fn icon_path(app: &tauri::AppHandle) -> PathBuf {
+    let root = resource_root(app);
     root.join("app-icon.png")
 }
 
@@ -540,7 +686,7 @@ fn pet_save_icon(app: tauri::AppHandle, data: String) -> Result<(), String> {
     .map_err(|e| format!("base64 解码失败：{e}"))?;
 
     // 保存到文件。
-    let path = icon_path();
+    let path = icon_path(&app);
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }
@@ -571,7 +717,7 @@ fn pet_save_icon(app: tauri::AppHandle, data: String) -> Result<(), String> {
 /// 删除自定义图标，恢复默认。
 #[tauri::command]
 fn pet_reset_icon(app: tauri::AppHandle) -> Result<(), String> {
-    let path = icon_path();
+    let path = icon_path(&app);
     if path.exists() {
         std::fs::remove_file(&path).map_err(|e| e.to_string())?;
     }
@@ -599,7 +745,7 @@ fn pet_reset_icon(app: tauri::AppHandle) -> Result<(), String> {
 
 /// 加载自定义图标（如果存在）。
 fn load_custom_icon(app: &tauri::AppHandle) {
-    let path = icon_path();
+    let path = icon_path(app);
     if !path.exists() {
         return;
     }
@@ -634,6 +780,7 @@ pub fn run() {
             scale: Mutex::new(1.0),
             head_offset: Mutex::new((0.0, 0.0)),
             tray_icon: Mutex::new(None),
+            pending_tab: Mutex::new(None),
         })
         .invoke_handler(tauri::generate_handler![
             pet_cursor_angle,
@@ -643,10 +790,14 @@ pub fn run() {
             pet_quit,
             pet_toggle_visibility,
             pet_open_settings,
+            pet_consume_pending_tab,
             pet_play_action,
             pet_scan_resources,
             pet_read_manifest,
             pet_write_manifest,
+            pet_set_resource_root,
+            pet_get_resource_root,
+            pet_list_dirs,
             pet_save_icon,
             pet_reset_icon
         ])
@@ -684,7 +835,7 @@ pub fn run() {
                 // 左键点击托盘图标 → 最小化/恢复来回切换；右键显示菜单。
                 .show_menu_on_left_click(false)
                 .on_menu_event(|app, event| match event.id.as_ref() {
-                    "settings" => open_settings(app),
+                    "settings" => open_settings(app, None),
                     "quit" => app.exit(0),
                     _ => {}
                 })

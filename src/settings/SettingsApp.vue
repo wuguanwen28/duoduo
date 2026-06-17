@@ -47,13 +47,15 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from "vue";
+import { onMounted, onUnmounted, ref } from "vue";
 // @ts-ignore
 import zhCn from "element-plus/dist/locale/zh-cn.mjs";
 import BasicSettings from "./BasicSettings.vue";
-import ResourceSettings from "./ResourceSettings.vue";
+import ResourceSettings from "./resource/ResourceSettings.vue";
 import ShortcutSettings from "./ShortcutSettings.vue";
 import { basicSettings } from "../composables/useBasicSettings";
+import { invoke } from "@tauri-apps/api/core";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 
 /** 默认头像：项目内置 icon.png。 */
 const defaultAvatar = new URL("../assets/icon.png", import.meta.url).href;
@@ -71,6 +73,23 @@ const navItems: NavItem[] = [
 ];
 
 const activeKey = ref("basic");
+
+/** 监听导航事件：窗口已打开时，主窗发送的导航指令。 */
+let unlistenNav: UnlistenFn | undefined;
+onMounted(async () => {
+  // 获取并消费打开时指定的初始标签页（如有）。
+  const initialTab = await invoke<string | null>("pet_consume_pending_tab");
+  if (initialTab) {
+    activeKey.value = initialTab;
+  }
+  // 监听后续的导航事件（窗口已打开时）。
+  unlistenNav = await listen<string>("navigate-to", (event) => {
+    activeKey.value = event.payload;
+  });
+});
+onUnmounted(() => {
+  unlistenNav?.();
+});
 </script>
 
 <style scoped>

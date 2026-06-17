@@ -29,6 +29,11 @@ export interface BehaviorController {
   canWake(): boolean;
   /** 在当前循环中插播一次指定动作，播完回到 base 循环。 */
   playOneShot(name: string): void;
+  /**
+   * 脱离行为、独立把某动作播一次，播完回调 onDone。用于无默认行为（纯跟随）
+   * 时的「测试播放 / 触发动作」——此时没有 base 循环可回。名字无效时立即 onDone。
+   */
+  playClipOnce(name: string, onDone?: () => void): void;
 }
 
 export function useBehavior(): BehaviorController {
@@ -118,6 +123,15 @@ export function useBehavior(): BehaviorController {
     });
   }
 
+  function playClipOnce(name: string, onDone?: () => void) {
+    clearTwitch();
+    anim.stop();
+    behavior = null;
+    exiting = false;
+    inLoop = false;
+    playOnce(name, () => onDone?.());
+  }
+
   function start(b: Behavior, opts?: { lead?: string }) {
     clearTwitch();
     anim.stop();
@@ -164,5 +178,5 @@ export function useBehavior(): BehaviorController {
 
   onScopeDispose(stop);
 
-  return { currentSrc, start, requestExit, stop, canWake, playOneShot };
+  return { currentSrc, start, requestExit, stop, canWake, playOneShot, playClipOnce };
 }

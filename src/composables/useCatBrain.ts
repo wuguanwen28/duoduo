@@ -92,15 +92,20 @@ export function useCatBrain(opts: BrainOptions): CatBrain {
   const behaviors = getBehaviors();
   // 默认/兜底行为名（启动、follow 回落、触发动作的归属都用它）。
   const defaultBehavior = getDefaultBehavior();
+  // 纯跟随模式：没有任何有效行为（但有 follow 素材，否则不会走到这里）。
+  // 此时状态机不轮换行为，常驻 follow，由 gaze 出帧（死区锁正视帧）。
+  const followOnly = Object.keys(behaviors).length === 0;
   const gaze = useGaze();
   const beh = useBehavior();
 
-  const state = ref<CatState>({ kind: "behavior", behavior: defaultBehavior });
+  const state = ref<CatState>(
+    followOnly ? { kind: "follow" } : { kind: "behavior", behavior: defaultBehavior },
+  );
   const cursorOverCat = ref(false);
   let currentBehavior = defaultBehavior;
 
   /** 当前帧来源：gaze(注视) / beh(行为播放器)。 */
-  const activePlayer = ref<"gaze" | "beh">("beh");
+  const activePlayer = ref<"gaze" | "beh">(followOnly ? "gaze" : "beh");
   const currentSrc = computed(() =>
     activePlayer.value === "gaze" ? gaze.currentSrc.value : beh.currentSrc.value,
   );
@@ -188,14 +193,28 @@ export function useCatBrain(opts: BrainOptions): CatBrain {
     goToBehavior(defaultBehavior);
   }
 
+  /** 无默认行为（纯跟随）时，脱离行为把某动作播一次，播完回到跟随。 */
+  function playStandaloneOnce(name: string) {
+    clearRotationTimer();
+    activePlayer.value = "beh";
+    beh.playClipOnce(name, () => {
+      // 播完回到跟随：切回 gaze 出帧并锁正视帧。
+      activePlayer.value = "gaze";
+      state.value = { kind: "follow" };
+      gaze.update(null);
+    });
+  }
+
   function trigger(name: string) {
     if (behaviors[name]) {
       goToBehavior(name); // 行为：切过去待着
       return;
     }
-    // 动作名：切到默认行为并把该动作当 lead 播一次（feed/wiki 等）。
+    // 动作名：有默认行为则切过去并把该动作当 lead 播一次（feed/wiki 等）；
+    // 无默认行为（纯跟随）则脱离行为独立播一次，否则会无任何效果。
     if (getClip(name)) {
-      goToBehavior(defaultBehavior, name);
+      if (behaviors[defaultBehavior]) goToBehavior(defaultBehavior, name);
+      else playStandaloneOnce(name);
       return;
     }
     // 未知名：空操作
@@ -248,6 +267,13 @@ export function useCatBrain(opts: BrainOptions): CatBrain {
 
     cursorOverCat.value = sample.over_cat;
 
+    // 纯跟随模式：常驻 follow，直接把角度喂给 gaze；不跟随/校准/死区 → 喂 null（正视）。
+    if (followOnly) {
+      const followingNow = !opts.paused?.() && opts.followEnabled();
+      gaze.update(followingNow && sample.angle !== null ? sample.angle : null);
+      return;
+    }
+
     let moved = false;
     const pos = { x: sample.cursor_x, y: sample.cursor_y };
     if (lastPos) {
@@ -287,12 +313,19 @@ export function useCatBrain(opts: BrainOptions): CatBrain {
 
   onMounted(async () => {
     lastMoveAt = Date.now();
-    // 起步：直接进入默认行为（无需转场）。
-    currentBehavior = defaultBehavior;
-    activePlayer.value = "beh";
-    state.value = { kind: "behavior", behavior: defaultBehavior };
-    beh.start(behaviors[defaultBehavior]);
-    scheduleRotation();
+    if (followOnly) {
+      // 纯跟随模式：常驻 follow，由 gaze 出帧（初始锁正视帧）。
+      activePlayer.value = "gaze";
+      state.value = { kind: "follow" };
+      gaze.update(null);
+    } else {
+      // 起步：直接进入默认行为（无需转场）。
+      currentBehavior = defaultBehavior;
+      activePlayer.value = "beh";
+      state.value = { kind: "behavior", behavior: defaultBehavior };
+      beh.start(behaviors[defaultBehavior]);
+      scheduleRotation();
+    }
     tickTimer = window.setInterval(tick, config.tickMs);
     void tick();
     try {

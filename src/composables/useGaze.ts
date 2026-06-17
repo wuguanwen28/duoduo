@@ -11,7 +11,7 @@
  * 时钟约定：0=上, 90=右, 180=下, 270=左。配置来自 manifest 的 `follow`。
  */
 import { computed, ref, type Ref } from "vue";
-import { getModel } from "../resources/store";
+import { getModel } from "../store/resources";
 
 export interface GazeController {
   /** 此刻要显示的跟随帧的响应式 URL。 */

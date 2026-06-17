@@ -222,14 +222,20 @@ export async function loadResources(): Promise<LoadResult> {
   }
 
   const behaviorNames = Object.keys(behaviors);
-  if (behaviorNames.length === 0) {
-    return { ok: false, error: "manifest.json 没有有效的行为（每个行为至少需要 base 指向一个存在的动作）" };
+  // 既无有效行为、也无跟随素材，才算缺资源；只要有 follow 就放行（纯跟随模式）。
+  if (behaviorNames.length === 0 && !follow) {
+    return {
+      ok: false,
+      error:
+        "manifest.json 既没有有效行为（每个行为需 base 指向存在的动作），也没有 follow 跟随素材",
+    };
   }
 
-  // 默认/兜底行为：取 manifest.defaultBehavior，无效则回退到 idle 或第一个行为。
+  // 默认/兜底行为：取 manifest.defaultBehavior，无效则回退到 idle 或第一个行为；
+  // 无任何行为时为空串（纯跟随模式，状态机不再轮换行为）。
   let defaultBehavior = typeof manifest.defaultBehavior === "string" ? manifest.defaultBehavior : "";
   if (!behaviors[defaultBehavior]) {
-    defaultBehavior = behaviors["idle"] ? "idle" : behaviorNames[0];
+    defaultBehavior = behaviorNames.length === 0 ? "" : behaviors["idle"] ? "idle" : behaviorNames[0];
   }
 
   // 5) 预加载所有帧。
