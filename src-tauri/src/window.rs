@@ -5,6 +5,7 @@ use windows_sys::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_CONTR
 
 use tauri::{Emitter, Manager};
 
+use crate::icon;
 use crate::state::PetState;
 
 /// 穿透状态下窗口收不到键盘事件，故由后端主动轮询 Ctrl 是否按下。
@@ -61,9 +62,19 @@ pub fn open_settings(app: &tauri::AppHandle, tab: Option<String>) {
     // 使用 256×256 高清图标，避免任务栏显示模糊。
     let icon = tauri::image::Image::from_bytes(include_bytes!("../icons/128x128@2x.png"))
         .expect("加载窗口图标失败");
+
+    // 恢复上次的大小（逻辑像素），无记录则用默认 800×600。
+    let state = app.state::<PetState>();
+    let (w, h) = state
+        .settings_size
+        .lock()
+        .ok()
+        .and_then(|g| *g)
+        .unwrap_or((900.0, 600.0));
+
     match tauri::WebviewWindowBuilder::new(app, "settings", url)
         .title("设置")
-        .inner_size(800.0, 600.0)
+        .inner_size(w, h)
         .min_inner_size(560.0, 420.0)
         .resizable(true)
         .center()
@@ -74,6 +85,8 @@ pub fn open_settings(app: &tauri::AppHandle, tab: Option<String>) {
         Ok(win) => {
             let _ = win.show();
             let _ = win.set_focus();
+            // 如果用户设置过自定义图标，同步应用到新创建出的设置窗口。
+            icon::load_custom_icon(app);
         }
         Err(e) => eprintln!("open settings window failed: {e}"),
     }

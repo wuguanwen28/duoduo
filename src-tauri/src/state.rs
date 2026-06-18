@@ -9,9 +9,13 @@ use std::sync::Mutex;
 /// diameter, calibrated by the user so the dead-zone tracks the actual head.
 ///
 /// `pending_tab` stores the tab to navigate to when settings window opens.
+///
+/// `settings_size` stores the last logical size (width, height) of the settings
+/// window so it can be restored on reopen.
 pub struct PetState {
     pub scale: Mutex<f64>,
     pub head_offset: Mutex<(f64, f64)>,
     pub tray_icon: Mutex<Option<tauri::tray::TrayIconId>>,
     pub pending_tab: Mutex<Option<String>>,
+    pub settings_size: Mutex<Option<(f64, f64)>>,
 }

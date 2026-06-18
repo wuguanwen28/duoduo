@@ -36,6 +36,7 @@ pub fn run() {
             head_offset: Mutex::new((0.0, 0.0)),
             tray_icon: Mutex::new(None),
             pending_tab: Mutex::new(None),
+            settings_size: Mutex::new(None),
         })
         .invoke_handler(tauri::generate_handler![
             gaze::pet_cursor_angle,
@@ -73,6 +74,18 @@ pub fn run() {
                     }
                     if let Err(e) = geometry::clamp_to_work_area(window) {
                         eprintln!("clamp_to_work_area failed: {e}");
+                    }
+                }
+            }
+            // Remember the settings window size so it can be restored on reopen.
+            if let tauri::WindowEvent::Resized(size) = event {
+                if window.label() == "settings" {
+                    let sf = window.scale_factor().unwrap_or(1.0);
+                    let logical = size.to_logical::<f64>(sf);
+                    if let Ok(mut guard) =
+                        window.app_handle().state::<PetState>().settings_size.lock()
+                    {
+                        *guard = Some((logical.width, logical.height));
                     }
                 }
             }
