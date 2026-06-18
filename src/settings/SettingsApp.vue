@@ -39,6 +39,7 @@
       <KeepAlive>
         <BasicSettings v-if="activeKey === 'basic'" />
         <ResourceSettings v-else-if="activeKey === 'resources'" />
+        <VideoToWebp v-else-if="activeKey === 'tools'" />
         <ShortcutSettings v-else-if="activeKey === 'shortcuts'" />
       </KeepAlive>
     </main>
@@ -52,6 +53,7 @@ import { onMounted, onUnmounted, ref } from "vue";
 import zhCn from "element-plus/dist/locale/zh-cn.mjs";
 import BasicSettings from "./BasicSettings.vue";
 import ResourceSettings from "./resource/ResourceSettings.vue";
+import VideoToWebp from "./tools/VideoToWebp.vue";
 import ShortcutSettings from "./ShortcutSettings.vue";
 import { basicSettings } from "../composables/useBasicSettings";
 import { invoke } from "@tauri-apps/api/core";
@@ -69,6 +71,7 @@ interface NavItem {
 const navItems: NavItem[] = [
   { key: "basic", label: "基础设置", icon: "🐱" },
   { key: "resources", label: "资源设置", icon: "📂" },
+  { key: "tools", label: "视频转图片", icon: "🎞️" },
   { key: "shortcuts", label: "快捷键设置", icon: "⌨️" },
 ];
 

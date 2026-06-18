@@ -8,6 +8,7 @@
 //! - `icon`      自定义图标
 //! - `tray`      系统托盘
 
+mod converter;
 mod gaze;
 mod geometry;
 mod icon;
@@ -52,6 +53,8 @@ pub fn run() {
             resources::pet_set_resource_root,
             resources::pet_get_resource_root,
             resources::pet_list_dirs,
+            converter::pet_converter_begin,
+            converter::pet_converter_write,
             icon::pet_save_icon,
             icon::pet_reset_icon
         ])
