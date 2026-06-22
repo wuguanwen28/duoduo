@@ -12,6 +12,13 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
+# 桌面宠物对运行时性能不敏感，用 opt-level=1 换取明显更快的编译/链接（首次养缓存、
+# 偶发重编都更省）。strip 去符号顺带减小体积、链接略快。改 profile 会令第一次 CI 全量
+# 重编一次，之后稳定。
+[profile.release]
+opt-level = 1
+strip = true
+
 [dependencies]
 tauri = { version = "2", features = ["protocol-asset", "tray-icon", "image-png"] }
 serde = { version = "1", features = ["derive"] }

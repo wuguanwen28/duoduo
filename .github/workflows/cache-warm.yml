@@ -1,0 +1,62 @@
+# 预热构建缓存到「默认分支(master)」作用域，供 release.yml 的 tag 发布 run fallback 命中。
+#
+# 背景：GitHub Actions 缓存按 ref 隔离——tag 触发的发布 run 只能读「自身 tag」或「默认分支」
+# 的缓存，各 tag 互相隔离。若不在 master 养缓存，每次发版都要全量重编 ~280 个依赖(~7 分钟)。
+# 本工作流在 master 推送、且影响 Rust 编译的文件变化时跑一次完整构建，把依赖缓存存进 master
+# 作用域；之后 tag 发布 run 即可 fallback 命中，只需重编本仓库自己的 crate。
+#
+# 仅养缓存，不发布任何产物。与 release.yml 走完全相同的构建路径(pnpm app:build)，确保依赖
+# 编译指纹一致、缓存可被命中。
+name: cache-warm
+
+on:
+  push:
+    branches:
+      - master
+    # 仅在影响 Rust 编译的文件变化时触发，纯前端/文档改动的 push 不浪费一次 Windows 构建。
+    paths:
+      - "src-tauri/**" # Rust 源码 + Cargo.toml + Cargo.lock
+      - "pnpm-lock.yaml" # 前端依赖锁(影响 pnpm 缓存)
+      - ".github/workflows/cache-warm.yml"
+
+# 连续推送只保留最新一次，旧的自动取消，避免构建堆积。
+concurrency:
+  group: cache-warm
+  cancel-in-progress: true
+
+# 只读权限即可——本工作流不写 Release、不推代码。
+permissions:
+  contents: read
+
+jobs:
+  warm:
+    runs-on: windows-latest
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: 安装 Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: 安装 Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: 缓存 Rust 构建产物
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: 安装前端依赖
+        run: pnpm install --frozen-lockfile
+
+      # 走与 release.yml 完全相同的构建路径，确保依赖编译指纹一致；产物不上传、不发布。
+      - name: 构建（养缓存）
+        run: pnpm app:build
