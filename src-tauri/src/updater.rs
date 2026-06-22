@@ -29,7 +29,9 @@ pub struct VersionManifest {
     pub version: String,
     #[serde(default)]
     pub notes: String,
+    // 发布日期：从 version.json 解析保留，目前仅作元数据、未在 UI 展示。
     #[serde(default, rename = "pubDate")]
+    #[allow(dead_code)]
     pub pub_date: String,
     pub exe: ExeInfo,
 }
@@ -114,7 +116,9 @@ fn exe_dir() -> Result<PathBuf, String> {
         .ok_or_else(|| "无法定位 exe 目录".to_string())
 }
 
-/// 当前 exe 完整路径。
+/// 当前 exe 完整路径（仅发布模式的自替换流程 `pet_update_apply` 用到，
+/// 故用 cfg 限定，避免开发模式编译出未使用函数的 dead_code 警告）。
+#[cfg(not(debug_assertions))]
 fn current_exe_path() -> Result<PathBuf, String> {
     std::env::current_exe().map_err(|e| e.to_string())
 }
