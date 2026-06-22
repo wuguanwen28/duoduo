@@ -127,7 +127,13 @@ async function onApply() {
 /** 监听下载进度事件。 */
 let unlisten: UnlistenFn | undefined;
 onMounted(async () => {
-  current.value = ""; // 进入面板先查一次拿当前版本
+  // 版本号是编译进 exe 的常量（纯本地、零网络），先秒填出来，
+  // 这样即便后面的网络检查慢或失败，「当前版本」也始终可见。
+  try {
+    current.value = await invoke<string>("pet_app_version");
+  } catch {
+    // 取本地版本理论上不会失败；万一失败留空，由 onCheck 兜底。
+  }
   await onCheck();
   unlisten = await listen<{ downloaded: number; total: number }>(
     "update://progress",

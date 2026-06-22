@@ -59,6 +59,7 @@ pub fn run() {
             converter::pet_converter_write,
             icon::pet_save_icon,
             icon::pet_reset_icon,
+            updater::pet_app_version,
             updater::pet_update_check,
             updater::pet_update_download,
             updater::pet_update_apply

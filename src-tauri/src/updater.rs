@@ -244,6 +244,15 @@ pub fn cleanup_old_exe() {
     }
 }
 
+/// 返回当前 exe 的版本号（编译期常量，纯本地、零网络）。
+///
+/// 与 `pet_update_check` 共用 `CARGO_PKG_VERSION` 这一来源，保证「界面显示的版本」
+/// 和「更新比较用的版本」永远一致；前端进面板时先调它秒填版本，再异步去查更新。
+#[tauri::command]
+pub fn pet_app_version() -> String {
+    env!("CARGO_PKG_VERSION").to_string()
+}
+
 /// 检查更新：三源拉 version.json，与当前版本比较。
 #[tauri::command]
 pub async fn pet_update_check() -> Result<CheckResult, String> {
