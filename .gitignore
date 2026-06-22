@@ -14,6 +14,8 @@ target/
 
 # 打包产物（pnpm app:build 生成的绿色版 zip）
 dist-package/
+# 镜像中转目录（publish:mirrors 从 GitHub Release 下载的唯一构建产物）
+dist-mirror/
 
 # Generated Tauri files
 src-tauri/gen/schemas/
