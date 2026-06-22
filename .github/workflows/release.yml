@@ -60,6 +60,12 @@ jobs:
         shell: bash
         run: node scripts/extract-changelog.mjs "${{ github.ref_name }}" > RELEASE_NOTES.md
 
+      - name: 追加下载说明
+        shell: bash
+        run: |
+          version="${GITHUB_REF_NAME#v}"     # v0.2.1 → 0.2.1
+          sed "s/__VERSION__/$version/g" scripts/release-footer.md >> RELEASE_NOTES.md
+
       - name: 发布到 GitHub Releases
         uses: softprops/action-gh-release@v2
         with:
