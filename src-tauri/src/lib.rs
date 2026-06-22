@@ -15,6 +15,7 @@ mod icon;
 mod resources;
 mod state;
 mod tray;
+mod updater;
 mod window;
 
 use std::sync::Mutex;
@@ -57,7 +58,10 @@ pub fn run() {
             converter::pet_converter_begin,
             converter::pet_converter_write,
             icon::pet_save_icon,
-            icon::pet_reset_icon
+            icon::pet_reset_icon,
+            updater::pet_update_check,
+            updater::pet_update_download,
+            updater::pet_update_apply
         ])
         .on_window_event(|window, event| {
             // Clamp the pet to the union of all monitors. There is only one
@@ -115,6 +119,9 @@ pub fn run() {
 
             // 加载自定义图标（如果用户设置过）。
             icon::load_custom_icon(app.handle());
+
+            // 清理上次热更新残留的旧 exe。
+            updater::cleanup_old_exe();
 
             Ok(())
         })

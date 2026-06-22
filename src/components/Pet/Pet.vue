@@ -65,6 +65,17 @@
     <Transition name="toast">
       <div v-if="toast" class="pet__toast">{{ toast }}</div>
     </Transition>
+
+    <!-- 发现新版本：右上角轻提示，点开跳设置「关于/更新」。
+         穿透开启时窗口整体不响应鼠标事件，气泡不可点；此时改为引导用户从托盘进设置。 -->
+    <div
+      v-if="updateAvailable"
+      class="pet-update-badge"
+      :title="badgeClickable ? '发现新版本，点击查看' : '发现新版本，请从托盘→设置查看'"
+      @click="badgeClickable && openUpdatePage()"
+    >
+      {{ badgeClickable ? "🔔 新版本" : "🔔 新版本（托盘→设置查看）" }}
+    </div>
   </div>
 </template>
 
@@ -274,6 +285,16 @@ const interactive = computed(() => {
   if (passthrough.value && !ctrlPressed.value) return false;
   return brain.cursorOverCat.value;
 });
+
+/**
+ * 新版本提示气泡当前是否可点击：
+ * - 关闭穿透时整窗交互，气泡可直接点击；
+ * - 开启穿透时整窗不响应鼠标，气泡靠按住 Ctrl 临时恢复交互即可点；
+ * - 否则只显示文案，引导用户从托盘进入设置。
+ */
+const badgeClickable = computed(() => {
+  return !passthrough.value || ctrlPressed.value;
+});
 watch(
   interactive,
   (on) => {
@@ -312,6 +333,26 @@ watch(
   },
   { immediate: true },
 );
+
+// ── 更新检查 ─────────────────────────────────────────────────────
+/** 是否检测到新版本（控制轻提示气泡显示）。 */
+const updateAvailable = ref(false);
+
+/** 启动后台静默检查更新；失败完全忽略（不打扰用户）。 */
+async function silentCheckUpdate() {
+  try {
+    const r = await invoke<{ hasUpdate: boolean }>("pet_update_check");
+    updateAvailable.value = r.hasUpdate;
+  } catch {
+    // 静默：网络不可达 / 无源时不提示。
+  }
+}
+
+/** 点击提示气泡：打开设置窗口的「关于/更新」页。 */
+function openUpdatePage() {
+  updateAvailable.value = false;
+  invoke("pet_open_settings", { tab: "update" }).catch(() => {});
+}
 
 // ── 提示 ────────────────────────────────────────────────────────────
 const toast = ref("");
@@ -513,6 +554,9 @@ onMounted(async () => {
   } catch {
     // 忽略——事件绑定不可用。
   }
+
+  // 启动后静默检查更新；失败不打扰用户。
+  silentCheckUpdate();
 });
 
 onUnmounted(() => {
@@ -628,6 +672,23 @@ onUnmounted(() => {
 .toast-enter-from,
 .toast-leave-to {
   opacity: 0;
+}
+
+/* 新版本轻提示气泡：右上角小药丸，不打断使用 */
+.pet-update-badge {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  z-index: 50;
+  padding: 2px 8px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: #fff;
+  background: var(--el-color-primary, #409eff);
+  border-radius: 10px;
+  cursor: pointer;
+  user-select: none;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
 }
 </style>
 

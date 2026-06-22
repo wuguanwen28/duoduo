@@ -13,9 +13,12 @@ import {
   rmSync,
   cpSync,
   readFileSync,
+  writeFileSync,
+  statSync,
 } from "node:fs";
 import { join, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { createHash } from "node:crypto";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const exePath = join(root, "src-tauri", "target", "release", "duoduo.exe");
@@ -47,18 +50,50 @@ cpSync(exePath, join(stageDir, "duoduo.exe"));
 cpSync(resourcesDir, join(stageDir, "resources"), { recursive: true });
 console.log(`✓ 已收集：duoduo.exe + resources/ → ${stageDir}`);
 
-// 压成 zip（Windows 自带 PowerShell 的 Compress-Archive）。
-const zipPath = join(outRoot, `duoduo-${version}-windows.zip`);
-rmSync(zipPath, { force: true });
-execFileSync(
-  "powershell",
-  [
-    "-NoProfile",
-    "-Command",
-    `Compress-Archive -Path '${stageDir}' -DestinationPath '${zipPath}' -Force`,
-  ],
-  { stdio: "inherit" },
-);
+// 1) 整合 zip（新手一站式）：dist-package/duoduo-<版本>-full.zip
+const fullZip = join(outRoot, `duoduo-${version}-full.zip`);
+rmSync(fullZip, { force: true });
+execFileSync("powershell", [
+  "-NoProfile", "-Command",
+  `Compress-Archive -Path '${stageDir}' -DestinationPath '${fullZip}' -Force`,
+], { stdio: "inherit" });
 
-console.log(`\n✅ 打包完成：${zipPath}`);
-console.log(`   解压后得到 duoduo/，内含 duoduo.exe 与 resources/，双击 exe 即用。`);
+// 2) 裸 exe（热更新目标）：dist-package/duoduo.exe
+const bareExe = join(outRoot, "duoduo.exe");
+rmSync(bareExe, { force: true });
+cpSync(join(stageDir, "duoduo.exe"), bareExe);
+
+// 3) 资源 zip：dist-package/duoduo-resources.zip
+const resZip = join(outRoot, "duoduo-resources.zip");
+rmSync(resZip, { force: true });
+execFileSync("powershell", [
+  "-NoProfile", "-Command",
+  `Compress-Archive -Path '${join(stageDir, "resources")}' -DestinationPath '${resZip}' -Force`,
+], { stdio: "inherit" });
+
+// 4) version.json（含裸 exe 的 sha256 + 大小）。notes 取 CHANGELOG 顶部版本段（缺失则空）。
+const exeBytes = readFileSync(bareExe);
+const sha256 = createHash("sha256").update(exeBytes).digest("hex");
+const size = statSync(bareExe).size;
+let notes = "";
+try {
+  const cl = readFileSync(join(root, "CHANGELOG.md"), "utf-8");
+  // 取第一个 "## [" 段到下一个 "## [" 之间的内容作为更新说明。
+  const segs = cl.split(/^## \[/m);
+  if (segs[1]) notes = "## [" + segs[1].split(/^## \[/m)[0].trim();
+} catch { /* 无 CHANGELOG 时留空 */ }
+
+const manifest = {
+  version,
+  notes,
+  pubDate: new Date().toISOString().slice(0, 10),
+  exe: { name: "duoduo.exe", size, sha256 },
+};
+const manifestPath = join(outRoot, "version.json");
+writeFileSync(manifestPath, JSON.stringify(manifest, null, 2));
+
+console.log(`\n✅ 产物：`);
+console.log(`   ${fullZip}`);
+console.log(`   ${bareExe}`);
+console.log(`   ${resZip}`);
+console.log(`   ${manifestPath}（sha256=${sha256.slice(0, 12)}…）`);

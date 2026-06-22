@@ -63,5 +63,9 @@ jobs:
       - name: 发布到 GitHub Releases
         uses: softprops/action-gh-release@v2
         with:
-          files: dist-package/*.zip
+          files: |
+            dist-package/duoduo.exe
+            dist-package/version.json
+            dist-package/duoduo-resources.zip
+            dist-package/duoduo-*-full.zip
           body_path: RELEASE_NOTES.md

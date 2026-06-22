@@ -41,6 +41,7 @@
         <ResourceSettings v-else-if="activeKey === 'resources'" />
         <VideoToWebp v-else-if="activeKey === 'tools'" />
         <ShortcutSettings v-else-if="activeKey === 'shortcuts'" />
+        <UpdateSettings v-else-if="activeKey === 'update'" />
       </KeepAlive>
     </main>
   </div>
@@ -55,6 +56,7 @@ import BasicSettings from "./BasicSettings.vue";
 import ResourceSettings from "./resource/ResourceSettings.vue";
 import VideoToWebp from "./tools/VideoToWebp.vue";
 import ShortcutSettings from "./ShortcutSettings.vue";
+import UpdateSettings from "./update/UpdateSettings.vue";
 import { basicSettings } from "../composables/useBasicSettings";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
@@ -73,6 +75,7 @@ const navItems: NavItem[] = [
   { key: "resources", label: "资源设置", icon: "📂" },
   { key: "tools", label: "视频转图片", icon: "🎞️" },
   { key: "shortcuts", label: "快捷键设置", icon: "⌨️" },
+  { key: "update", label: "关于 / 更新", icon: "🔄" },
 ];
 
 const activeKey = ref("basic");
