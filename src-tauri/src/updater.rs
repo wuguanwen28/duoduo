@@ -89,6 +89,8 @@ pub fn exe_urls(version: &str, exe_name: &str) -> Vec<(&'static str, String)> {
 async fn fetch_manifest() -> Result<VersionManifest, String> {
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(15))
+        // 显式 UA：GitHub raw/release 端点对匿名默认 UA 偶发 403。
+        .user_agent("duoduo-updater")
         .build()
         .map_err(|e| e.to_string())?;
     let mut last_err = String::from("无可用更新源");
@@ -143,6 +145,8 @@ async fn download_to(
     use std::io::Write;
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(600))
+        // 显式 UA：GitHub raw/release 端点对匿名默认 UA 偶发 403。
+        .user_agent("duoduo-updater")
         .build()
         .map_err(|e| e.to_string())?;
     let mut resp = client.get(url).send().await.map_err(|e| e.to_string())?;
@@ -213,9 +217,15 @@ pub async fn pet_update_apply(app: tauri::AppHandle) -> Result<(), String> {
         // 关键三步：当前 exe → .old，新 exe → 正式名，再启动新进程。
         std::fs::rename(&cur, &oldp).map_err(|e| format!("备份旧 exe 失败：{e}"))?;
         if let Err(e) = std::fs::rename(&newp, &cur) {
-            // 回滚：把 .old 改回来，避免没有可用 exe。
-            let _ = std::fs::rename(&oldp, &cur);
-            return Err(format!("替换新 exe 失败：{e}"));
+            // 回滚：把 .old 改回来，避免没有可用 exe。回滚也失败时（极窄
+            // 窗口，如杀软锁文件），给出手动恢复指引——此时 .old/.new 仍在盘上。
+            if let Err(re) = std::fs::rename(&oldp, &cur) {
+                return Err(format!(
+                    "替换新 exe 失败：{e}；自动回滚也失败：{re}。\
+                     请手动把同目录下的 duoduo.exe.old 改名回 duoduo.exe 以恢复。"
+                ));
+            }
+            return Err(format!("替换新 exe 失败（已回滚到旧版本）：{e}"));
         }
         std::process::Command::new(&cur)
             .spawn()
