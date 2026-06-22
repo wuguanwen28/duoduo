@@ -13,16 +13,45 @@
       >
         检查更新
       </el-button>
+      <!-- 状态提示 -->
+      <el-alert
+        v-if="message"
+        :title="message"
+        :type="messageType"
+        :closable="false"
+        show-icon
+      />
     </div>
 
-    <!-- 状态提示 -->
-    <el-alert
-      v-if="message"
-      :title="message"
-      :type="messageType"
-      :closable="false"
-      show-icon
-    />
+    <!-- 关于信息：作者 / 邮箱 / 仓库地址（链接交给系统默认程序打开） -->
+    <dl class="update-settings__about">
+      <dt>作者</dt>
+      <dd>{{ AUTHOR }}</dd>
+
+      <dt>邮箱</dt>
+      <dd>
+        <a href="#" @click.prevent="openUrl(`mailto:${EMAIL}`)">{{ EMAIL }}</a>
+      </dd>
+
+      <dt>Gitee</dt>
+      <dd>
+        <a href="#" @click.prevent="openUrl(GITEE_URL)">{{ GITEE_URL }}</a>
+      </dd>
+
+      <dt>GitHub</dt>
+      <dd>
+        <a href="#" @click.prevent="openUrl(GITHUB_URL)">{{ GITHUB_URL }}</a>
+      </dd>
+    </dl>
+
+    <!-- 反馈入口：问题 / 建议欢迎到任一仓库的 Issues 提出 -->
+    <p class="update-settings__feedback">
+      如有问题或建议，欢迎到
+      <a href="#" @click.prevent="openUrl(`${GITEE_URL}/issues`)">Gitee Issues</a>
+      或
+      <a href="#" @click.prevent="openUrl(`${GITHUB_URL}/issues`)">GitHub Issues</a>
+      提出指导意见。
+    </p>
 
     <!-- 有新版本：说明 + 下载/安装 -->
     <div v-if="latest && hasUpdate" class="update-settings__new">
@@ -55,6 +84,24 @@ import { ref, onMounted, onUnmounted } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { ElMessage } from "element-plus";
+
+/** 关于信息（硬编码常量）。 */
+const AUTHOR = "wuguanwen";
+const EMAIL = "513951279@qq.com";
+const GITHUB_URL = "https://github.com/wuguanwen28/duoduo";
+const GITEE_URL = "https://gitee.com/wuguanwen28/duoduo";
+
+/**
+ * 用系统默认程序打开外部链接（浏览器 / 邮件客户端）。
+ * Tauri webview 默认不外跳，交由后端 pet_open_url 调用系统命令打开。
+ */
+async function openUrl(url: string) {
+  try {
+    await invoke("pet_open_url", { url });
+  } catch (e) {
+    ElMessage.error(`打开链接失败：${e}`);
+  }
+}
 
 /** 后端 pet_update_check 的返回结构。 */
 interface CheckResult {
@@ -159,6 +206,52 @@ onUnmounted(() => unlisten?.());
   align-items: center;
   gap: 16px;
   margin-bottom: 16px;
+
+  span {
+    flex-shrink: 0;
+  }
+}
+/* 关于信息：左列标签 + 右列内容的两列网格 */
+.update-settings__about {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 8px 16px;
+  margin: 0 0 16px;
+  padding: 12px 16px;
+  background: var(--el-fill-color-light);
+  border-radius: 6px;
+  font-size: 13px;
+}
+.update-settings__about dt {
+  color: var(--el-text-color-secondary);
+  white-space: nowrap;
+}
+.update-settings__about dd {
+  margin: 0;
+  word-break: break-all;
+}
+.update-settings__about a {
+  color: var(--el-color-primary);
+  cursor: pointer;
+  text-decoration: none;
+}
+.update-settings__about a:hover {
+  text-decoration: underline;
+}
+/* 反馈入口：一行说明文字 + 两个 Issues 链接 */
+.update-settings__feedback {
+  margin: 0 0 16px;
+  font-size: 13px;
+  color: var(--el-text-color-secondary);
+  line-height: 1.7;
+}
+.update-settings__feedback a {
+  color: var(--el-color-primary);
+  cursor: pointer;
+  text-decoration: none;
+}
+.update-settings__feedback a:hover {
+  text-decoration: underline;
 }
 .update-settings__new {
   margin-top: 16px;

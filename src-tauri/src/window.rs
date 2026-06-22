@@ -135,3 +135,31 @@ pub fn pet_consume_pending_tab(app: tauri::AppHandle) -> Option<String> {
 pub fn pet_play_action(app: tauri::AppHandle, action: String) -> Result<(), String> {
     app.emit("pet-play-action", action).map_err(|e| e.to_string())
 }
+
+/// 用系统默认程序打开外部链接：`http(s)` 交给浏览器、`mailto:` 交给邮件客户端。
+/// 供「关于」页面的仓库地址 / 邮箱链接点击时调用（Tauri webview 默认不外跳）。
+///
+/// 仅放行 http / https / mailto 三种协议，避免被诱导用 `cmd start` 执行任意命令；
+/// 这些 URL 目前都是前端硬编码常量，协议白名单只是额外一道保险。
+#[tauri::command]
+pub fn pet_open_url(url: String) -> Result<(), String> {
+    let allowed =
+        url.starts_with("https://") || url.starts_with("http://") || url.starts_with("mailto:");
+    if !allowed {
+        return Err("不支持的链接协议".into());
+    }
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        // CREATE_NO_WINDOW：避免 cmd 弹出黑框一闪而过。
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        // `start` 后第一个引号参数是「窗口标题」占位，必须保留空串，
+        // 否则 URL 可能被误当成标题，链接打不开。
+        std::process::Command::new("cmd")
+            .args(["/C", "start", "", &url])
+            .creation_flags(CREATE_NO_WINDOW)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
