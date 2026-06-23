@@ -38,6 +38,7 @@
     <main class="settings-main">
       <KeepAlive>
         <BasicSettings v-if="activeKey === 'basic'" />
+        <DisplaySettings v-else-if="activeKey === 'display'" />
         <ResourceSettings v-else-if="activeKey === 'resources'" />
         <VideoToWebp v-else-if="activeKey === 'tools'" />
         <ShortcutSettings v-else-if="activeKey === 'shortcuts'" />
@@ -55,6 +56,7 @@ import zhCn from "element-plus/dist/locale/zh-cn.mjs";
 import BasicSettings from "./BasicSettings.vue";
 import ResourceSettings from "./resource/ResourceSettings.vue";
 import VideoToWebp from "./tools/VideoToWebp.vue";
+import DisplaySettings from "./DisplaySettings.vue";
 import ShortcutSettings from "./ShortcutSettings.vue";
 import UpdateSettings from "./update/UpdateSettings.vue";
 import { basicSettings } from "../composables/useBasicSettings";
@@ -72,6 +74,7 @@ interface NavItem {
 
 const navItems: NavItem[] = [
   { key: "basic", label: "基础设置", icon: "🐱" },
+  { key: "display", label: "显示设置", icon: "🖥️" },
   { key: "resources", label: "资源设置", icon: "📂" },
   { key: "tools", label: "视频转图片", icon: "🎞️" },
   { key: "shortcuts", label: "快捷键设置", icon: "⌨️" },

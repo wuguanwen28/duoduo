@@ -34,9 +34,8 @@ pub struct GazeSample {
 /// Sample the cursor gaze. Returns the angle from the cat's head to the global
 /// cursor (see `GazeSample`) together with the raw cursor position.
 ///
-/// The cat sprite is right-aligned and bottom-aligned in the window (menu
-/// reserve on the left), so the head centre = window right edge - sprite/2
-/// (X), window bottom edge - sprite/2 (Y), plus calibrated offset.
+/// The cat sprite is centered in the fixed square window, so the head centre =
+/// window center (X and Y), plus the calibrated offset.
 #[tauri::command]
 pub fn pet_cursor_angle(window: tauri::Window) -> Result<GazeSample, String> {
     let cursor = window.cursor_position().map_err(|e| e.to_string())?;
@@ -48,10 +47,10 @@ pub fn pet_cursor_angle(window: tauri::Window) -> Result<GazeSample, String> {
     let (ox_ratio, oy_ratio) = state.head_offset.lock().map(|g| *g).unwrap_or((0.0, 0.0));
     let sf = window.scale_factor().map_err(|e| e.to_string())?;
 
-    // Cat is right-aligned and bottom-aligned.
+    // Cat is centered in the window.
     let sprite_px = PET_BASE_PX * scale * sf;
-    let cx = pos.x as f64 + size.width as f64 - sprite_px / 2.0 + ox_ratio * sprite_px;
-    let cy = pos.y as f64 + size.height as f64 - sprite_px / 2.0 + oy_ratio * sprite_px;
+    let cx = pos.x as f64 + size.width as f64 / 2.0 + ox_ratio * sprite_px;
+    let cy = pos.y as f64 + size.height as f64 / 2.0 + oy_ratio * sprite_px;
     let dx = cursor.x - cx;
     let dy = cursor.y - cy;
 
@@ -63,15 +62,15 @@ pub fn pet_cursor_angle(window: tauri::Window) -> Result<GazeSample, String> {
         Some(dy.atan2(dx).to_degrees().rem_euclid(360.0))
     };
 
-    // The cat fills a `sprite_px` square anchored to the window's bottom-right.
-    // A click inside that box belongs to the cat; everything else is empty and
-    // should pass through (see the frontend's click-through toggle).
-    let sprite_right = pos.x as f64 + size.width as f64;
-    let sprite_bottom = pos.y as f64 + size.height as f64;
-    let over_cat = cursor.x >= sprite_right - sprite_px
-        && cursor.x <= sprite_right
-        && cursor.y >= sprite_bottom - sprite_px
-        && cursor.y <= sprite_bottom;
+    // The cat fills a `sprite_px` square centered in the window. A click inside
+    // that box belongs to the cat; everything else is empty and should pass
+    // through (see the frontend's click-through toggle).
+    let win_cx = pos.x as f64 + size.width as f64 / 2.0;
+    let win_cy = pos.y as f64 + size.height as f64 / 2.0;
+    let over_cat = cursor.x >= win_cx - sprite_px / 2.0
+        && cursor.x <= win_cx + sprite_px / 2.0
+        && cursor.y >= win_cy - sprite_px / 2.0
+        && cursor.y <= win_cy + sprite_px / 2.0;
 
     Ok(GazeSample {
         angle,

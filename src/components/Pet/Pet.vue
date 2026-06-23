@@ -1,46 +1,36 @@
 <template>
   <div class="pet" @keydown.esc="menuOpen = false" @contextmenu.prevent>
-    <!-- 右键点击猫咪即可打开菜单。窗口始终足够宽，能同时容纳猫咪（右对齐）
-         和菜单面板（左侧），因此 placement="left-end" 无需动态调整窗口尺寸即可正常工作。
-         :teleported="false" 使面板保持在窗口内部。 -->
-    <el-popover
-      v-model:visible="menuOpen"
-      trigger="contextmenu"
-      placement="left-end"
-      :width="200"
-      :teleported="false"
-      :show-arrow="false"
-      :persistent="false"
-      :popper-options="{ modifiers: [{ name: 'flip', enabled: false }] }"
-      popper-class="pet-menu-popover"
+    <!-- 猫咪本体：左键拖动 / 互动，右键打开环形菜单。 -->
+    <div
+      class="pet__img-wrap"
+      :style="imgStyle"
+      @mousedown="onMouseDown"
+      @contextmenu.prevent="menuOpen = true"
     >
-      <template #reference>
-        <div
-          class="pet__img-wrap"
-          :style="imgStyle"
-          @mousedown="onMouseDown"
-          @contextmenu.prevent
-        >
-          <CatSprite :src="currentSrc" :style="spriteTransform" />
-        </div>
-      </template>
+      <CatSprite :src="currentSrc" :style="spriteTransform" />
+    </div>
+
+    <!-- 猫爪菜单：居中浮层覆盖整窗，点任意空白处或窗口失焦时关闭。 -->
+    <div
+      v-if="menuOpen"
+      class="pet__menu-overlay"
+      @mousedown="menuOpen = false"
+      @contextmenu.prevent.stop="menuOpen = false"
+    >
       <Menu
-        :size="size"
-        :opacity="opacity"
+        :style="menuStyle"
+        :items="menuSettings"
         :follow="followCursor"
         :passthrough="passthrough"
-        @update:size="size = $event"
-        @update:opacity="opacity = $event"
         @update:follow="onToggleFollow"
         @update:passthrough="passthrough = $event"
         @calibrate="startCalibrate"
         @boss="onMinimize"
         @close="menuOpen = false"
         @quit="onQuit"
-        @sleep="onSleep"
-        @feed="onFeed"
+        @trigger="onTrigger"
       />
-    </el-popover>
+    </div>
 
     <!-- 校准遮罩层：校准期间覆盖整个窗口。 -->
     <div
@@ -90,6 +80,12 @@ import {
 } from "@tauri-apps/plugin-global-shortcut";
 import Menu from "../Menu/Menu.vue";
 import CatSprite from "../CatSprite/CatSprite.vue";
+import {
+  size,
+  opacity,
+  alwaysOnTop,
+} from "../../composables/useDisplaySettings";
+import { menuSettings } from "../../composables/useMenuSettings";
 import { useCatBrain } from "../../composables/useCatBrain";
 import { actionOfFrame, transformOfAction } from "../../actions/clips";
 import {
@@ -127,8 +123,6 @@ const brain = useCatBrain({
 });
 const currentSrc = brain.currentSrc;
 
-const size = ref(loadSetting<number>("pet-size", 0.5));
-const opacity = ref(loadSetting<number>("pet-opacity", 0.5));
 /** 穿透点击：开启后鼠标事件穿透到下层窗口，按住 Ctrl 时临时恢复交互。 */
 const passthrough = ref(loadSetting<boolean>("pet-passthrough", true));
 const ctrlPressed = ref(false);
@@ -140,6 +134,13 @@ const imgStyle = computed(() => {
     opacity: `${opacity.value}`,
   };
 });
+
+const menuStyle = computed(() => ({
+  position: "absolute" as const,
+  left: "50%",
+  top: "50%",
+  transform: "translate(-50%, -50%)",
+}));
 
 // 按当前帧所属来源做视觉对齐：不同文件夹素材里猫的位置/大小不一致，
 // 这里把该来源的偏移/缩放（见 clips.ts 的 SOURCE_TRANSFORMS）应用到精灵图上。
@@ -158,20 +159,18 @@ const spriteTransform = computed(() => {
 });
 
 // 校准圆圈：与死区大小相同，使用绿色，可拖动。
-// 精灵图在窗口中右下对齐（菜单预留区域位于左侧），因此头部原点是
-// 精灵图中心——即从左上角算起的 `100% - half`——而非窗口中心。
+// 精灵图在窗口中居中，因此头部原点即窗口中心（50%），加上校准偏移。
 // 这必须与 `pet_cursor_angle` 中 Rust 端的头部中心计算保持一致，
 // 否则校准偏移量会被按错误的原点解释，导致注视死区落在错误的位置。
 const calibCircleStyle = computed(() => {
   const d = Math.round(200 * size.value * 0.1225);
-  const half = Math.round(200 * size.value * 0.5); // 精灵图半径（像素）
   const ox = Math.round(200 * size.value * headOffset.value.x);
   const oy = Math.round(200 * size.value * headOffset.value.y);
   return {
     width: `${d}px`,
     height: `${d}px`,
-    left: `calc(100% - ${half - ox}px)`,
-    top: `calc(100% - ${half - oy}px)`,
+    left: `calc(50% + ${ox}px)`,
+    top: `calc(50% + ${oy}px)`,
   };
 });
 
@@ -189,10 +188,22 @@ watch(
 );
 
 // 持久化用户设置：热重载重挂 <Pet> 后自动恢复（headOffset 另有持久化）。
-watch(size, (v) => localStorage.setItem("pet-size", String(v)));
-watch(opacity, (v) => localStorage.setItem("pet-opacity", String(v)));
+// size / opacity 由 useDisplaySettings composable 统一持久化和跨窗口同步。
 watch(passthrough, (v) => localStorage.setItem("pet-passthrough", String(v)));
 watch(followCursor, (v) => localStorage.setItem("pet-follow", String(v)));
+
+// 窗口层级：监听 composable 中 alwaysOnTop 的变化，调 Tauri API 实际应用到主窗口。
+watch(
+  alwaysOnTop,
+  (on) => {
+    getCurrentWindow()
+      .setAlwaysOnTop(on)
+      .catch(() => {
+        // 忽略——窗口可能正在销毁。
+      });
+  },
+  { immediate: true },
+);
 
 /** 窗口内菜单的状态。 */
 const menuOpen = ref(false);
@@ -371,15 +382,10 @@ function onToggleFollow(v: boolean) {
   followCursor.value = v;
 }
 
-function onSleep() {
+function onTrigger(name: string) {
+  // 通用「切换动作 / 行为」入口：菜单里的动作项或行为项点击后由大脑分发。
   menuOpen.value = false;
-  brain.trigger("sleep");
-}
-
-function onFeed() {
-  menuOpen.value = false;
-  // 投喂＝切到 idle 并播一次 feed。
-  brain.trigger("feed");
+  brain.trigger(name);
 }
 
 function onQuit() {
@@ -519,6 +525,7 @@ function onAppShortcutKeydown(e: KeyboardEvent) {
 
 let unlistenOpenMenu: UnlistenFn | undefined;
 let unlistenShortcuts: UnlistenFn | undefined;
+let unlistenFocus: UnlistenFn | undefined;
 
 onMounted(async () => {
   // 启动时将已持久化的头部偏移量同步给 Rust。
@@ -543,9 +550,18 @@ onMounted(async () => {
   root?.setAttribute("tabindex", "-1");
   root?.focus();
 
-  // 应用快捷键：注册全局键 + 启用应用内 keydown 匹配。
+  // 应用内快捷键：注册全局键 + 启用应用内 keydown 匹配。
   window.addEventListener("keydown", onAppShortcutKeydown);
   applyShortcuts();
+
+  // 窗口失去焦点时自动关闭菜单（覆盖"点击应用外"的场景）。
+  getCurrentWindow()
+    .onFocusChanged(({ payload: focused }) => {
+      if (!focused) menuOpen.value = false;
+    })
+    .then((fn) => {
+      unlistenFocus = fn;
+    });
   // 设置窗保存快捷键后会广播该事件，主窗收到即重新应用。
   try {
     unlistenShortcuts = await listen(SHORTCUTS_CHANGED_EVENT, () => {
@@ -562,6 +578,7 @@ onMounted(async () => {
 onUnmounted(() => {
   unlistenOpenMenu?.();
   unlistenShortcuts?.();
+  unlistenFocus?.();
   window.removeEventListener("keydown", onAppShortcutKeydown);
   // 注销本窗口注册的全部全局键，避免热重载重挂后重复注册。
   unregisterAll().catch(() => {});
@@ -574,8 +591,8 @@ onUnmounted(() => {
   width: 100vw;
   height: 100vh;
   display: flex;
-  align-items: flex-end;
-  justify-content: flex-end;
+  align-items: center;
+  justify-content: center;
   position: relative;
   outline: none;
 }
@@ -593,6 +610,14 @@ onUnmounted(() => {
 
 .pet__img-wrap:active {
   cursor: grabbing;
+}
+
+/* 环形菜单浮层：覆盖整个窗口，菜单在其中居中。空白处点击关闭。 */
+.pet__menu-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 60;
+  pointer-events: auto;
 }
 
 /* 死区圆圈：标示猫咪"正视前方"的区域。 */
@@ -689,20 +714,5 @@ onUnmounted(() => {
   cursor: pointer;
   user-select: none;
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
-}
-</style>
-
-<!-- el-popover 将其 popper 渲染在 .pet 内部（:teleported="false"），但
-     scoped 样式的 data 属性不会应用到 EP 运行时创建的 popper 上，因此
-     用于剥离卡片样式的覆盖规则放在了一个普通（非 scoped）的 style 块中。 -->
-<style>
-.pet-menu-popover.el-popover.el-popper {
-  min-width: 0;
-  padding: 0;
-  background: transparent;
-  border: 0;
-  border-radius: 10px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
-  pointer-events: auto;
 }
 </style>

@@ -20,6 +20,8 @@ dist-mirror/
 # Generated Tauri files
 src-tauri/gen/schemas/
 
+server/
+
 # 注：src/types/auto-imports.d.ts 与 components.d.ts 是 unplugin 生成的类型声明。
 # 因 vue-tsc 在 vite 之前运行，CI 干净检出时它们尚未生成会导致类型检查失败，
 # 故改为提交进仓库（新增自动导入的 API / 组件后需本地重新生成并一并提交）。

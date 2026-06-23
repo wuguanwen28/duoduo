@@ -14,21 +14,14 @@ pub const PET_BASE_PX: f64 = 200.0;
 /// fixed, transparent, click-through window).
 const PET_MAX_SCALE: f64 = 2.0;
 
-/// Width / height (logical px) reserved on the LEFT side of the window for the
-/// in-window menu panel. Includes the menu itself (200×~346) + 10 px gap on
-/// each side. The window is wide enough to hold the largest cat (right-aligned)
-/// plus this reserve, so the menu pops up on the left without any resize.
-const MENU_EXTRA_W_LP: f64 = 220.0; // 200 menu + 10 gap × 2
-const MENU_EXTRA_H_LP: f64 = 366.0; // ~346 menu + 10 gap × 2
-
-/// The window's fixed physical size: the cat at PET_MAX_SCALE (right-aligned) +
-/// the left-side menu reserve. Computed once from the monitor's scale factor;
-/// the window keeps this size for its whole lifetime regardless of the slider.
+/// The window's fixed physical size: a square sized to hold the largest cat
+/// (PET_BASE_PX × PET_MAX_SCALE). The cat is centered inside it and the in-window
+/// radial menu (smaller than the max cat) also pops up centered, so no left-side
+/// reserve is needed. Computed once from the monitor's scale factor; the window
+/// keeps this size for its whole lifetime regardless of the slider.
 pub fn fixed_window_size(scale_factor: f64) -> tauri::PhysicalSize<u32> {
     let cat_px = (PET_BASE_PX * PET_MAX_SCALE * scale_factor).round() as u32;
-    let menu_w = (MENU_EXTRA_W_LP * scale_factor).round() as u32;
-    let menu_h = (MENU_EXTRA_H_LP * scale_factor).round() as u32;
-    tauri::PhysicalSize::new(cat_px + menu_w, cat_px.max(menu_h))
+    tauri::PhysicalSize::new(cat_px, cat_px)
 }
 
 /// Clamp helper that tolerates an inverted range (lo > hi), which happens when
@@ -41,11 +34,13 @@ fn clampf(v: f64, lo: f64, hi: f64) -> f64 {
     }
 }
 
-/// Bounding box of all monitors' **work areas** in physical pixels:
-/// (min_x, min_y, max_x, max_y). The work area excludes the taskbar/dock and
-/// other reserved system bars, so the pet stays clear of the taskbar while
-/// still being free to move across the whole extended desktop.
-fn combined_work_area(window: &tauri::Window) -> Result<(i32, i32, i32, i32), String> {
+/// Bounding box of all monitors' **full areas** in physical pixels:
+/// (min_x, min_y, max_x, max_y). Uses each monitor's full size (NOT the work
+/// area), so the pet can be dragged right up to the physical screen edges and
+/// over the taskbar/dock — it just can't leave the screen entirely. The startup
+/// position still uses the work area (see lib.rs) so the cat *starts* above the
+/// taskbar, but the user is free to drag it onto/past the taskbar afterwards.
+fn combined_full_area(window: &tauri::Window) -> Result<(i32, i32, i32, i32), String> {
     let monitors = window.available_monitors().map_err(|e| e.to_string())?;
     if monitors.is_empty() {
         return Err("no monitors available".into());
@@ -55,9 +50,8 @@ fn combined_work_area(window: &tauri::Window) -> Result<(i32, i32, i32, i32), St
     let mut max_x = i32::MIN;
     let mut max_y = i32::MIN;
     for m in monitors {
-        let area = m.work_area();
-        let p = area.position;
-        let s = area.size;
+        let p = m.position();
+        let s = m.size();
         min_x = min_x.min(p.x);
         min_y = min_y.min(p.y);
         max_x = max_x.max(p.x + s.width as i32);
@@ -67,18 +61,20 @@ fn combined_work_area(window: &tauri::Window) -> Result<(i32, i32, i32, i32), St
 }
 
 /// Clamp the window so the **cat sprite** (not the whole window) stays within
-/// the bounding box of all monitors. The window has extra space on the left for
-/// the menu panel; the cat is right-aligned. Only the visible cat content is
-/// kept on-screen — the window's left margin is allowed to hang off-screen.
+/// the bounding box of all monitors' full screen areas (taskbar included). The
+/// cat is centered in the fixed square window; when the sprite is smaller than
+/// the window the surrounding margin is transparent and allowed to hang
+/// off-screen — only the visible cat content is kept on-screen, and it may be
+/// dragged right up to the physical screen edges and over the taskbar.
 ///
-/// The sprite is `PET_BASE_PX * scale` logical px, right-aligned in the window;
+/// The sprite is `PET_BASE_PX * scale` logical px, centered in the window;
 /// converting to physical px (× scale_factor) gives its real size. We compute
-/// the content box's top-left, clamp THAT to the work area, then derive the
+/// the content box's top-left, clamp THAT to the screen area, then derive the
 /// window position back from it. Idempotent; called from the Moved handler.
 pub fn clamp_to_work_area(window: &tauri::Window) -> Result<(), String> {
     let pos = window.outer_position().map_err(|e| e.to_string())?;
     let size = window.outer_size().map_err(|e| e.to_string())?;
-    let (min_x, min_y, max_x, max_y) = combined_work_area(window)?;
+    let (min_x, min_y, max_x, max_y) = combined_full_area(window)?;
 
     let scale = window
         .state::<PetState>()
@@ -88,12 +84,12 @@ pub fn clamp_to_work_area(window: &tauri::Window) -> Result<(), String> {
         .unwrap_or(1.0);
     let sf = window.scale_factor().map_err(|e| e.to_string())?;
 
-    // Cat is right-aligned & bottom-aligned.
+    // Cat is centered in the window.
     let content = (PET_BASE_PX * scale * sf).round();
     let win_w = size.width as f64;
     let win_h = size.height as f64;
-    let off_x = win_w - content; // cat is at the right edge
-    let off_y = win_h - content; // cat is at the bottom edge
+    let off_x = (win_w - content) / 2.0; // cat centered horizontally
+    let off_y = (win_h - content) / 2.0; // cat centered vertically
 
     // Current content top-left in screen space.
     let content_x = pos.x as f64 + off_x;
