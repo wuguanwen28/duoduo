@@ -1,7 +1,8 @@
 <template>
   <div class="menu-config">
     <p class="menu-config__tip">
-      为猫爪菜单的 5 个爪垫分别选择功能。右键小猫即可看到猫爪造型菜单。
+      为猫爪菜单的 5 个爪垫分别选择功能，并可自定义显示名称。4 个趾建议 4 字以内
+      （每行 2 字、最多 2 行），掌垫可放 6 字（单行）。右键小猫即可看到猫爪造型菜单。
     </p>
 
     <div class="menu-config__slots">
@@ -22,6 +23,14 @@
             :value="opt"
           />
         </el-select>
+        <el-input
+          :model-value="menuSettings[i]?.label"
+          @update:model-value="(val: string) => onLabelChange(i, val)"
+          size="small"
+          :maxlength="slot.key === 'center-pad' ? 6 : 4"
+          placeholder="显示名称"
+          class="menu-config__name"
+        />
       </div>
     </div>
   </div>
@@ -70,6 +79,15 @@ function onSlotChange(index: number, val: MenuItemConfig) {
   menuSettings.value = next;
 }
 
+/** 修改第 i 个槽位的显示名称（只改 label，不动功能引用）。 */
+function onLabelChange(index: number, label: string) {
+  const cur = menuSettings.value[index];
+  if (!cur) return;
+  const next = [...menuSettings.value];
+  next[index] = { ...cur, label };
+  menuSettings.value = next;
+}
+
 /**
  * 读取 manifest.json，解析出所有动作名与行为名作为下拉可选池。
  * 设置窗口是独立 webview，用 pet_read_manifest 拿到 manifest 文本再解析。
@@ -88,7 +106,8 @@ async function loadCatalog() {
       kind: "action" as const,
       ref: name,
       emoji: "🎬",
-      label: typeof acts[name]?.name === "string" && acts[name].name ? acts[name].name : name,
+      // 动作的中文名存在 name 字段（manifest.actions[x].name）；无则回退键名。
+      label: acts[name]?.name || name,
     }));
 
     const behs = m.behaviors ?? {};
@@ -97,7 +116,8 @@ async function loadCatalog() {
       kind: "behavior" as const,
       ref: name,
       emoji: "🐾",
-      label: typeof behs[name]?.name === "string" && behs[name].name ? behs[name].name : name,
+      // 行为的中文名存在 name 字段（manifest.behaviors[x].name）；无则回退键名。
+      label: behs[name]?.name || name,
     }));
   } catch {
     // 读不到 manifest 时可选池只剩内置功能，不阻塞。
@@ -152,5 +172,10 @@ onMounted(loadCatalog);
 .menu-config__select {
   flex: 1;
   min-width: 0;
+}
+
+.menu-config__name {
+  width: 110px;
+  flex-shrink: 0;
 }
 </style>
