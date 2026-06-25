@@ -14,14 +14,19 @@ pub const PET_BASE_PX: f64 = 200.0;
 /// fixed, transparent, click-through window).
 const PET_MAX_SCALE: f64 = 2.0;
 
-/// The window's fixed physical size: a square sized to hold the largest cat
-/// (PET_BASE_PX × PET_MAX_SCALE). The cat is centered inside it and the in-window
-/// radial menu (smaller than the max cat) also pops up centered, so no left-side
-/// reserve is needed. Computed once from the monitor's scale factor; the window
-/// keeps this size for its whole lifetime regardless of the slider.
+/// 窗口顶部预留给说话气泡的逻辑像素余量（向上展开的空间）。
+/// 取值需 ≥ `SpeechBubble.vue` 里所有云朵的最大高度（最大 `maxW=210`，
+/// 比例约 1:1 → ≈210 px），这里再多留 10 px 防止顶端被裁。
+pub const BUBBLE_HEADROOM_PX: f64 = 220.0;
+
+/// 窗口固定物理尺寸：宽度等于"最大猫"边长，高度等于"最大猫" + 顶部气泡余量。
+/// 猫在窗口内**底对齐**（详见 `clamp_to_work_area` 的 `off_y` 计算），
+/// 上方留出 `BUBBLE_HEADROOM_PX` 给说话气泡向上展开，不会被窗口裁顶。
+/// 启动时按显示器缩放因子计算一次，窗口存续期间不再变化（大小滑块只缩内层精灵）。
 pub fn fixed_window_size(scale_factor: f64) -> tauri::PhysicalSize<u32> {
     let cat_px = (PET_BASE_PX * PET_MAX_SCALE * scale_factor).round() as u32;
-    tauri::PhysicalSize::new(cat_px, cat_px)
+    let headroom_px = (BUBBLE_HEADROOM_PX * scale_factor).round() as u32;
+    tauri::PhysicalSize::new(cat_px, cat_px + headroom_px)
 }
 
 /// Clamp helper that tolerates an inverted range (lo > hi), which happens when
@@ -62,15 +67,17 @@ fn combined_full_area(window: &tauri::Window) -> Result<(i32, i32, i32, i32), St
 
 /// Clamp the window so the **cat sprite** (not the whole window) stays within
 /// the bounding box of all monitors' full screen areas (taskbar included). The
-/// cat is centered in the fixed square window; when the sprite is smaller than
-/// the window the surrounding margin is transparent and allowed to hang
-/// off-screen — only the visible cat content is kept on-screen, and it may be
+/// cat is **bottom-aligned** in the window (top area is reserved as transparent
+/// headroom for the speech bubble); when the sprite is smaller than the cat
+/// slot the horizontal margin and the headroom hang off-screen as transparent
+/// padding — only the visible cat content is kept on-screen, and it may be
 /// dragged right up to the physical screen edges and over the taskbar.
 ///
-/// The sprite is `PET_BASE_PX * scale` logical px, centered in the window;
-/// converting to physical px (× scale_factor) gives its real size. We compute
-/// the content box's top-left, clamp THAT to the screen area, then derive the
-/// window position back from it. Idempotent; called from the Moved handler.
+/// The sprite is `PET_BASE_PX * scale` logical px, horizontally centered and
+/// bottom-aligned in the window; converting to physical px (× scale_factor)
+/// gives its real size. We compute the content box's top-left, clamp THAT to
+/// the screen area, then derive the window position back from it. Idempotent;
+/// called from the Moved handler.
 pub fn clamp_to_work_area(window: &tauri::Window) -> Result<(), String> {
     let pos = window.outer_position().map_err(|e| e.to_string())?;
     let size = window.outer_size().map_err(|e| e.to_string())?;
@@ -84,12 +91,12 @@ pub fn clamp_to_work_area(window: &tauri::Window) -> Result<(), String> {
         .unwrap_or(1.0);
     let sf = window.scale_factor().map_err(|e| e.to_string())?;
 
-    // Cat is centered in the window.
+    // 猫横向居中、纵向贴窗口底（顶部那段为气泡余量，透明）。
     let content = (PET_BASE_PX * scale * sf).round();
     let win_w = size.width as f64;
     let win_h = size.height as f64;
-    let off_x = (win_w - content) / 2.0; // cat centered horizontally
-    let off_y = (win_h - content) / 2.0; // cat centered vertically
+    let off_x = (win_w - content) / 2.0; // 横向居中
+    let off_y = win_h - content; // 纵向贴底，与 Pet.vue 的 align-items: flex-end 一致
 
     // Current content top-left in screen space.
     let content_x = pos.x as f64 + off_x;

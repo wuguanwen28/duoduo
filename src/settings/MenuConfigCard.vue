@@ -44,6 +44,7 @@ import {
   PAW_SLOTS,
   BUILTIN_CATALOG,
   menuItemId,
+  saveAndBroadcast,
   type MenuItemConfig,
 } from "../composables/useMenuSettings";
 
@@ -77,6 +78,7 @@ function onSlotChange(index: number, val: MenuItemConfig) {
   const next = [...menuSettings.value];
   next[index] = copy;
   menuSettings.value = next;
+  saveAndBroadcast();
 }
 
 /** 修改第 i 个槽位的显示名称（只改 label，不动功能引用）。 */
@@ -86,6 +88,7 @@ function onLabelChange(index: number, label: string) {
   const next = [...menuSettings.value];
   next[index] = { ...cur, label };
   menuSettings.value = next;
+  saveAndBroadcast();
 }
 
 /**

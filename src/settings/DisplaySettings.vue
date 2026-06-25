@@ -17,9 +17,10 @@
               :model-value="size"
               :min="0.2"
               :max="2"
-              :step="0.05"
+              :step="0.01"
               :format-tooltip="formatSize"
               @input="onSizeInput"
+              @change="onSizeChange"
             />
             <span class="display-settings__hint">{{ formatSize(size) }}</span>
           </el-form-item>
@@ -34,6 +35,7 @@
               :step="0.05"
               :format-tooltip="formatOpacity"
               @input="onOpacityInput"
+              @change="onOpacityChange"
             />
             <span class="display-settings__hint">{{ formatOpacity(opacity) }}</span>
           </el-form-item>
@@ -71,6 +73,8 @@ import {
   size,
   opacity,
   alwaysOnTop,
+  broadcast,
+  saveAndBroadcast,
 } from "../composables/useDisplaySettings";
 import MenuConfigCard from "./MenuConfigCard.vue";
 
@@ -84,18 +88,37 @@ function formatOpacity(value: number): string {
   return `${Math.round(value * 100)}%`;
 }
 
+/**
+ * 滑块拖动时：更新本地 ref + 广播（主窗实时响应），
+ * 等 @change（松手）时才持久化到 localStorage。
+ */
 function onSizeInput(value: number | number[]) {
   const v = Array.isArray(value) ? value[0] : value;
-  if (!Number.isNaN(v)) size.value = v;
+  if (!Number.isNaN(v)) {
+    size.value = v;
+    broadcast();
+  }
+}
+
+function onSizeChange() {
+  saveAndBroadcast();
 }
 
 function onOpacityInput(value: number | number[]) {
   const v = Array.isArray(value) ? value[0] : value;
-  if (!Number.isNaN(v)) opacity.value = v;
+  if (!Number.isNaN(v)) {
+    opacity.value = v;
+    broadcast();
+  }
+}
+
+function onOpacityChange() {
+  saveAndBroadcast();
 }
 
 function onAlwaysOnTopChange(value: string | number | boolean) {
   alwaysOnTop.value = Boolean(value);
+  saveAndBroadcast();
 }
 </script>
 

@@ -6,11 +6,11 @@
  *   - action    动作（manifest.actions 里的某个动作，点一次播一次）；
  *   - behavior  行为（manifest.behaviors 里的某个行为，点一次切过去）。
  *
- * 全部存在 localStorage（key `pet-menu-settings`），通过 Tauri 事件在主窗与设置
- * 窗口之间跨窗口同步（同源 webview 间 localStorage 共享，事件负责即时刷新）。
- * 模式与 useDisplaySettings.ts 一致。
+ * 全部存在 localStorage，key `pet-menu-settings`。
+ * 【单向同步模式】：只有设置窗会调用 `saveAndBroadcast()` 广播；
+ * 主窗只监听事件更新本地状态，永远不广播。
  */
-import { ref, watch } from "vue";
+import { ref } from "vue";
 import { listen, emit } from "@tauri-apps/api/event";
 
 /** 跨窗口同步事件名。 */
@@ -126,21 +126,21 @@ function load(): MenuItemConfig[] {
   }
 }
 
-/** 当前菜单配置；组件直接读写本 ref，watch 自动持久化并广播。 */
+/** 当前菜单配置；组件直接读写本 ref。 */
 export const menuSettings = ref<MenuItemConfig[]>(load());
 
-/** 写回 localStorage 并广播变更事件。 */
-function save() {
+/**
+ * 【仅设置窗调用】持久化并广播一次。
+ * 主窗不要调用这个函数！
+ */
+export function saveAndBroadcast(): void {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(menuSettings.value));
   emit(MENU_SETTINGS_CHANGED_EVENT, menuSettings.value).catch(() => {});
 }
 
-/** 自动持久化 + 广播：本窗口内任何增删改/排序都会触发。 */
-watch(menuSettings, () => save(), { deep: true });
-
 /**
- * 跨窗口同步：监听其他窗口广播的变更，覆盖本地配置。
- * 模块级监听，生命周期与应用一致。比较序列化结果，避免无谓赋值引发回环。
+ * 跨窗口同步：监听其他窗口广播的变更事件，覆盖本地配置。
+ * 模块级监听，生命周期与应用一致。比较序列化结果，避免无谓赋值。
  */
 listen<MenuItemConfig[]>(MENU_SETTINGS_CHANGED_EVENT, (event) => {
   if (!Array.isArray(event.payload)) return;

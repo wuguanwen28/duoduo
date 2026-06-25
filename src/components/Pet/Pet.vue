@@ -1,13 +1,19 @@
 <template>
   <div class="pet" @keydown.esc="menuOpen = false" @contextmenu.prevent>
     <!-- 猫咪本体：左键拖动 / 互动，右键打开环形菜单。 -->
-    <div
-      class="pet__img-wrap"
-      :style="imgStyle"
-      @mousedown="onMouseDown"
-      @contextmenu.prevent="menuOpen = true"
-    >
-      <CatSprite :src="currentSrc" :style="spriteTransform" />
+    <div class="pet__body">
+      <div
+        class="pet__img-wrap"
+        @mousedown="onMouseDown"
+        @contextmenu.prevent="openMenuAt"
+      >
+        <CatSprite :src="currentSrc" :style="spriteTransform" />
+      </div>
+
+      <!-- 猫说话气泡 / 提示气泡：浮在猫头上方，尾巴朝下指向猫。 -->
+      <div class="pet__speech">
+        <SpeechBubble :text="speech" />
+      </div>
     </div>
 
     <!-- 猫爪菜单：居中浮层覆盖整窗，点任意空白处或窗口失焦时关闭。 -->
@@ -38,33 +44,37 @@
       class="pet__calib-overlay"
       @contextmenu.prevent.stop
     >
-      <div class="pet__calib-instructions">拖动圆圈到猫头位置</div>
       <div
         class="pet__calib-circle"
         :style="calibCircleStyle"
         @mousedown="onCalibMouseDown"
       ></div>
-      <div class="pet__calib-actions">
-        <el-button type="primary" size="small" @click="confirmCalibrate"
-          >确认</el-button
-        >
-        <el-button size="small" @click="cancelCalibrate">取消</el-button>
+      <!-- 校准提示 + 确认/取消按钮放进云朵，浮在猫头上方，避免按钮跑到屏幕外。 -->
+      <div class="pet__speech">
+        <SpeechBubble :show="true" variant="cloud1">
+          <span class="pet__calib-text">拖动圆圈对准猫头</span>
+          <div class="pet__calib-btns">
+            <el-button type="primary" size="small" @click="confirmCalibrate">
+              确认
+            </el-button>
+            <el-button size="small" @click="cancelCalibrate">取消</el-button>
+          </div>
+        </SpeechBubble>
       </div>
     </div>
 
-    <Transition name="toast">
-      <div v-if="toast" class="pet__toast">{{ toast }}</div>
-    </Transition>
-
-    <!-- 发现新版本：右上角轻提示，点开跳设置「关于/更新」。
-         穿透开启时窗口整体不响应鼠标事件，气泡不可点；此时改为引导用户从托盘进设置。 -->
-    <div
-      v-if="updateAvailable"
-      class="pet-update-badge"
-      :title="badgeClickable ? '发现新版本，点击查看' : '发现新版本，请从托盘→设置查看'"
-      @click="badgeClickable && openUpdatePage()"
-    >
-      {{ badgeClickable ? "🔔 新版本" : "🔔 新版本（托盘→设置查看）" }}
+    <div v-if="updateAvailable" class="pet__speech pet__speech--update">
+      <SpeechBubble :show="true" variant="cloud3">
+        <span class="pet__update-text">🔔 发现新版本</span>
+        <el-button
+          v-if="badgeClickable"
+          type="primary"
+          size="small"
+          @click="openUpdatePage()"
+          >去更新</el-button
+        >
+        <span v-else class="pet__update-hint">托盘→设置查看</span>
+      </SpeechBubble>
     </div>
   </div>
 </template>
@@ -74,12 +84,10 @@ import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, emit, type UnlistenFn } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import {
-  register,
-  unregisterAll,
-} from "@tauri-apps/plugin-global-shortcut";
+import { register, unregisterAll } from "@tauri-apps/plugin-global-shortcut";
 import Menu from "../Menu/Menu.vue";
 import CatSprite from "../CatSprite/CatSprite.vue";
+import SpeechBubble from "../SpeechBubble/SpeechBubble.vue";
 import {
   size,
   opacity,
@@ -126,20 +134,50 @@ const currentSrc = brain.currentSrc;
 /** 穿透点击：开启后鼠标事件穿透到下层窗口，按住 Ctrl 时临时恢复交互。 */
 const passthrough = ref(loadSetting<boolean>("pet-passthrough", true));
 const ctrlPressed = ref(false);
-const imgStyle = computed(() => {
-  const px = Math.round(200 * size.value);
-  return {
-    width: `${px}px`,
-    height: `${px}px`,
-    opacity: `${opacity.value}`,
-  };
-});
 
+/** 菜单宽高（与 Menu.vue 内部的 `SIZE` 常量一致）。改那边记得同步这里。 */
+const MENU_SIZE = 200;
+
+/** 菜单贴窗口边时保留的安全边距，避免视觉上紧贴边缘。 */
+const MENU_EDGE_PADDING = 4;
+
+/**
+ * 菜单左上角在窗口内的像素位置：右键时按光标位置放置，再 clamp 到窗口内，
+ * 使整个 200×200 菜单永远完整可见（贴边自动回收，类似 el-popper 的 shift 中间件）。
+ */
+const menuPos = ref({ x: 0, y: 0 });
+
+/**
+ * 把菜单"中心点"放到 `(cx, cy)` 处，再 clamp 到窗口内。
+ * 鼠标右键时 cx/cy = 光标位置；非鼠标触发（如托盘）时传 `undefined` → 落在窗口中心。
+ */
+function placeMenuAt(cx?: number, cy?: number) {
+  const W = window.innerWidth;
+  const H = window.innerHeight;
+  const half = MENU_SIZE / 2;
+  const minX = MENU_EDGE_PADDING;
+  const minY = MENU_EDGE_PADDING;
+  const maxX = Math.max(minX, W - MENU_SIZE - MENU_EDGE_PADDING);
+  const maxY = Math.max(minY, H - MENU_SIZE - MENU_EDGE_PADDING);
+  const targetX = (cx ?? W / 2) - half;
+  const targetY = (cy ?? H / 2) - half;
+  menuPos.value = {
+    x: Math.min(Math.max(targetX, minX), maxX),
+    y: Math.min(Math.max(targetY, minY), maxY),
+  };
+  menuOpen.value = true;
+}
+
+/** 右键打开菜单：以光标位置为中心，贴边自动回收。 */
+function openMenuAt(e: MouseEvent) {
+  placeMenuAt(e.clientX, e.clientY);
+}
+
+/** 菜单浮层定位样式：左上角即为 `menuPos`，宽高交给 Menu 自身。 */
 const menuStyle = computed(() => ({
   position: "absolute" as const,
-  left: "50%",
-  top: "50%",
-  transform: "translate(-50%, -50%)",
+  left: `${menuPos.value.x}px`,
+  top: `${menuPos.value.y}px`,
 }));
 
 // 按当前帧所属来源做视觉对齐：不同文件夹素材里猫的位置/大小不一致，
@@ -152,25 +190,32 @@ const spriteTransform = computed(() => {
   const base = 200 * size.value;
   const tx = Math.round(base * t.offsetX);
   const ty = Math.round(base * t.offsetY);
+  const px = Math.round(200 * size.value);
   return {
+    width: `${px}px`,
+    height: `${px}px`,
+    opacity: `${opacity.value}`,
     transform: `translate(${tx}px, ${ty}px) scale(${t.scale})`,
     transformOrigin: "bottom center",
   };
 });
 
 // 校准圆圈：与死区大小相同，使用绿色，可拖动。
-// 精灵图在窗口中居中，因此头部原点即窗口中心（50%），加上校准偏移。
-// 这必须与 `pet_cursor_angle` 中 Rust 端的头部中心计算保持一致，
+// 精灵图横向居中、纵向贴窗口底（窗口顶部预留气泡余量），因此头部原点：
+// 横向 = 窗口中心（left 50%），纵向 = 窗口底向上 sprite_px/2，再加校准偏移。
+// 这必须与 Rust 端 `pet_cursor_angle` 的头部中心计算保持一致，
 // 否则校准偏移量会被按错误的原点解释，导致注视死区落在错误的位置。
 const calibCircleStyle = computed(() => {
-  const d = Math.round(200 * size.value * 0.1225);
-  const ox = Math.round(200 * size.value * headOffset.value.x);
-  const oy = Math.round(200 * size.value * headOffset.value.y);
+  const sprite = 200 * size.value;
+  const d = Math.round(sprite * 0.1225);
+  const ox = Math.round(sprite * headOffset.value.x);
+  const oy = Math.round(sprite * headOffset.value.y);
   return {
     width: `${d}px`,
     height: `${d}px`,
     left: `calc(50% + ${ox}px)`,
-    top: `calc(50% + ${oy}px)`,
+    // 100% = .pet__calib-overlay 高 = 窗口高；底向上半个精灵直径 = 猫的纵向中心。
+    top: `calc(100% - ${sprite / 2}px + ${oy}px)`,
   };
 });
 
@@ -365,16 +410,44 @@ function openUpdatePage() {
   invoke("pet_open_settings", { tab: "update" }).catch(() => {});
 }
 
-// ── 提示 ────────────────────────────────────────────────────────────
-const toast = ref("");
-let toastTimer: number | undefined;
+// ── 云朵气泡（猫说话 / 轻提示共用） ────────────────────────────────
+// 所有需要给用户看的短消息（戳猫台词、校准完成、穿透切换等）都走同一朵云，
+// 不再另写 toast 提示。新版本提示用独立的云朵实例（见模板）。
+/** 当前气泡文字；为空时不显示。 */
+const speech = ref("");
+let speechTimer: number | undefined;
 
-function showToast(msg: string, ms = 1800) {
-  toast.value = msg;
-  if (toastTimer) clearTimeout(toastTimer);
-  toastTimer = window.setTimeout(() => {
-    toast.value = "";
+/** 让猫说一句话（或显示一条轻提示），停留 ms 毫秒后消失。 */
+function say(msg: string, ms = 3000) {
+  speech.value = msg;
+  if (speechTimer) clearTimeout(speechTimer);
+  speechTimer = window.setTimeout(() => {
+    speech.value = "";
   }, ms);
+}
+
+/**
+ * 轻提示：复用猫说话的云朵气泡显示一条短消息。
+ * 与 `say` 同一朵云，避免再单独维护一套 toast 机制。
+ */
+function showToast(msg: string, ms = 1800) {
+  say(msg, ms);
+}
+
+/** 戳猫时随机说的话（演示用，后续可接行为/定时触发）。 */
+const POKE_PHRASES = [
+  "喵~",
+  "干嘛戳我啦",
+  "今天也要加油哦！",
+  "摸鱼一时爽，一直摸鱼一直爽~",
+  "老大，喝口水休息一下吧",
+  "我在认真看着你工作呢",
+];
+
+/** 随机挑一句话让猫说出来。 */
+function sayRandom() {
+  const msg = POKE_PHRASES[Math.floor(Math.random() * POKE_PHRASES.length)];
+  say(msg);
 }
 
 // ── 菜单操作 ─────────────────────────────────────────────────────
@@ -394,7 +467,9 @@ function onQuit() {
 
 function onMinimize() {
   menuOpen.value = false;
-  getCurrentWindow().minimize().catch(() => {});
+  getCurrentWindow()
+    .minimize()
+    .catch(() => {});
 }
 
 /**
@@ -420,10 +495,15 @@ function onMouseDown(e: MouseEvent) {
 
   function onMove(ev: MouseEvent) {
     if (dragging) return;
-    if (Math.hypot(ev.clientX - start.x, ev.clientY - start.y) > ACTION_DRAG_THRESHOLD) {
+    if (
+      Math.hypot(ev.clientX - start.x, ev.clientY - start.y) >
+      ACTION_DRAG_THRESHOLD
+    ) {
       dragging = true;
       cleanup();
-      getCurrentWindow().startDragging().catch(() => {});
+      getCurrentWindow()
+        .startDragging()
+        .catch(() => {});
     }
   }
 
@@ -444,6 +524,7 @@ function onMouseDown(e: MouseEvent) {
     }
     lastClickTime = now;
     brain.poke();
+    sayRandom();
   }
 
   window.addEventListener("mousemove", onMove);
@@ -537,9 +618,10 @@ onMounted(async () => {
   }
 
   // 监听托盘"设置"菜单项：显示窗口并打开菜单面板（隐身模式下也能操作）。
+  // 没有鼠标事件可参考，菜单落在窗口中心。
   try {
     unlistenOpenMenu = await listen("pet-open-menu", () => {
-      menuOpen.value = true;
+      placeMenuAt();
     });
   } catch {
     // 忽略——事件绑定不可用。
@@ -583,33 +665,54 @@ onUnmounted(() => {
   // 注销本窗口注册的全部全局键，避免热重载重挂后重复注册。
   unregisterAll().catch(() => {});
   if (ctrlPollTimer !== undefined) window.clearInterval(ctrlPollTimer);
+  if (speechTimer !== undefined) window.clearTimeout(speechTimer);
 });
 </script>
 
-<style scoped>
+<style scoped lang="scss">
 .pet {
   width: 100vw;
   height: 100vh;
   display: flex;
-  align-items: center;
+  // 横向居中、纵向贴窗口底：窗口顶部预留 BUBBLE_HEADROOM_PX 给气泡向上展开，
+  // 不会再因猫放大到 PET_MAX_SCALE 时把气泡顶出窗口。需与 Rust 端
+  // `geometry::clamp_to_work_area` 和 `gaze::pet_cursor_angle` 的"贴底"约定一致。
+  align-items: flex-end;
   justify-content: center;
   position: relative;
   outline: none;
-}
 
-.pet__img-wrap {
-  position: relative;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: grab;
-  -webkit-user-drag: none;
-  user-select: none;
-  pointer-events: auto;
-}
+  .pet__body {
+    position: relative;
 
-.pet__img-wrap:active {
-  cursor: grabbing;
+    .pet__img-wrap {
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: grab;
+      -webkit-user-drag: none;
+      user-select: none;
+      pointer-events: auto;
+
+      &:active {
+        cursor: grabbing;
+      }
+    }
+
+    .pet__speech {
+      position: absolute;
+      left: 50%;
+      bottom: 100%;
+      transform: translateX(-50%);
+      z-index: 40;
+      width: 300%;
+      display: flex;
+      align-items: flex-end;
+      justify-content: center;
+      pointer-events: none;
+    }
+  }
 }
 
 /* 环形菜单浮层：覆盖整个窗口，菜单在其中居中。空白处点击关闭。 */
@@ -642,21 +745,6 @@ onUnmounted(() => {
   pointer-events: auto;
 }
 
-.pet__calib-instructions {
-  position: absolute;
-  top: 16px;
-  left: 50%;
-  transform: translateX(-50%);
-  background: rgba(0, 0, 0, 0.7);
-  color: #fff;
-  padding: 6px 14px;
-  border-radius: 12px;
-  font-size: 12px;
-  font-family: -apple-system, "Microsoft YaHei", sans-serif;
-  white-space: nowrap;
-  pointer-events: none;
-}
-
 .pet__calib-circle {
   position: absolute;
   border-radius: 50%;
@@ -664,55 +752,5 @@ onUnmounted(() => {
   border: 2px solid rgba(0, 200, 80, 0.7);
   cursor: move;
   transform: translate(-50%, -50%);
-}
-
-.pet__calib-actions {
-  position: absolute;
-  bottom: 16px;
-  left: 50%;
-  transform: translateX(-50%);
-  display: flex;
-  gap: 8px;
-}
-
-.pet__toast {
-  position: absolute;
-  top: 14px;
-  left: 50%;
-  transform: translateX(-50%);
-  background: rgba(0, 0, 0, 0.78);
-  color: #fff;
-  padding: 6px 12px;
-  border-radius: 12px;
-  font-size: 11px;
-  pointer-events: none;
-  white-space: nowrap;
-  font-family: -apple-system, "Microsoft YaHei", sans-serif;
-}
-
-.toast-enter-active,
-.toast-leave-active {
-  transition: opacity 0.18s;
-}
-.toast-enter-from,
-.toast-leave-to {
-  opacity: 0;
-}
-
-/* 新版本轻提示气泡：右上角小药丸，不打断使用 */
-.pet-update-badge {
-  position: absolute;
-  top: 6px;
-  right: 6px;
-  z-index: 50;
-  padding: 2px 8px;
-  font-size: 12px;
-  line-height: 1.6;
-  color: #fff;
-  background: var(--el-color-primary, #409eff);
-  border-radius: 10px;
-  cursor: pointer;
-  user-select: none;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
 }
 </style>

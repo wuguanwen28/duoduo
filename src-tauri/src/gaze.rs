@@ -34,8 +34,10 @@ pub struct GazeSample {
 /// Sample the cursor gaze. Returns the angle from the cat's head to the global
 /// cursor (see `GazeSample`) together with the raw cursor position.
 ///
-/// The cat sprite is centered in the fixed square window, so the head centre =
-/// window center (X and Y), plus the calibrated offset.
+/// The cat sprite is **horizontally centered and bottom-aligned** inside the
+/// fixed window (top area is transparent headroom for the speech bubble), so
+/// the head centre = window horizontal center, plus `sprite_px/2` up from the
+/// window bottom, plus the calibrated offset.
 #[tauri::command]
 pub fn pet_cursor_angle(window: tauri::Window) -> Result<GazeSample, String> {
     let cursor = window.cursor_position().map_err(|e| e.to_string())?;
@@ -47,10 +49,12 @@ pub fn pet_cursor_angle(window: tauri::Window) -> Result<GazeSample, String> {
     let (ox_ratio, oy_ratio) = state.head_offset.lock().map(|g| *g).unwrap_or((0.0, 0.0));
     let sf = window.scale_factor().map_err(|e| e.to_string())?;
 
-    // Cat is centered in the window.
+    // 猫横向居中、纵向贴底；头中心 = (窗口横向中心, 窗口底向上 sprite_px/2)。
     let sprite_px = PET_BASE_PX * scale * sf;
-    let cx = pos.x as f64 + size.width as f64 / 2.0 + ox_ratio * sprite_px;
-    let cy = pos.y as f64 + size.height as f64 / 2.0 + oy_ratio * sprite_px;
+    let cat_cx = pos.x as f64 + size.width as f64 / 2.0;
+    let cat_cy = pos.y as f64 + size.height as f64 - sprite_px / 2.0;
+    let cx = cat_cx + ox_ratio * sprite_px;
+    let cy = cat_cy + oy_ratio * sprite_px;
     let dx = cursor.x - cx;
     let dy = cursor.y - cy;
 
@@ -62,15 +66,12 @@ pub fn pet_cursor_angle(window: tauri::Window) -> Result<GazeSample, String> {
         Some(dy.atan2(dx).to_degrees().rem_euclid(360.0))
     };
 
-    // The cat fills a `sprite_px` square centered in the window. A click inside
-    // that box belongs to the cat; everything else is empty and should pass
-    // through (see the frontend's click-through toggle).
-    let win_cx = pos.x as f64 + size.width as f64 / 2.0;
-    let win_cy = pos.y as f64 + size.height as f64 / 2.0;
-    let over_cat = cursor.x >= win_cx - sprite_px / 2.0
-        && cursor.x <= win_cx + sprite_px / 2.0
-        && cursor.y >= win_cy - sprite_px / 2.0
-        && cursor.y <= win_cy + sprite_px / 2.0;
+    // 猫精灵占一个 sprite_px 大小的方框：横向以 cat_cx 居中、纵向贴窗口底（中线为 cat_cy）。
+    // 点在框内 = 落在猫身上，需要保持交互；框外为透明区，应当穿透。
+    let over_cat = cursor.x >= cat_cx - sprite_px / 2.0
+        && cursor.x <= cat_cx + sprite_px / 2.0
+        && cursor.y >= cat_cy - sprite_px / 2.0
+        && cursor.y <= cat_cy + sprite_px / 2.0;
 
     Ok(GazeSample {
         angle,

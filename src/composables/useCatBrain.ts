@@ -41,8 +41,12 @@ export interface CatState {
 }
 
 export interface BrainConfig {
-  /** tick 间隔(毫秒，即注视采样频率)。 */
+  /** 高频采样间隔(毫秒)：跟随光标 / 可抢占的 idle 且光标在动时使用。 */
   tickMs: number;
+  /** 低频采样间隔(毫秒)：sleep / 校准中 / 关闭跟随 / idle 久未动时使用，仅维持穿透判定与移动探测。 */
+  idleTickMs: number;
+  /** 光标静止超过该时长(毫秒)后，idle/follow 降为低频采样。 */
+  stillnessMs: number;
   /** 光标位移(物理像素)超过该阈值时，才判定鼠标"移动了"。 */
   moveThreshold: number;
   /** 跟随状态下，光标静止超过这段时间(毫秒)后切回 idle。 */
@@ -51,6 +55,8 @@ export interface BrainConfig {
 
 export const DEFAULT_CONFIG: BrainConfig = {
   tickMs: 50,
+  idleTickMs: 200,
+  stillnessMs: 1000,
   moveThreshold: 2,
   idleTimeoutMs: 5000,
 };
@@ -113,6 +119,7 @@ export function useCatBrain(opts: BrainOptions): CatBrain {
   let lastPos: { x: number; y: number } | null = null;
   let lastMoveAt = 0;
   let tickTimer: number | undefined;
+  let disposed = false;
   let rotationTimer: number | undefined;
   let unlisten: UnlistenFn | undefined;
 
@@ -311,6 +318,41 @@ export function useCatBrain(opts: BrainOptions): CatBrain {
     }
   }
 
+  /**
+   * 根据当前状态决定下一次注视采样的间隔（自适应降频）。
+   *
+   * 高频(`tickMs`)：正在跟随、或可抢占的 idle 且光标近期在动——需要流畅注视 / 灵敏抢占。
+   * 低频(`idleTickMs`)：sleep 等不可中断行为 / 校准中 / 关闭跟随 / idle 久未动——
+   *   这些情况不需要注视角度，仅维持 `over_cat`（点击穿透判定）与移动探测。
+   */
+  function nextDelay(): number {
+    // 校准中：无需角度，低频维持穿透判定。
+    if (opts.paused?.()) return config.idleTickMs;
+
+    const following = opts.followEnabled();
+
+    // 纯跟随模式：开启跟随时常驻 follow，需高频出帧；关闭则低频。
+    if (followOnly) return following ? config.tickMs : config.idleTickMs;
+
+    // 关闭跟随：无抢占、无注视，低频仅维持 over_cat。
+    if (!following) return config.idleTickMs;
+
+    // 不可中断行为（sleep）：不会被跟随抢占，低频。
+    if (state.value.kind === "behavior" && behaviors[currentBehavior]?.interruptible !== true) {
+      return config.idleTickMs;
+    }
+
+    // follow 进行中 / 可抢占的 idle：光标近期在动 → 高频；久未动 → 低频探测。
+    return Date.now() - lastMoveAt > config.stillnessMs ? config.idleTickMs : config.tickMs;
+  }
+
+  /** 自适应采样循环：跑一次 tick，再按当前状态重排下一次。 */
+  async function loop() {
+    await tick();
+    if (disposed) return; // 组件已卸载，停止重排
+    tickTimer = window.setTimeout(loop, nextDelay());
+  }
+
   onMounted(async () => {
     lastMoveAt = Date.now();
     if (followOnly) {
@@ -326,8 +368,7 @@ export function useCatBrain(opts: BrainOptions): CatBrain {
       beh.start(behaviors[defaultBehavior]);
       scheduleRotation();
     }
-    tickTimer = window.setInterval(tick, config.tickMs);
-    void tick();
+    void loop(); // 立即取首帧，随后按状态自适应重排
     try {
       unlisten = await listen<string>("pet-play-action", (e) => {
         if (typeof e.payload === "string") trigger(e.payload);
@@ -338,7 +379,8 @@ export function useCatBrain(opts: BrainOptions): CatBrain {
   });
 
   onUnmounted(() => {
-    if (tickTimer !== undefined) window.clearInterval(tickTimer);
+    disposed = true;
+    if (tickTimer !== undefined) window.clearTimeout(tickTimer);
     clearRotationTimer();
     beh.stop();
     unlisten?.();

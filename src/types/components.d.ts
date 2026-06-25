@@ -45,6 +45,7 @@ declare module 'vue' {
     Menu: typeof import('./../components/Menu/Menu.vue')['default']
     MissingResources: typeof import('./../components/MissingResources/MissingResources.vue')['default']
     Pet: typeof import('./../components/Pet/Pet.vue')['default']
+    SpeechBubble: typeof import('./../components/SpeechBubble/SpeechBubble.vue')['default']
   }
   export interface GlobalDirectives {
     vLoading: typeof import('element-plus/es')['ElLoadingDirective']
