@@ -5,7 +5,7 @@
  */
 import { onMounted, onUnmounted, type Ref } from "vue";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import type { GestureConfig } from "./useGestureConfig";
+import type { TriggerBinding, MouseTrigger } from "./useTriggerBindings";
 import type { PetAction, PetActionContext } from "./usePetActions";
 
 /** 达到该移动像素数即视为拖动。 */
@@ -21,18 +21,25 @@ const LONG_PRESS_MS = 600;
  * 在目标元素上绑定手势识别。
  *
  * @param elRef 目标 DOM 元素（猫咪本体包裹层）
- * @param config 手势配置 ref
+ * @param bindings 触发器绑定数组 ref
  * @param actions 动作仓库
  * @param ctx 动作执行上下文
  */
 export function useGestures(
   elRef: Ref<HTMLElement | undefined>,
-  config: Ref<GestureConfig>,
+  bindings: Ref<TriggerBinding[]>,
   actions: Record<string, PetAction>,
   ctx: PetActionContext,
 ): void {
   let lastClickTime = 0;
   let pendingClickTimer: number | undefined;
+
+  /** 按 mouse 触发方式从绑定数组查 actionId；找不到降级 none。 */
+  function mouseAction(trigger: MouseTrigger): string {
+    return (
+      bindings.value.find((b) => b.kind === "mouse" && b.trigger === trigger)?.actionId ?? "none"
+    );
+  }
 
   /** 按动作 id 查找并执行；找不到时降级为空操作。 */
   function dispatch(actionId: string, pos?: { x: number; y: number }): void {
@@ -85,7 +92,7 @@ export function useGestures(
           window.clearTimeout(pendingClickTimer);
           pendingClickTimer = undefined;
         }
-        dispatch(config.value.doubleClick, start);
+        dispatch(mouseAction("doubleClick"), start);
         return;
       }
 
@@ -95,7 +102,7 @@ export function useGestures(
         pendingClickTimer = undefined;
         if (lastClickTime === now) {
           lastClickTime = 0;
-          dispatch(config.value.leftClick, start);
+          dispatch(mouseAction("leftClick"), start);
         }
       }, DOUBLE_CLICK_MS);
     }
@@ -110,7 +117,7 @@ export function useGestures(
     longPressTimer = window.setTimeout(() => {
       dragging = true; // 标记为拖动态，阻止 mouseup 触发单击/双击
       cleanup();
-      dispatch(config.value.longPress, start);
+      dispatch(mouseAction("longPress"), start);
     }, LONG_PRESS_MS);
 
     window.addEventListener("mousemove", onMove);
@@ -119,7 +126,7 @@ export function useGestures(
 
   function onContextMenu(e: MouseEvent) {
     e.preventDefault();
-    dispatch(config.value.rightClick, { x: e.clientX, y: e.clientY });
+    dispatch(mouseAction("rightClick"), { x: e.clientX, y: e.clientY });
   }
 
   onMounted(() => {

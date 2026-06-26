@@ -97,19 +97,19 @@ import {
 } from "../../composables/useDisplaySettings";
 import { menuSettings } from "../../composables/useMenuSettings";
 import { useCatBrain } from "../../composables/useCatBrain";
-import { gestureConfig } from "../../composables/useGestureConfig";
-import { PET_ACTIONS } from "../../composables/usePetActions";
+import { PET_ACTIONS, type PetActionContext } from "../../composables/usePetActions";
 import { useGestures } from "../../composables/useGestures";
 import { actionOfFrame, transformOfAction } from "../../actions/clips";
 import {
-  SHORTCUT_DEFS,
-  SHORTCUTS_CHANGED_EVENT,
-  SHORTCUTS_RESULT_EVENT,
-  loadShortcutMap,
+  triggerBindings,
+  TRIGGER_BINDINGS_CHANGED_EVENT,
+  TRIGGER_BINDINGS_RESULT_EVENT,
+  loadTriggerBindings,
   matchesKey,
   toAccelerator,
-  type ShortcutResult,
-} from "../../composables/useShortcuts";
+  type TriggerBinding,
+  type TriggerResult,
+} from "../../composables/useTriggerBindings";
 
 // ── 行为状态机 ──────────────────────────────────────────
 // 所有"显示哪一帧"的逻辑都集中在 brain 中；Pet.vue 只负责
@@ -314,7 +314,8 @@ function cancelCalibrate() {
 // ── 手势配置 ─────────────────────────────────────────────────────
 // 单击 / 双击 / 右键 / 长按对应哪个动作由 gestureConfig 决定；
 // 拖动固定走 Tauri 原生窗口拖动，不参与配置。
-useGestures(catWrapRef, gestureConfig, PET_ACTIONS, {
+/** 动作执行上下文；手势与快捷键共用同一份。 */
+const petCtx: PetActionContext = {
   brain,
   menuOpen,
   calibrating,
@@ -323,7 +324,9 @@ useGestures(catWrapRef, gestureConfig, PET_ACTIONS, {
   say,
   placeMenuAt,
   pendingMenuPos,
-});
+};
+
+useGestures(catWrapRef, triggerBindings, PET_ACTIONS, petCtx);
 
 // ── 拖动处理（校准模式） ─────────────────────────────────
 const dragAnchor = ref<{ x: number; y: number } | null>(null);
@@ -466,24 +469,24 @@ function showToast(msg: string, ms = 1800) {
 }
 
 // ── 快捷键 ───────────────────────────────────────────────────────
-// 全局键（如「老板来了」）经 global-shortcut 插件在系统层注册，任何程序活跃时都触发；
-// 应用内键仅在主窗口聚焦时由 keydown 捕获。两类按键的动作集中在此分发。
-/** id → 动作。全局与应用内共用同一套动作实现。 */
-const shortcutActions: Record<string, () => void> = {
-  "open-settings": () => {
-    invoke("pet_open_settings").catch(() => {});
-  },
-  "boss-coming": () => {
-    invoke("pet_toggle_visibility").catch(() => {});
-  },
-  "toggle-passthrough": () => {
-    passthrough.value = !passthrough.value;
-    showToast(passthrough.value ? "已开启穿透" : "已关闭穿透");
-  },
-};
+// 全局键经 global-shortcut 插件在系统层注册，任何程序活跃时都触发；
+// 应用内键仅在主窗口聚焦时由 keydown 捕获。两类按键的动作统一走 PET_ACTIONS，
+// 与手势共用 petCtx，不再维护独立的 shortcutActions 映射。
 
-/** 当前生效的应用内快捷键：按键串 → 动作 id。每次应用时重建。 */
-let appShortcutMap: Record<string, string> = {};
+/** 当前生效的应用内快捷键：按键串 → TriggerBinding。每次应用时重建。 */
+let appKeyMap: Record<string, TriggerBinding> = {};
+
+/**
+ * 按 entry 的 actionId 分发动作；统一走 PET_ACTIONS，与手势共用 petCtx。
+ * 对 togglePassthrough 补一次 toast，保持与迁移前独立实现一致。
+ */
+function dispatchKeyBinding(entry: TriggerBinding): void {
+  const action = PET_ACTIONS[entry.actionId] ?? PET_ACTIONS.none;
+  action(petCtx);
+  if (entry.actionId === "togglePassthrough") {
+    showToast(passthrough.value ? "已开启穿透" : "已关闭穿透");
+  }
+}
 
 /**
  * 按最新配置（重新）应用全部快捷键：
@@ -491,10 +494,9 @@ let appShortcutMap: Record<string, string> = {};
  * 2) 逐条注册全局键，注册失败（多半被其他程序占用）记入 failedIds；
  * 3) 重建应用内键查找表，交由窗口 keydown 监听匹配；
  * 4) 把 failedIds 回传给设置窗，用于标红提示。
+ * 手势侧由 useGestures 直接读 triggerBindings，无需在此处理。
  */
-async function applyShortcuts() {
-  const map = loadShortcutMap();
-
+async function applyTriggerBindings() {
   // 全局键：先清空我们注册过的全部全局键，再逐条注册。
   try {
     await unregisterAll();
@@ -503,36 +505,35 @@ async function applyShortcuts() {
   }
 
   const failedIds: string[] = [];
-  appShortcutMap = {};
+  appKeyMap = {};
 
-  for (const def of SHORTCUT_DEFS) {
-    const key = map[def.id];
-    if (!key) continue;
-    if (def.scope === "global") {
+  for (const entry of triggerBindings.value) {
+    if (entry.kind !== "key" || !entry.trigger) continue;
+    if (entry.isGlobal) {
       try {
         // 注册时绑定回调；按下（而非松开）时触发一次。
-        await register(toAccelerator(key), (e) => {
-          if (e.state === "Pressed") shortcutActions[def.id]?.();
+        await register(toAccelerator(entry.trigger), (e) => {
+          if (e.state === "Pressed") dispatchKeyBinding(entry);
         });
       } catch {
         // 注册失败＝该组合键已被其他程序占用，系统层无法抢占，记下供前端提示。
-        failedIds.push(def.id);
+        failedIds.push(entry.id);
       }
     } else {
-      appShortcutMap[key] = def.id;
+      appKeyMap[entry.trigger] = entry;
     }
   }
 
   // 回传注册结果给设置窗（若其打开着），用于标记被占用的全局键。
-  emit(SHORTCUTS_RESULT_EVENT, { failedIds } as ShortcutResult).catch(() => {});
+  emit(TRIGGER_BINDINGS_RESULT_EVENT, { failedIds } as TriggerResult).catch(() => {});
 }
 
 /** 窗口级 keydown：匹配应用内快捷键。仅主窗口聚焦时触发，故不与其他软件全局冲突。 */
 function onAppShortcutKeydown(e: KeyboardEvent) {
-  for (const key in appShortcutMap) {
+  for (const key in appKeyMap) {
     if (matchesKey(e, key)) {
       e.preventDefault();
-      shortcutActions[appShortcutMap[key]]?.();
+      dispatchKeyBinding(appKeyMap[key]);
       return;
     }
   }
@@ -568,7 +569,7 @@ onMounted(async () => {
 
   // 应用内快捷键：注册全局键 + 启用应用内 keydown 匹配。
   window.addEventListener("keydown", onAppShortcutKeydown);
-  applyShortcuts();
+  applyTriggerBindings();
 
   // 窗口失去焦点时自动关闭菜单（覆盖"点击应用外"的场景）。
   getCurrentWindow()
@@ -580,8 +581,10 @@ onMounted(async () => {
     });
   // 设置窗保存快捷键后会广播该事件，主窗收到即重新应用。
   try {
-    unlistenShortcuts = await listen(SHORTCUTS_CHANGED_EVENT, () => {
-      applyShortcuts();
+    unlistenShortcuts = await listen(TRIGGER_BINDINGS_CHANGED_EVENT, () => {
+      // 设置窗保存后广播新绑定；主窗刷新本地 ref 并重新应用。
+      triggerBindings.value = loadTriggerBindings();
+      applyTriggerBindings();
     });
   } catch {
     // 忽略——事件绑定不可用。
