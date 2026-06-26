@@ -122,3 +122,30 @@ export const GESTURE_ACTION_KEYS: string[] = [
   "minimize",
   "quit",
 ];
+
+/**
+ * 允许在快捷键配置中绑定的动作 key。
+ * 含状态切换类与最小化；不含 `startCalibrate`（仓库尚无实现）、不含 `bossComing`
+ * （「老板来了」直接复用 minimize）。
+ */
+export const SHORTCUT_ACTION_KEYS: string[] = [
+  "none",
+  "wake",
+  "poke",
+  "speak",
+  "pokeAndSpeak",
+  "openMenu",
+  "openSettings",
+  "minimize",
+  "toggleFollow",
+  "togglePassthrough",
+  "quit",
+];
+
+/** 鼠标手势触发方式的中文标签，供设置页只读显示。 */
+export const MOUSE_TRIGGER_LABELS: Record<string, string> = {
+  leftClick: "左键单击",
+  doubleClick: "左键双击",
+  rightClick: "右键",
+  longPress: "长按",
+};
