@@ -312,8 +312,8 @@ function cancelCalibrate() {
 }
 
 // ── 手势配置 ─────────────────────────────────────────────────────
-// 单击 / 双击 / 右键 / 长按对应哪个动作由 gestureConfig 决定；
-// 拖动固定走 Tauri 原生窗口拖动，不参与配置。
+// 单击 / 双击 / 右键 / 长按对应哪个动作由 triggerBindings 决定（useGestures
+// 内 mouseAction 按 trigger 查找）；拖动固定走 Tauri 原生窗口拖动，不参与配置。
 /** 动作执行上下文；手势与快捷键共用同一份。 */
 const petCtx: PetActionContext = {
   brain,
