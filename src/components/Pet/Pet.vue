@@ -3,8 +3,8 @@
     <!-- 猫咪本体：左键拖动 / 互动，右键打开环形菜单。 -->
     <div class="pet__body">
       <div
+        ref="catWrapRef"
         class="pet__img-wrap"
-        @mousedown="onMouseDown"
         @contextmenu.prevent="openMenuAt"
       >
         <CatSprite :src="currentSrc" :style="spriteTransform" />
@@ -12,7 +12,20 @@
 
       <!-- 猫说话气泡 / 提示气泡：浮在猫头上方，尾巴朝下指向猫。 -->
       <div class="pet__speech">
-        <SpeechBubble :text="speech" />
+        <SpeechBubble :show="!!speech" :text="speech" />
+        <SpeechBubble :show="updateAvailable" variant="cloud1">
+          <div class="pet__update-content">
+            <div class="pet__update-text">🔔 发现新版本</div>
+            <div class="pet__update-btns">
+              <el-button size="small" @click="updateAvailable = false"
+                >稍后再说</el-button
+              >
+              <el-button type="primary" size="small" @click="openUpdatePage()"
+                >去更新</el-button
+              >
+            </div>
+          </div>
+        </SpeechBubble>
       </div>
     </div>
 
@@ -26,19 +39,15 @@
       <Menu
         :style="menuStyle"
         :items="menuSettings"
-        :follow="followCursor"
-        :passthrough="passthrough"
-        @update:follow="onToggleFollow"
-        @update:passthrough="passthrough = $event"
-        @calibrate="startCalibrate"
-        @boss="onMinimize"
+        :brain="brain"
+        v-model:follow="followCursor"
+        v-model:passthrough="passthrough"
+        v-model:calibrating="calibrating"
         @close="menuOpen = false"
-        @quit="onQuit"
-        @trigger="onTrigger"
       />
     </div>
 
-    <!-- 校准遮罩层：校准期间覆盖整个窗口。 -->
+    <!-- 校准遮罩层：校准期间覆盖整个窗口，阻止与猫咪本体的交互。 -->
     <div
       v-if="calibrating"
       class="pet__calib-overlay"
@@ -47,34 +56,26 @@
       <div
         class="pet__calib-circle"
         :style="calibCircleStyle"
-        @mousedown="onCalibMouseDown"
+        @mousedown.stop="onCalibMouseDown"
       ></div>
-      <!-- 校准提示 + 确认/取消按钮放进云朵，浮在猫头上方，避免按钮跑到屏幕外。 -->
-      <div class="pet__speech">
-        <SpeechBubble :show="true" variant="cloud1">
-          <span class="pet__calib-text">拖动圆圈对准猫头</span>
-          <div class="pet__calib-btns">
-            <el-button type="primary" size="small" @click="confirmCalibrate">
-              确认
-            </el-button>
-            <el-button size="small" @click="cancelCalibrate">取消</el-button>
-          </div>
-        </SpeechBubble>
+      <!-- 校准提示气泡：锚点与猫咪身体同高同位置，保证 bottom:100% 正好在猫头上方。 -->
+      <div class="pet__calib-anchor" :style="calibAnchorStyle">
+        <div class="pet__speech">
+          <SpeechBubble :show="true" variant="cloud1">
+            <div class="pet__calib-content">
+              <div class="pet__calib-text">拖动圆圈对准猫头</div>
+              <div class="pet__calib-btns">
+                <el-button type="primary" size="small" @click="confirmCalibrate"
+                  >确认</el-button
+                >
+                <el-button size="small" @click="cancelCalibrate"
+                  >取消</el-button
+                >
+              </div>
+            </div>
+          </SpeechBubble>
+        </div>
       </div>
-    </div>
-
-    <div v-if="updateAvailable" class="pet__speech pet__speech--update">
-      <SpeechBubble :show="true" variant="cloud3">
-        <span class="pet__update-text">🔔 发现新版本</span>
-        <el-button
-          v-if="badgeClickable"
-          type="primary"
-          size="small"
-          @click="openUpdatePage()"
-          >去更新</el-button
-        >
-        <span v-else class="pet__update-hint">托盘→设置查看</span>
-      </SpeechBubble>
     </div>
   </div>
 </template>
@@ -85,16 +86,20 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen, emit, type UnlistenFn } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { register, unregisterAll } from "@tauri-apps/plugin-global-shortcut";
-import Menu from "../Menu/Menu.vue";
+import Menu, { MENU_WIDTH, MENU_HEIGHT } from "../Menu/Menu.vue";
 import CatSprite from "../CatSprite/CatSprite.vue";
 import SpeechBubble from "../SpeechBubble/SpeechBubble.vue";
 import {
   size,
   opacity,
   alwaysOnTop,
+  passthrough,
 } from "../../composables/useDisplaySettings";
 import { menuSettings } from "../../composables/useMenuSettings";
 import { useCatBrain } from "../../composables/useCatBrain";
+import { gestureConfig } from "../../composables/useGestureConfig";
+import { PET_ACTIONS } from "../../composables/usePetActions";
+import { useGestures } from "../../composables/useGestures";
 import { actionOfFrame, transformOfAction } from "../../actions/clips";
 import {
   SHORTCUT_DEFS,
@@ -131,21 +136,23 @@ const brain = useCatBrain({
 });
 const currentSrc = brain.currentSrc;
 
-/** 穿透点击：开启后鼠标事件穿透到下层窗口，按住 Ctrl 时临时恢复交互。 */
-const passthrough = ref(loadSetting<boolean>("pet-passthrough", true));
-const ctrlPressed = ref(false);
+/** 猫咪本体包裹层，供手势引擎绑定事件。 */
+const catWrapRef = ref<HTMLElement | undefined>();
 
-/** 菜单宽高（与 Menu.vue 内部的 `SIZE` 常量一致）。改那边记得同步这里。 */
-const MENU_SIZE = 200;
+const ctrlPressed = ref(false);
 
 /** 菜单贴窗口边时保留的安全边距，避免视觉上紧贴边缘。 */
 const MENU_EDGE_PADDING = 4;
 
 /**
  * 菜单左上角在窗口内的像素位置：右键时按光标位置放置，再 clamp 到窗口内，
- * 使整个 200×200 菜单永远完整可见（贴边自动回收，类似 el-popper 的 shift 中间件）。
+ * 使菜单永远完整可见（贴边自动回收，类似 el-popper 的 shift 中间件）。
+ * 宽高从 Menu.vue 导出，与 viewBox 裁剪后的实际内容一致。
  */
 const menuPos = ref({ x: 0, y: 0 });
+
+/** 手势引擎在触发动作前写入的指针位置，供 openMenu 等动作使用。 */
+const pendingMenuPos = ref<{ x: number; y: number } | undefined>();
 
 /**
  * 把菜单"中心点"放到 `(cx, cy)` 处，再 clamp 到窗口内。
@@ -154,13 +161,14 @@ const menuPos = ref({ x: 0, y: 0 });
 function placeMenuAt(cx?: number, cy?: number) {
   const W = window.innerWidth;
   const H = window.innerHeight;
-  const half = MENU_SIZE / 2;
+  const halfW = MENU_WIDTH / 2;
+  const halfH = MENU_HEIGHT / 2;
   const minX = MENU_EDGE_PADDING;
   const minY = MENU_EDGE_PADDING;
-  const maxX = Math.max(minX, W - MENU_SIZE - MENU_EDGE_PADDING);
-  const maxY = Math.max(minY, H - MENU_SIZE - MENU_EDGE_PADDING);
-  const targetX = (cx ?? W / 2) - half;
-  const targetY = (cy ?? H / 2) - half;
+  const maxX = Math.max(minX, W - MENU_WIDTH - MENU_EDGE_PADDING);
+  const maxY = Math.max(minY, H - MENU_HEIGHT - MENU_EDGE_PADDING);
+  const targetX = (cx ?? W / 2) - halfW;
+  const targetY = (cy ?? H / 2) - halfH;
   menuPos.value = {
     x: Math.min(Math.max(targetX, minX), maxX),
     y: Math.min(Math.max(targetY, minY), maxY),
@@ -219,6 +227,24 @@ const calibCircleStyle = computed(() => {
   };
 });
 
+/**
+ * 校准提示气泡的锚点：与猫咪身体同宽、同高、同位置。
+ * 将气泡放进这个锚点后，bottom:100% 就会正好落在猫头上方，
+ * 与 .pet__body 里的普通/更新气泡保持一致的定位约定。
+ */
+const calibAnchorStyle = computed(() => {
+  const h = Math.round(200 * size.value);
+  return {
+    position: "absolute" as const,
+    left: "50%",
+    bottom: "0",
+    width: `${h}px`,
+    height: `${h}px`,
+    transform: "translateX(-50%)",
+    pointerEvents: "none" as const,
+  };
+});
+
 // 将精灵图缩放比例同步给 Rust，使其屏幕边界约束的是实际的猫咪内容
 //（在超大窗口中居中），而非窗口边框。立即执行一次，
 // 以便后端从一开始就使用正确的缩放比例。
@@ -233,8 +259,7 @@ watch(
 );
 
 // 持久化用户设置：热重载重挂 <Pet> 后自动恢复（headOffset 另有持久化）。
-// size / opacity 由 useDisplaySettings composable 统一持久化和跨窗口同步。
-watch(passthrough, (v) => localStorage.setItem("pet-passthrough", String(v)));
+// size / opacity / passthrough 由 useDisplaySettings composable 统一持久化和跨窗口同步。
 watch(followCursor, (v) => localStorage.setItem("pet-follow", String(v)));
 
 // 窗口层级：监听 composable 中 alwaysOnTop 的变化，调 Tauri API 实际应用到主窗口。
@@ -272,11 +297,6 @@ try {
   /* 数据损坏——忽略 */
 }
 
-function startCalibrate() {
-  menuOpen.value = false;
-  calibrating.value = true;
-}
-
 function confirmCalibrate() {
   localStorage.setItem("pet-head-offset", JSON.stringify(headOffset.value));
   invoke("pet_set_head_offset", {
@@ -290,6 +310,20 @@ function confirmCalibrate() {
 function cancelCalibrate() {
   calibrating.value = false;
 }
+
+// ── 手势配置 ─────────────────────────────────────────────────────
+// 单击 / 双击 / 右键 / 长按对应哪个动作由 gestureConfig 决定；
+// 拖动固定走 Tauri 原生窗口拖动，不参与配置。
+useGestures(catWrapRef, gestureConfig, PET_ACTIONS, {
+  brain,
+  menuOpen,
+  calibrating,
+  followCursor,
+  passthrough,
+  say,
+  placeMenuAt,
+  pendingMenuPos,
+});
 
 // ── 拖动处理（校准模式） ─────────────────────────────────
 const dragAnchor = ref<{ x: number; y: number } | null>(null);
@@ -335,22 +369,20 @@ watch(calibrating, (on) => {
 // `setIgnoreCursorEvents` 作用于整个窗口。穿透点击开启后直接穿透，
 // 但按住 Ctrl 时临时恢复交互，方便重新打开菜单或拖动猫咪。
 // 仅在状态变化时切换，以避免每个 tick 都产生 IPC 抖动。
+// 注意：`updateAvailable` 必须在此 computed 之前声明——下方
+// `watch(interactive, …, { immediate: true })` 会同步求值，若声明
+// 在其后会触发 TDZ（Cannot access before initialization）。
+/** 是否检测到新版本（控制轻提示气泡显示）。 */
+const updateAvailable = ref(false);
+
 /** 窗口是否应响应鼠标事件（非穿透）。 */
 const interactive = computed(() => {
-  if (menuOpen.value || calibrating.value) return true;
+  // 菜单 / 校准 / 更新提示期间，窗口必须可交互，否则按钮点不到。
+  if (menuOpen.value || calibrating.value || updateAvailable.value) return true;
   if (passthrough.value && !ctrlPressed.value) return false;
   return brain.cursorOverCat.value;
 });
 
-/**
- * 新版本提示气泡当前是否可点击：
- * - 关闭穿透时整窗交互，气泡可直接点击；
- * - 开启穿透时整窗不响应鼠标，气泡靠按住 Ctrl 临时恢复交互即可点；
- * - 否则只显示文案，引导用户从托盘进入设置。
- */
-const badgeClickable = computed(() => {
-  return !passthrough.value || ctrlPressed.value;
-});
 watch(
   interactive,
   (on) => {
@@ -391,8 +423,7 @@ watch(
 );
 
 // ── 更新检查 ─────────────────────────────────────────────────────
-/** 是否检测到新版本（控制轻提示气泡显示）。 */
-const updateAvailable = ref(false);
+// `updateAvailable` 已在上方「点击穿透」块声明（供 `interactive` computed 引用）。
 
 /** 启动后台静默检查更新；失败完全忽略（不打扰用户）。 */
 async function silentCheckUpdate() {
@@ -432,103 +463,6 @@ function say(msg: string, ms = 3000) {
  */
 function showToast(msg: string, ms = 1800) {
   say(msg, ms);
-}
-
-/** 戳猫时随机说的话（演示用，后续可接行为/定时触发）。 */
-const POKE_PHRASES = [
-  "喵~",
-  "干嘛戳我啦",
-  "今天也要加油哦！",
-  "摸鱼一时爽，一直摸鱼一直爽~",
-  "老大，喝口水休息一下吧",
-  "我在认真看着你工作呢",
-];
-
-/** 随机挑一句话让猫说出来。 */
-function sayRandom() {
-  const msg = POKE_PHRASES[Math.floor(Math.random() * POKE_PHRASES.length)];
-  say(msg);
-}
-
-// ── 菜单操作 ─────────────────────────────────────────────────────
-function onToggleFollow(v: boolean) {
-  followCursor.value = v;
-}
-
-function onTrigger(name: string) {
-  // 通用「切换动作 / 行为」入口：菜单里的动作项或行为项点击后由大脑分发。
-  menuOpen.value = false;
-  brain.trigger(name);
-}
-
-function onQuit() {
-  invoke("pet_quit").catch((e) => console.error("pet_quit failed", e));
-}
-
-function onMinimize() {
-  menuOpen.value = false;
-  getCurrentWindow()
-    .minimize()
-    .catch(() => {});
-}
-
-/**
- * 左键手势统一区分点击、拖动与双击：干净点击交给大脑处理，
- * 移动超过阈值才交由 Tauri 原生拖动接管；双击需手动检测，
- * 因为 `startDragging()` 会吞掉浏览器的 dblclick 事件。
- */
-let lastClickTime = 0;
-
-/** 达到该移动像素数即视为拖动。 */
-const ACTION_DRAG_THRESHOLD = 5;
-
-function onMouseDown(e: MouseEvent) {
-  if (e.button !== 0) return;
-
-  const start = { x: e.clientX, y: e.clientY };
-  let dragging = false;
-
-  function cleanup() {
-    window.removeEventListener("mousemove", onMove);
-    window.removeEventListener("mouseup", onUp);
-  }
-
-  function onMove(ev: MouseEvent) {
-    if (dragging) return;
-    if (
-      Math.hypot(ev.clientX - start.x, ev.clientY - start.y) >
-      ACTION_DRAG_THRESHOLD
-    ) {
-      dragging = true;
-      cleanup();
-      getCurrentWindow()
-        .startDragging()
-        .catch(() => {});
-    }
-  }
-
-  function onUp() {
-    cleanup();
-    if (dragging) return;
-
-    if (brain.canWake()) {
-      brain.wake();
-      return;
-    }
-
-    const now = Date.now();
-    if (now - lastClickTime < 300) {
-      lastClickTime = 0;
-      onMinimize();
-      return;
-    }
-    lastClickTime = now;
-    brain.poke();
-    sayRandom();
-  }
-
-  window.addEventListener("mousemove", onMove);
-  window.addEventListener("mouseup", onUp);
 }
 
 // ── 快捷键 ───────────────────────────────────────────────────────
@@ -699,20 +633,21 @@ onUnmounted(() => {
         cursor: grabbing;
       }
     }
-
-    .pet__speech {
-      position: absolute;
-      left: 50%;
-      bottom: 100%;
-      transform: translateX(-50%);
-      z-index: 40;
-      width: 300%;
-      display: flex;
-      align-items: flex-end;
-      justify-content: center;
-      pointer-events: none;
-    }
   }
+}
+
+/* 猫说话 / 提示气泡的通用定位：浮在锚点（.pet__body 或 .pet__calib-anchor）上方。 */
+.pet__speech {
+  position: absolute;
+  left: 50%;
+  bottom: 100%;
+  transform: translateX(-50%);
+  z-index: 40;
+  width: 300%;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  pointer-events: none;
 }
 
 /* 环形菜单浮层：覆盖整个窗口，菜单在其中居中。空白处点击关闭。 */
@@ -733,18 +668,6 @@ onUnmounted(() => {
   transform: translate(-50%, -50%);
 }
 
-/* 校准遮罩层：覆盖整个窗口，阻止与宠物的交互。 */
-.pet__calib-overlay {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  z-index: 100;
-  pointer-events: auto;
-}
-
 .pet__calib-circle {
   position: absolute;
   border-radius: 50%;
@@ -752,5 +675,56 @@ onUnmounted(() => {
   border: 2px solid rgba(0, 200, 80, 0.7);
   cursor: move;
   transform: translate(-50%, -50%);
+}
+
+/* 校准遮罩层：覆盖整个窗口，阻止点击穿透到猫咪本体。 */
+.pet__calib-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 100;
+  pointer-events: auto;
+}
+
+/* 校准提示气泡的锚点：与猫咪身体重合，保证气泡相对猫定位。 */
+.pet__calib-anchor {
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  transform: translateX(-50%);
+}
+
+/* 新版本提示气泡的内容布局。 */
+.pet__update-content {
+  padding: 0 10px 20px;
+  text-align: center;
+}
+
+.pet__update-text {
+  font-size: 13px;
+  margin-bottom: 8px;
+}
+
+.pet__update-btns {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+}
+
+/* 校准提示气泡的内容布局。 */
+.pet__calib-content {
+  padding: 0 10px 16px;
+  text-align: center;
+}
+
+.pet__calib-text {
+  font-size: 13px;
+  margin-bottom: 8px;
+  white-space: nowrap;
+}
+
+.pet__calib-btns {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
 }
 </style>

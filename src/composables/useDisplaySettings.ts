@@ -1,5 +1,5 @@
 /**
- * 显示设置 —— 大小、透明度、窗口层级。
+ * 显示设置 —— 大小、透明度、窗口层级、点击穿透。
  *
  * 全部存在 localStorage，key 前缀 `pet-display-`。
  * 【单向同步模式】：只有设置窗会调用 `saveAndBroadcast()` 广播；
@@ -16,6 +16,7 @@ export interface DisplaySettings {
   size: number;
   opacity: number;
   alwaysOnTop: boolean;
+  passthrough: boolean;
 }
 
 /**
@@ -39,6 +40,7 @@ const DEFAULTS: DisplaySettings = {
   size: 0.5,
   opacity: 1,
   alwaysOnTop: true,
+  passthrough: true,
 };
 
 /** 从 localStorage 读取数字/布尔值；缺失或非法时回退到默认值。 */
@@ -59,6 +61,9 @@ export const opacity = ref(loadNumber("pet-display-opacity", DEFAULTS.opacity));
 export const alwaysOnTop = ref(
   loadBool("pet-display-alwaysOnTop", DEFAULTS.alwaysOnTop),
 );
+export const passthrough = ref(
+  loadBool("pet-display-passthrough", loadBool("pet-passthrough", DEFAULTS.passthrough)),
+);
 
 /** 将当前显示设置序列化为对象。 */
 function snapshot(): DisplaySettings {
@@ -66,6 +71,7 @@ function snapshot(): DisplaySettings {
     size: size.value,
     opacity: opacity.value,
     alwaysOnTop: alwaysOnTop.value,
+    passthrough: passthrough.value,
   };
 }
 
@@ -105,6 +111,7 @@ export function saveAndBroadcast(): void {
   localStorage.setItem("pet-display-size", String(s.size));
   localStorage.setItem("pet-display-opacity", String(s.opacity));
   localStorage.setItem("pet-display-alwaysOnTop", String(s.alwaysOnTop));
+  localStorage.setItem("pet-display-passthrough", String(s.passthrough));
   const payload: DisplaySettingsPayload = { ...s, _src: SOURCE_ID };
   emit(DISPLAY_SETTINGS_CHANGED_EVENT, payload).catch(() => {});
 }
@@ -120,4 +127,5 @@ listen<DisplaySettingsPayload>(DISPLAY_SETTINGS_CHANGED_EVENT, (event) => {
   if (!areFloatsEqual(size.value, p.size)) size.value = p.size;
   if (!areFloatsEqual(opacity.value, p.opacity)) opacity.value = p.opacity;
   if (alwaysOnTop.value !== p.alwaysOnTop) alwaysOnTop.value = p.alwaysOnTop;
+  if (passthrough.value !== p.passthrough) passthrough.value = p.passthrough;
 });

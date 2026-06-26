@@ -19,7 +19,7 @@
           <el-option
             v-for="opt in allOptions"
             :key="opt.id"
-            :label="`${opt.emoji} ${opt.label}`"
+            :label="opt.standardLabel ?? opt.label"
             :value="opt"
           />
         </el-select>
@@ -62,6 +62,7 @@ const builtinOpts = computed<MenuItemConfig[]>(() =>
     ref: b.ref,
     emoji: b.emoji,
     label: b.label,
+    standardLabel: b.standardLabel,
   })),
 );
 

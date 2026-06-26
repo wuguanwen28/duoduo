@@ -144,13 +144,14 @@ const contentStyle = computed(() => ({
   /* 内容层：放在云之上，承接文字 / 插槽交互。 */
   .bubble__content {
     position: relative;
-    z-index: 1;
+    z-index: 1000;
     width: 100%;
     height: 100%;
     display: flex;
     align-items: center;
     justify-content: center;
     box-sizing: border-box;
+    pointer-events: auto;
   }
 
   /* 文字：居中、最多 3 行省略。 */

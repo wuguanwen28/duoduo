@@ -41,42 +41,196 @@
           </el-form-item>
 
           <el-form-item label="窗口层级">
-            <div class="display-settings__toggle-row">
-              <el-switch
-                :model-value="alwaysOnTop"
-                @change="onAlwaysOnTopChange"
-              />
-              <span class="display-settings__toggle-label">
-                {{ alwaysOnTop ? "置顶显示" : "跟随普通窗口" }}
-              </span>
-            </div>
-            <div class="display-settings__hint">
+            <el-switch
+              :model-value="alwaysOnTop"
+              @change="onAlwaysOnTopChange"
+            />
+            <span class="display-settings__switch-desc">
               开启后猫咪窗口始终固定在所有窗口最上层
-            </div>
+            </span>
+          </el-form-item>
+
+          <el-form-item label="点击穿透">
+            <el-switch
+              :model-value="passthrough"
+              @change="onPassthroughChange"
+            />
+            <span class="display-settings__switch-desc">
+              开启后窗口整体穿透，按住 Ctrl 可临时恢复交互
+            </span>
           </el-form-item>
         </el-form>
       </el-card>
 
-      <!-- 右键菜单配置：选哪些项、拖动排序，决定环形菜单的内容与边数。 -->
+      <!-- 手势配置：左键单击 / 双击 / 右键 / 长按分别绑定什么动作。
+           选中「说话 / 戳一下并说话 / 打开菜单」时右侧出现设置图标，
+           点击打开对应弹窗。 -->
       <el-card shadow="never" class="block">
         <template #header>
-          <span class="display-settings__card-title">🧭 右键菜单</span>
+          <span class="display-settings__card-title">🖱️ 点击设置</span>
         </template>
-        <MenuConfigCard />
+        <el-form label-width="92px" label-position="left">
+          <el-form-item label="左键单击">
+            <div class="display-settings__gesture-row">
+              <el-select
+                class="display-settings__gesture-select"
+                v-model="gestureConfig.leftClick"
+                @change="onGestureChange"
+              >
+                <el-option
+                  v-for="key in actionKeys"
+                  :key="key"
+                  :label="ACTION_LABELS[key] ?? key"
+                  :value="key"
+                />
+              </el-select>
+              <div class="display-settings__gesture-icon">
+                <el-button
+                  v-if="isPhraseAction(gestureConfig.leftClick)"
+                  type="primary"
+                  text
+                  :icon="Setting"
+                  @click="phraseDialogVisible = true"
+                />
+                <el-button
+                  v-else-if="isMenuAction(gestureConfig.leftClick)"
+                  type="primary"
+                  text
+                  :icon="Setting"
+                  @click="menuDialogVisible = true"
+                />
+              </div>
+            </div>
+          </el-form-item>
+
+          <el-form-item label="左键双击">
+            <div class="display-settings__gesture-row">
+              <el-select
+                class="display-settings__gesture-select"
+                v-model="gestureConfig.doubleClick"
+                @change="onGestureChange"
+              >
+                <el-option
+                  v-for="key in actionKeys"
+                  :key="key"
+                  :label="ACTION_LABELS[key] ?? key"
+                  :value="key"
+                />
+              </el-select>
+              <div class="display-settings__gesture-icon">
+                <el-button
+                  v-if="isPhraseAction(gestureConfig.doubleClick)"
+                  type="primary"
+                  text
+                  :icon="Setting"
+                  @click="phraseDialogVisible = true"
+                />
+                <el-button
+                  v-else-if="isMenuAction(gestureConfig.doubleClick)"
+                  type="primary"
+                  text
+                  :icon="Setting"
+                  @click="menuDialogVisible = true"
+                />
+              </div>
+            </div>
+          </el-form-item>
+
+          <el-form-item label="右键">
+            <div class="display-settings__gesture-row">
+              <el-select
+                class="display-settings__gesture-select"
+                v-model="gestureConfig.rightClick"
+                @change="onGestureChange"
+              >
+                <el-option
+                  v-for="key in actionKeys"
+                  :key="key"
+                  :label="ACTION_LABELS[key] ?? key"
+                  :value="key"
+                />
+              </el-select>
+              <div class="display-settings__gesture-icon">
+                <el-button
+                  v-if="isPhraseAction(gestureConfig.rightClick)"
+                  type="primary"
+                  text
+                  :icon="Setting"
+                  @click="phraseDialogVisible = true"
+                />
+                <el-button
+                  v-else-if="isMenuAction(gestureConfig.rightClick)"
+                  type="primary"
+                  text
+                  :icon="Setting"
+                  @click="menuDialogVisible = true"
+                />
+              </div>
+            </div>
+          </el-form-item>
+
+          <el-form-item label="长按">
+            <div class="display-settings__gesture-row">
+              <el-select
+                class="display-settings__gesture-select"
+                v-model="gestureConfig.longPress"
+                @change="onGestureChange"
+              >
+                <el-option
+                  v-for="key in actionKeys"
+                  :key="key"
+                  :label="ACTION_LABELS[key] ?? key"
+                  :value="key"
+                />
+              </el-select>
+              <div class="display-settings__gesture-icon">
+                <el-button
+                  v-if="isPhraseAction(gestureConfig.longPress)"
+                  type="primary"
+                  text
+                  :icon="Setting"
+                  @click="phraseDialogVisible = true"
+                />
+                <el-button
+                  v-else-if="isMenuAction(gestureConfig.longPress)"
+                  type="primary"
+                  text
+                  :icon="Setting"
+                  @click="menuDialogVisible = true"
+                />
+              </div>
+            </div>
+          </el-form-item>
+        </el-form>
       </el-card>
     </main>
+
+    <PhraseConfigDialog v-model:visible="phraseDialogVisible" />
+    <MenuConfigDialog v-model:visible="menuDialogVisible" />
   </div>
 </template>
 
 <script setup lang="ts">
+import { ref } from "vue";
 import {
   size,
   opacity,
   alwaysOnTop,
+  passthrough,
   broadcast,
   saveAndBroadcast,
 } from "../composables/useDisplaySettings";
-import MenuConfigCard from "./MenuConfigCard.vue";
+import {
+  gestureConfig,
+  saveGestureConfig,
+} from "../composables/useGestureConfig";
+import {
+  ACTION_LABELS,
+  GESTURE_ACTION_KEYS,
+} from "../composables/usePetActions";
+import { Setting } from "@element-plus/icons-vue";
+import PhraseConfigDialog from "./PhraseConfigDialog.vue";
+import MenuConfigDialog from "./MenuConfigDialog.vue";
 
 /** 格式化大小滑块 tooltip 文本，如 1x / 0.25x。 */
 function formatSize(value: number): string {
@@ -86,6 +240,23 @@ function formatSize(value: number): string {
 /** 格式化透明度滑块 tooltip 文本，如 85%。 */
 function formatOpacity(value: number): string {
   return `${Math.round(value * 100)}%`;
+}
+
+/** 可在手势配置中绑定的所有动作 key。 */
+const actionKeys = GESTURE_ACTION_KEYS;
+
+/** 说话内容 / 菜单配置弹窗显隐。 */
+const phraseDialogVisible = ref(false);
+const menuDialogVisible = ref(false);
+
+/** 是否为需要配置说话短语的动作。 */
+function isPhraseAction(action: string): boolean {
+  return action === "speak" || action === "pokeAndSpeak";
+}
+
+/** 是否为需要配置右键菜单的动作。 */
+function isMenuAction(action: string): boolean {
+  return action === "openMenu";
 }
 
 /**
@@ -119,6 +290,16 @@ function onOpacityChange() {
 function onAlwaysOnTopChange(value: string | number | boolean) {
   alwaysOnTop.value = Boolean(value);
   saveAndBroadcast();
+}
+
+function onPassthroughChange(value: string | number | boolean) {
+  passthrough.value = Boolean(value);
+  saveAndBroadcast();
+}
+
+/** 手势配置变更：持久化并广播给主窗实时生效。 */
+function onGestureChange() {
+  saveGestureConfig({ ...gestureConfig.value });
 }
 </script>
 
@@ -171,6 +352,34 @@ function onAlwaysOnTopChange(value: string | number | boolean) {
   flex: 1;
 }
 
+.display-settings__select {
+  flex: 1;
+}
+
+.display-settings__gesture-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+}
+
+.display-settings__gesture-select {
+  flex: 1;
+}
+
+.display-settings__gesture-icon {
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.display-settings__switch-desc {
+  font-size: 13px;
+  color: var(--el-text-color-secondary);
+}
+
 .display-settings__hint {
   flex: none;
   min-width: 44px;
@@ -179,33 +388,7 @@ function onAlwaysOnTopChange(value: string | number | boolean) {
   color: var(--el-text-color-secondary);
 }
 
-/* 开关行 */
-.display-settings__toggle-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.display-settings__toggle-label {
-  font-size: 14px;
-  color: var(--el-text-color-primary);
-}
-
-/* 层级行的 hint 独占一行，挂到 form-item 底部 */
-:deep(.el-form-item:last-child .el-form-item__content) {
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 6px;
-}
-
-:deep(.el-form-item:last-child .display-settings__hint) {
-  text-align: left;
-  min-width: 0;
-  font-size: 12px;
-  color: var(--el-text-color-placeholder);
-}
-
-/* 卡片标题（右键菜单卡片头部） */
+/* 卡片标题 */
 .display-settings__card-title {
   font-weight: 600;
 }

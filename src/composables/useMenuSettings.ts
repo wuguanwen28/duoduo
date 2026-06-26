@@ -36,8 +36,10 @@ export interface MenuItemConfig {
   ref: string;
   /** 展示用 emoji。 */
   emoji: string;
-  /** 展示用中文标签。 */
+  /** 展示用中文标签（菜单上显示）。 */
   label: string;
+  /** 设置页下拉中显示的标准名称；仅内置功能需要。 */
+  standardLabel?: string;
 }
 
 /** 内置功能项的目录条目。 */
@@ -45,18 +47,21 @@ export interface BuiltinCatalogItem {
   /** 功能标识。 */
   ref: string;
   emoji: string;
+  /** 菜单上显示的可爱/简短名称。 */
   label: string;
+  /** 设置页下拉中显示的标准功能名称。 */
+  standardLabel: string;
   /** 是否为开关型（开/关有高亮状态，如偷看 / 穿透）。 */
   isToggle: boolean;
 }
 
 /** 内置功能目录：配置页可选池与主菜单渲染共用。 */
 export const BUILTIN_CATALOG: BuiltinCatalogItem[] = [
-  { ref: "follow", emoji: "👀", label: "偷看", isToggle: true },
-  { ref: "passthrough", emoji: "🖱️", label: "穿透点击", isToggle: true },
-  { ref: "calibrate", emoji: "🎯", label: "校准猫头", isToggle: false },
-  { ref: "boss", emoji: "🏃", label: "老板来了", isToggle: false },
-  { ref: "quit", emoji: "👋", label: "下班", isToggle: false },
+  { ref: "follow", emoji: "👀", label: "偷看", standardLabel: "切换跟随光标", isToggle: true },
+  { ref: "passthrough", emoji: "🖱️", label: "穿透点击", standardLabel: "切换点击穿透", isToggle: true },
+  { ref: "calibrate", emoji: "🎯", label: "校准猫头", standardLabel: "头部校准", isToggle: false },
+  { ref: "boss", emoji: "🏃", label: "老板来了", standardLabel: "最小化窗口", isToggle: false },
+  { ref: "quit", emoji: "👋", label: "下班", standardLabel: "退出应用", isToggle: false },
 ];
 
 /** 猫爪菜单的 5 个固定槽位：4 趾 + 1 掌垫。 */

@@ -5,9 +5,9 @@
   <div class="menu" @mousedown.stop>
     <svg
       class="menu__svg"
-      :viewBox="`0 0 ${SIZE} ${SIZE}`"
-      :width="SIZE"
-      :height="SIZE"
+      :viewBox="`${VIEWBOX_X} ${VIEWBOX_Y} ${VIEWBOX_W} ${VIEWBOX_H}`"
+      :width="VIEWBOX_W"
+      :height="VIEWBOX_H"
     >
       <!-- 把原 SVG 的 1024 坐标系整体缩放进 200 画布 -->
       <g :transform="PAW_TRANSFORM">
@@ -59,33 +59,56 @@
   </div>
 </template>
 
+<script lang="ts">
+/**
+ * 菜单渲染后的实际内容尺寸（从猫爪路径外包矩形计算得出），
+ * 供父组件 Pet.vue 做右键定位与贴边 clamp 使用。
+ */
+export const MENU_WIDTH = 167;
+export const MENU_HEIGHT = 138;
+</script>
+
 <script setup lang="ts">
 import { computed } from "vue";
+import { invoke } from "@tauri-apps/api/core";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
   PAW_SLOTS,
   type MenuItemConfig,
 } from "../../composables/useMenuSettings";
+import type { CatBrain } from "../../composables/useCatBrain";
 
 const props = defineProps<{
   /** 菜单项配置列表（固定 5 项，与 PAW_SLOTS 一一对应）。 */
   items: MenuItemConfig[];
-  /** 偷看 / 穿透当前开关状态（用于对应垫高亮）。 */
-  follow: boolean;
-  passthrough: boolean;
+  /** 猫大脑实例，用于触发动作/行为。 */
+  brain: CatBrain;
 }>();
+
+const follow = defineModel<boolean>("follow", { required: true });
+const passthrough = defineModel<boolean>("passthrough", { required: true });
+const calibrating = defineModel<boolean>("calibrating", { required: true });
 
 const emit = defineEmits<{
   (e: "close"): void;
-  (e: "update:follow", value: boolean): void;
-  (e: "update:passthrough", value: boolean): void;
-  (e: "calibrate"): void;
-  (e: "boss"): void;
-  (e: "quit"): void;
-  (e: "trigger", name: string): void;
 }>();
 
-/** SVG 画布尺寸（viewBox 逻辑单位，正方形）。 */
-const SIZE = 200;
+/** 原 SVG 坐标系到 200px 画布的缩放系数。 */
+const PAW_SCALE = 200 / 1024;
+
+/**
+ * 猫爪所有路径（轮廓 + 5 个垫）在 1024 坐标系下的外包矩形。
+ * 用此矩形裁剪 viewBox，让菜单尺寸完全贴合实际内容，不留透明内边距。
+ */
+const PATH_BBOX = { x: 89.93, y: 177.24, w: 853.48, h: 704.76 };
+
+const VIEWBOX_X = Math.round(PATH_BBOX.x * PAW_SCALE);
+const VIEWBOX_Y = Math.round(PATH_BBOX.y * PAW_SCALE);
+/** 与导出常量一致的内容宽度，避免两边数值漂移。 */
+const VIEWBOX_W = MENU_WIDTH;
+/** 与导出常量一致的内容高度。 */
+const VIEWBOX_H = MENU_HEIGHT;
+
 /** 5 个爪垫逐个展开的步进延时（毫秒）。 */
 const STEP_DELAY = 60;
 /** 文字两行时的行高（原 1024 坐标系，约 60 缩放后≈11.7px）。 */
@@ -97,10 +120,11 @@ const LINE_HEIGHT = 50;
 const PAD_BASE_DELAY = 0;
 
 /**
- * 把原 SVG（viewBox 1024×1024）整体缩放到本菜单 200×200 画布。
- * 缩放系数 200/1024 ≈ 0.1953，垫的几何与文字坐标都用原 1024 坐标系。
+ * 把原 SVG（viewBox 1024×1024）整体缩放到本菜单画布。
+ * 缩放系数 200/1024 ≈ 0.1953，垫的几何与文字坐标仍用原 1024 坐标系；
+ * 外层 viewBox 再用 PATH_BBOX 裁剪，去掉透明边。
  */
-const PAW_TRANSFORM = "scale(0.1953125)";
+const PAW_TRANSFORM = `scale(${PAW_SCALE})`;
 
 /**
  * 装饰线条主体——老大修改后的单线版本（fill:none + stroke），
@@ -189,8 +213,8 @@ const pawPads = computed(() =>
     const def = PAD_DEFS[i];
     const active =
       item.kind === "builtin" &&
-      ((item.ref === "follow" && props.follow) ||
-        (item.ref === "passthrough" && props.passthrough));
+      ((item.ref === "follow" && follow.value) ||
+        (item.ref === "passthrough" && passthrough.value));
     return {
       slot,
       item,
@@ -203,31 +227,31 @@ const pawPads = computed(() =>
   }),
 );
 
-/** 点击一个爪垫：按类型与功能标识分发。 */
+/** 点击一个爪垫：按类型与功能标识直接执行或修改状态。 */
 function onPadClick(pad: { item: MenuItemConfig }) {
   const item = pad.item;
   if (item.kind === "builtin") {
     switch (item.ref) {
       case "follow":
-        emit("update:follow", !props.follow);
+        follow.value = !follow.value;
         return;
       case "passthrough":
-        emit("update:passthrough", !props.passthrough);
+        passthrough.value = !passthrough.value;
         return;
       case "calibrate":
-        emit("calibrate");
+        calibrating.value = true;
         break;
       case "boss":
-        emit("boss");
+        getCurrentWindow().minimize().catch(() => {});
         break;
       case "quit":
-        emit("quit");
+        invoke("pet_quit").catch((e) => console.error("pet_quit failed", e));
         break;
     }
     emit("close");
     return;
   }
-  emit("trigger", item.ref);
+  props.brain.trigger(item.ref);
   emit("close");
 }
 </script>
