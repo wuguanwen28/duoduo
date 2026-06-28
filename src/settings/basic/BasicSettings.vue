@@ -115,11 +115,11 @@ import {
   basicSettings,
   saveBasicSettings,
   BASIC_SETTINGS_CHANGED_EVENT,
-} from "../composables/useBasicSettings";
+} from "../../pet-core/basicSettings";
 import { emit as emitEvent } from "@tauri-apps/api/event";
 
 /** 默认头像：项目内置 icon.png。 */
-const defaultAvatar = new URL("../assets/icon.png", import.meta.url).href;
+const defaultAvatar = new URL("../../assets/icon.png", import.meta.url).href;
 
 const form = reactive({
   name: basicSettings.value.name,

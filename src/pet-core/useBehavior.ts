@@ -13,8 +13,8 @@
  */
 import { onScopeDispose, type Ref } from "vue";
 import { useSpriteAnimation } from "./useSpriteAnimation";
-import { getClip, clipFrames } from "../actions/clips";
-import type { Behavior, TwitchItem } from "../actions/behaviors";
+import { getClip, clipFrames } from "./clips";
+import type { Behavior, TwitchItem } from "./behaviors";
 
 export interface BehaviorController {
   /** 当前要显示的帧 URL。绑定到 <CatSprite :src>。 */

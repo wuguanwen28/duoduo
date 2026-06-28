@@ -193,7 +193,7 @@ import {
   passthrough,
   broadcast,
   saveAndBroadcast,
-} from "../composables/useDisplaySettings";
+} from "../../pet-core/displaySettings";
 import {
   loadTriggerBindings,
   saveTriggerBindings,
@@ -205,13 +205,13 @@ import {
   toAccelerator,
   type TriggerBinding,
   type TriggerResult,
-} from "../composables/useTriggerBindings";
+} from "../../pet-core/triggerBindings";
 import {
   ACTION_LABELS,
   GESTURE_ACTION_KEYS,
   SHORTCUT_ACTION_KEYS,
   MOUSE_TRIGGER_LABELS,
-} from "../composables/usePetActions";
+} from "../../pet-core/commands";
 import { Plus, Refresh, Check, Close, Delete, Setting } from "@element-plus/icons-vue";
 import { register, unregister } from "@tauri-apps/plugin-global-shortcut";
 import { listen, emit, type UnlistenFn } from "@tauri-apps/api/event";

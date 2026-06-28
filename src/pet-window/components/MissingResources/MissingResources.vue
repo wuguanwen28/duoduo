@@ -4,7 +4,7 @@
     <div ref="cardEl" class="missing__card">
       <div class="missing__header">
         <div class="missing__title">
-          <img class="missing__icon" src="../../assets/icon.png" alt="cat" />
+          <img class="missing__icon" src="../../../assets/icon.png" alt="cat" />
           还没找到猫咪素材
         </div>
         <div

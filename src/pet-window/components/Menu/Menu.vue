@@ -75,8 +75,8 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
   PAW_SLOTS,
   type MenuItemConfig,
-} from "../../composables/useMenuSettings";
-import type { CatBrain } from "../../composables/useCatBrain";
+} from "../../../pet-core/menuSettings";
+import type { CatBrain } from "../../../pet-core/useCatBrain";
 
 const props = defineProps<{
   /** 菜单项配置列表（固定 5 项，与 PAW_SLOTS 一一对应）。 */

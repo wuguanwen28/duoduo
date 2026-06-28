@@ -46,7 +46,7 @@ import {
   menuItemId,
   saveAndBroadcast,
   type MenuItemConfig,
-} from "../composables/useMenuSettings";
+} from "../../pet-core/menuSettings";
 
 /**
  * 所有可选功能：内置功能 + manifest 动作 + manifest 行为。

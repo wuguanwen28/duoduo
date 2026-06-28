@@ -1,10 +1,10 @@
 /**
- * 动作库访问层 —— 从外置资源仓库（`../store/resources`）读取解析后的动作。
+ * 动作库访问层 —— 从外置资源仓库（`./resources`）读取解析后的动作。
  *
  * 旧版在这里用「大序列切区间」定义片段；现在每个动作是一个独立帧文件夹，
  * 由 manifest.json 的 actions 声明、由 store 解析，这里只做读取与小工具封装。
  */
-import { getModel, type ResolvedClip } from "../store/resources";
+import { getModel, type ResolvedClip } from "./resources";
 
 export type { ResolvedClip };
 

@@ -94,12 +94,12 @@ import {
   opacity,
   alwaysOnTop,
   passthrough,
-} from "../../composables/useDisplaySettings";
-import { menuSettings } from "../../composables/useMenuSettings";
-import { useCatBrain } from "../../composables/useCatBrain";
-import { PET_ACTIONS, type PetActionContext } from "../../composables/usePetActions";
+} from "../../../pet-core/displaySettings";
+import { menuSettings } from "../../../pet-core/menuSettings";
+import { useCatBrain } from "../../../pet-core/useCatBrain";
+import { PET_ACTIONS, type PetActionContext } from "../../../pet-core/commands";
 import { useGestures } from "../../composables/useGestures";
-import { actionOfFrame, transformOfAction } from "../../actions/clips";
+import { actionOfFrame, transformOfAction } from "../../../pet-core/clips";
 import {
   triggerBindings,
   TRIGGER_BINDINGS_CHANGED_EVENT,
@@ -109,7 +109,7 @@ import {
   toAccelerator,
   type TriggerBinding,
   type TriggerResult,
-} from "../../composables/useTriggerBindings";
+} from "../../../pet-core/triggerBindings";
 
 // ── 行为状态机 ──────────────────────────────────────────
 // 所有"显示哪一帧"的逻辑都集中在 brain 中；Pet.vue 只负责

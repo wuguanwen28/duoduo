@@ -7,7 +7,7 @@ import type { Ref } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import type { CatBrain } from "./useCatBrain";
-import { pickSpeakPhrase } from "./useSpeakPhrases";
+import { pickSpeakPhrase } from "./speakPhrases";
 
 /** 执行动作所需的上下文；由 Pet.vue 在实例化时注入。 */
 export interface PetActionContext {

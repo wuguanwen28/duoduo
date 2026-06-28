@@ -5,8 +5,8 @@
  */
 import { onMounted, onUnmounted, type Ref } from "vue";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import type { TriggerBinding, MouseTrigger } from "./useTriggerBindings";
-import type { PetAction, PetActionContext } from "./usePetActions";
+import type { TriggerBinding, MouseTrigger } from "../../pet-core/triggerBindings";
+import type { PetAction, PetActionContext } from "../../pet-core/commands";
 
 /** 达到该移动像素数即视为拖动。 */
 const DRAG_THRESHOLD = 5;

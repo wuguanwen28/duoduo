@@ -11,7 +11,6 @@ export {}
 /* prettier-ignore */
 declare module 'vue' {
   export interface GlobalComponents {
-    CatSprite: typeof import('./../components/CatSprite/CatSprite.vue')['default']
     ElAlert: typeof import('element-plus/es')['ElAlert']
     ElButton: typeof import('element-plus/es')['ElButton']
     ElButtonGroup: typeof import('element-plus/es')['ElButtonGroup']
@@ -42,10 +41,6 @@ declare module 'vue' {
     ElTooltip: typeof import('element-plus/es')['ElTooltip']
     ElTreeSelect: typeof import('element-plus/es')['ElTreeSelect']
     ElUpload: typeof import('element-plus/es')['ElUpload']
-    Menu: typeof import('./../components/Menu/Menu.vue')['default']
-    MissingResources: typeof import('./../components/MissingResources/MissingResources.vue')['default']
-    Pet: typeof import('./../components/Pet/Pet.vue')['default']
-    SpeechBubble: typeof import('./../components/SpeechBubble/SpeechBubble.vue')['default']
   }
   export interface GlobalDirectives {
     vLoading: typeof import('element-plus/es')['ElLoadingDirective']

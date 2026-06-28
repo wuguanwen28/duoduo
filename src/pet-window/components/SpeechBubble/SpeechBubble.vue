@@ -20,7 +20,7 @@ import { computed, ref, watch } from "vue";
 const CLOUD_MAP = {
   // 宽红云（1558×1024）：底部左右两角小云尾，尾巴大致居左。
   cloud1: {
-    url: new URL("../../assets/cloud1.png", import.meta.url).href,
+    url: new URL("../../../assets/cloud1.png", import.meta.url).href,
     ratio: 3 / 2,
     maxW: 200,
     offsetX: 0.3,
@@ -30,7 +30,7 @@ const CLOUD_MAP = {
   },
   // 蓝方云（1024×1024）：底部中-右一个尖尾，下方留白。浅蓝→深字。
   cloud2: {
-    url: new URL("../../assets/cloud2.png", import.meta.url).href,
+    url: new URL("../../../assets/cloud2.png", import.meta.url).href,
     ratio: 1,
     maxW: 190,
     offsetX: -0.23,
@@ -40,7 +40,7 @@ const CLOUD_MAP = {
   },
   // 思考云（1024×1024）：右下三个由大到小圆点尾，内容放左上主云区。白底→深字。
   cloud3: {
-    url: new URL("../../assets/cloud3.png", import.meta.url).href,
+    url: new URL("../../../assets/cloud3.png", import.meta.url).href,
     ratio: 1,
     maxW: 210,
     offsetX: 0,

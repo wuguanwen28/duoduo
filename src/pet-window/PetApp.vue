@@ -16,7 +16,7 @@ import { onMounted, onUnmounted, ref } from "vue";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import Pet from "./components/Pet/Pet.vue";
 import MissingResources from "./components/MissingResources/MissingResources.vue";
-import { loadResources, getResourceRoot } from "./store/resources";
+import { loadResources, getResourceRoot } from "../pet-core/resources";
 
 /** 启动状态：加载中 / 就绪 / 失败。 */
 const status = ref<"loading" | "ready" | "error">("loading");
@@ -59,4 +59,23 @@ onMounted(async () => {
 onUnmounted(() => unlisten?.());
 </script>
 
-<style scoped></style>
+<style>
+/* 全局透明 —— 只有宠物精灵可见。 */
+html,
+body,
+#app {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  background: transparent !important;
+  overflow: hidden;
+  /* 透明区域上的点击会穿透到窗口背后的应用程序。
+     可交互的子元素（猫的图像、菜单、校准浮层）会在局部重新启用
+     pointer-events。键盘事件（Esc）不受影响。 */
+  pointer-events: none;
+  user-select: none;
+  -webkit-user-select: none;
+  cursor: default;
+}
+</style>

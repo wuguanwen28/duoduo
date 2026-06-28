@@ -19,8 +19,8 @@
 import { computed, onMounted, onUnmounted, ref, type Ref } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import { getBehaviors, getDefaultBehavior } from "../actions/behaviors";
-import { getClip } from "../actions/clips";
+import { getBehaviors, getDefaultBehavior } from "./behaviors";
+import { getClip } from "./clips";
 import { useGaze } from "./useGaze";
 import { useBehavior } from "./useBehavior";
 

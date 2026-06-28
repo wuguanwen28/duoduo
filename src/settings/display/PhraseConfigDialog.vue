@@ -68,7 +68,7 @@ import {
   speakPhrases,
   saveSpeakPhrases,
   type SpeakPhrase,
-} from "../composables/useSpeakPhrases";
+} from "../../pet-core/speakPhrases";
 
 const visible = defineModel<boolean>("visible", { required: true });
 
