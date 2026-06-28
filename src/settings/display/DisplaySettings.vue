@@ -37,7 +37,9 @@
               @input="onOpacityInput"
               @change="onOpacityChange"
             />
-            <span class="display-settings__hint">{{ formatOpacity(opacity) }}</span>
+            <span class="display-settings__hint">{{
+              formatOpacity(opacity)
+            }}</span>
           </el-form-item>
 
           <el-form-item label="窗口层级">
@@ -64,14 +66,11 @@
 
       <!-- 触发器配置：鼠标手势 + 键盘快捷键合并为一张表。
            前4行鼠标（触发只读、仅改动作），后续快捷键行（录制/动作/全局开关/删除）。
-           全局键编辑时实时探测占用，冲突即报红；保存后才持久化并广播生效。 -->
+           全局键编辑时实时探测占用，冲突即报红；修改后自动持久化并广播生效。 -->
       <el-card shadow="never" class="block">
         <template #header>
           <div class="display-settings__card-header">
             <span class="display-settings__card-title">🖱️ 触发器</span>
-            <el-button type="primary" text :icon="Plus" @click="addKeyBinding">
-              新增快捷键
-            </el-button>
           </div>
         </template>
 
@@ -93,9 +92,13 @@
                 'trigger-row__input--recording': recordingIndex === i,
                 'trigger-row__input--conflict':
                   conflictIds.has(b.id) || externalIds.has(b.id),
+                'trigger-row__input--clearable':
+                  b.trigger && recordingIndex !== i,
               }"
               :title="
-                externalIds.has(b.id) ? '该组合键可能被其他程序占用，请更换' : ''
+                externalIds.has(b.id)
+                  ? '该组合键可能被其他程序占用，请更换'
+                  : ''
               "
               tabindex="0"
               @keydown.prevent.stop="(e) => onKeydown(e, i)"
@@ -105,7 +108,9 @@
               <span v-if="recordingIndex === i" class="recording-hint">
                 按键盘设置快捷键
               </span>
-              <template v-else-if="b.trigger">{{ formatKey(b.trigger) }}</template>
+              <template v-else-if="b.trigger">{{
+                formatKey(b.trigger)
+              }}</template>
               <span v-else class="placeholder">点击输入快捷键</span>
               <el-button
                 v-if="b.trigger && recordingIndex !== i"
@@ -120,7 +125,7 @@
             <el-select
               v-model="b.actionId"
               class="trigger-row__action"
-              @change="checkConflicts"
+              @change="persist"
             >
               <el-option
                 v-for="key in actionKeysFor(b.kind)"
@@ -130,51 +135,53 @@
               />
             </el-select>
 
-            <!-- 说话/菜单配置入口 -->
-            <el-button
-              v-if="isPhraseAction(b.actionId)"
-              text
-              :icon="Setting"
-              class="display-settings__gesture-icon"
-              @click="phraseDialogVisible = true"
-            />
-            <el-button
-              v-if="isMenuAction(b.actionId)"
-              text
-              :icon="Setting"
-              class="display-settings__gesture-icon"
-              @click="menuDialogVisible = true"
-            />
+            <!-- 右侧操作区：配置按钮 + 全局开关 + 删除按钮。
+                 鼠标行同样保留此容器，使动作下拉框与快捷键行对齐。 -->
+            <div class="trigger-row__actions">
+              <el-button
+                v-if="isPhraseAction(b.actionId)"
+                text
+                type="primary"
+                size="small"
+                class="display-settings__gesture-text"
+                @click="phraseDialogVisible = true"
+              >
+                说话设置
+              </el-button>
+              <el-button
+                v-else-if="isMenuAction(b.actionId)"
+                text
+                type="primary"
+                size="small"
+                class="display-settings__gesture-text"
+                @click="menuDialogVisible = true"
+              >
+                菜单设置
+              </el-button>
 
-            <!-- 作用域（仅快捷键） -->
-            <el-segmented
-              v-if="b.kind === 'key'"
-              v-model="b.isGlobal"
-              :options="scopeOptions"
-              @change="() => onScopeChange(i)"
-            />
+              <el-checkbox
+                v-if="b.kind === 'key'"
+                v-model="b.isGlobal"
+                class="trigger-row__global"
+                @change="() => onScopeChange(i)"
+              >
+                全局
+              </el-checkbox>
 
-            <!-- 删除（仅快捷键） -->
-            <el-button
-              v-if="b.kind === 'key'"
-              text
-              :icon="Delete"
-              @click="removeBinding(i)"
-            />
+              <el-button
+                v-if="b.kind === 'key'"
+                text
+                :icon="Delete"
+                class="trigger-row__delete"
+                @click="removeBinding(i)"
+              />
+            </div>
           </div>
         </div>
 
-        <div class="hint-block">
-          <p>💡 前 4 行为鼠标手势，触发方式固定，仅可改动作。</p>
-          <p>💡 点击按键框后按下组合键即可绑定，按 Backspace 清空。</p>
-          <p>🌐 全局键在任何程序活跃时都生效，可能与其他软件冲突；冲突会标红，换一个即可。</p>
-          <p>🏠 应用内键仅在桌宠主窗口聚焦时生效。</p>
-          <p>修改后请点底部「保存」生效。</p>
-        </div>
-
         <div class="display-settings__trigger-actions">
+          <el-button :icon="Plus" @click="addKeyBinding">新增快捷键</el-button>
           <el-button :icon="Refresh" @click="resetDefaults">恢复默认</el-button>
-          <el-button type="primary" :icon="Check" @click="save">保存</el-button>
         </div>
       </el-card>
     </main>
@@ -212,10 +219,9 @@ import {
   SHORTCUT_ACTION_KEYS,
   MOUSE_TRIGGER_LABELS,
 } from "../../pet-core/commands";
-import { Plus, Refresh, Check, Close, Delete, Setting } from "@element-plus/icons-vue";
+import { Plus, Refresh, Close, Delete } from "@element-plus/icons-vue";
 import { register, unregister } from "@tauri-apps/plugin-global-shortcut";
 import { listen, emit, type UnlistenFn } from "@tauri-apps/api/event";
-import { ElMessage } from "element-plus";
 import PhraseConfigDialog from "./PhraseConfigDialog.vue";
 import MenuConfigDialog from "./MenuConfigDialog.vue";
 
@@ -244,13 +250,6 @@ const externalIds = ref<Set<string>>(new Set());
 
 let unlistenResult: UnlistenFn | undefined;
 
-/** 作用域分段控件选项。`el-segmented` 的 value 用 boolean 绑 isGlobal；
- *  若 vue-tsc 报类型不兼容，改用字符串 "app"/"global" 并在读写处转换。 */
-const scopeOptions = [
-  { label: "🏠 应用内", value: false },
-  { label: "🌐 全局", value: true },
-];
-
 /** 按触发类型返回可绑动作白名单。 */
 function actionKeysFor(kind: TriggerBinding["kind"]): string[] {
   return kind === "mouse" ? GESTURE_ACTION_KEYS : SHORTCUT_ACTION_KEYS;
@@ -272,54 +271,6 @@ function loadRows() {
   checkConflicts();
 }
 
-/**
- * 持久化并广播触发器变更，主窗收到后重新注册 / 应用。
- */
-function save() {
-  checkConflicts();
-  if (conflictIds.value.size > 0) {
-    ElMessage.warning("存在按键冲突，请先解决再保存");
-    return;
-  }
-  saveTriggerBindings(rows.value.map((b) => ({ ...b })));
-  emit(TRIGGER_BINDINGS_CHANGED_EVENT, rows.value.map((b) => ({ ...b }))).catch(
-    () => {},
-  );
-  ElMessage.success("已保存");
-}
-
-/** 恢复为内置默认（尚未保存）。 */
-function resetDefaults() {
-  rows.value = DEFAULT_TRIGGER_BINDINGS.map((b) => ({ ...b }));
-  externalIds.value = new Set();
-  checkConflicts();
-  ElMessage.info("已恢复默认（尚未保存）");
-}
-
-/** 新增一条空快捷键，默认应用内 / 无动作，自动进入录制。 */
-function addKeyBinding() {
-  rows.value.push({
-    id: crypto.randomUUID(),
-    kind: "key",
-    trigger: "",
-    actionId: "none",
-    isGlobal: false,
-  });
-  recordingIndex.value = rows.value.length - 1;
-  checkConflicts();
-}
-
-/** 删除指定快捷键行。 */
-function removeBinding(index: number) {
-  const id = rows.value[index]?.id;
-  rows.value.splice(index, 1);
-  if (id) {
-    conflictIds.value.delete(id);
-    externalIds.value.delete(id);
-  }
-  checkConflicts();
-}
-
 /** 检测并标记内部冲突（相同非空 key 的项）。 */
 function checkConflicts() {
   const keyMap = new Map<string, string[]>();
@@ -336,17 +287,78 @@ function checkConflicts() {
   conflictIds.value = conflicts;
 }
 
-/** 清空某项按键绑定。 */
+/**
+ * 持久化当前配置并广播给主窗（立即生效）。
+ * 若存在内部冲突，弹警告但仍保存（用户可能正在调整）。
+ */
+function persist() {
+  checkConflicts();
+  if (conflictIds.value.size > 0) {
+    ElMessage.warning("存在按键冲突，请修正");
+  }
+  saveTriggerBindings(rows.value.map((b) => ({ ...b })));
+  emit(
+    TRIGGER_BINDINGS_CHANGED_EVENT,
+    rows.value.map((b) => ({ ...b })),
+  ).catch(() => {});
+}
+
+/** 恢复为内置默认并立即保存。 */
+function resetDefaults() {
+  rows.value = DEFAULT_TRIGGER_BINDINGS.map((b) => ({ ...b }));
+  externalIds.value = new Set();
+  persist();
+  ElMessage.info("已恢复默认");
+}
+
+/** 新增一条空快捷键，默认应用内 / 无动作，自动进入录制并立即保存。 */
+function addKeyBinding() {
+  rows.value.push({
+    id: crypto.randomUUID(),
+    kind: "key",
+    trigger: "",
+    actionId: "none",
+    isGlobal: false,
+  });
+  recordingIndex.value = rows.value.length - 1;
+  persist();
+}
+
+/** 删除指定快捷键行：二次确认后再移除并保存。 */
+async function removeBinding(index: number) {
+  const b = rows.value[index];
+  if (!b) return;
+  try {
+    await ElMessageBox.confirm(
+      `确定要删除快捷键「${b.trigger ? formatKey(b.trigger) : "未绑定"}」吗？`,
+      "删除快捷键",
+      {
+        confirmButtonText: "删除",
+        cancelButtonText: "取消",
+        type: "warning",
+      },
+    );
+  } catch {
+    // 用户取消或关闭弹窗。
+    return;
+  }
+  rows.value.splice(index, 1);
+  conflictIds.value.delete(b.id);
+  externalIds.value.delete(b.id);
+  persist();
+}
+
+/** 清空某项按键绑定并立即保存。 */
 function clearKey(index: number) {
   rows.value[index].trigger = "";
   externalIds.value.delete(rows.value[index].id);
-  checkConflicts();
+  persist();
 }
 
 /**
  * 录制按键：序列化成 "Ctrl+Shift+A"。
  * Escape 取消录制；Backspace / Delete 清空；纯修饰键忽略。
- * 录制完成后若是全局键，立即探测占用。
+ * 录制完成后若是全局键，先探测占用再保存；否则直接保存。
  */
 function onKeydown(e: KeyboardEvent, index: number) {
   if (e.key === "Escape") {
@@ -362,20 +374,24 @@ function onKeydown(e: KeyboardEvent, index: number) {
   if (!serialized) return; // 纯修饰键，等待主键
   rows.value[index].trigger = serialized;
   externalIds.value.delete(rows.value[index].id);
-  checkConflicts();
   recordingIndex.value = -1;
-  // 全局键：录制完成立即探测占用。
-  void probeAndMark(rows.value[index]);
-}
-
-/** 作用域切换：切到全局时立即探测占用。 */
-function onScopeChange(index: number) {
-  checkConflicts();
+  // 全局键：探测占用后再持久化；应用内键直接持久化。
   const b = rows.value[index];
   if (b.kind === "key" && b.isGlobal) {
-    void probeAndMark(b);
+    void probeAndMark(b).then(persist);
+  } else {
+    persist();
+  }
+}
+
+/** 作用域切换：切到全局时探测占用后再保存；切回应用内直接保存。 */
+function onScopeChange(index: number) {
+  const b = rows.value[index];
+  if (b.kind === "key" && b.isGlobal) {
+    void probeAndMark(b).then(persist);
   } else {
     externalIds.value.delete(b.id);
+    persist();
   }
 }
 
@@ -412,9 +428,10 @@ onMounted(async () => {
     // 忽略——事件绑定不可用。
   }
   // 让主窗按当前已保存配置应用一次并回传占用情况。
-  emit(TRIGGER_BINDINGS_CHANGED_EVENT, rows.value.map((b) => ({ ...b }))).catch(
-    () => {},
-  );
+  emit(
+    TRIGGER_BINDINGS_CHANGED_EVENT,
+    rows.value.map((b) => ({ ...b })),
+  ).catch(() => {});
 });
 
 onUnmounted(() => unlistenResult?.());
@@ -507,12 +524,8 @@ function onPassthroughChange(value: string | number | boolean) {
   flex: 1;
 }
 
-.display-settings__gesture-icon {
-  width: 28px;
-  height: 28px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+.display-settings__gesture-text {
+  padding: 0 6px;
 }
 
 .display-settings__switch-desc {
@@ -545,6 +558,7 @@ function onPassthroughChange(value: string | number | boolean) {
   gap: 12px;
 }
 
+/* 触发器行：flex 布局，右侧操作区固定宽度，保证鼠标行与快捷键行的动作下拉框对齐。 */
 .trigger-row {
   display: flex;
   align-items: center;
@@ -554,28 +568,49 @@ function onPassthroughChange(value: string | number | boolean) {
   background: var(--el-fill-color-light);
 }
 
+/* 鼠标标签：与快捷键输入框 trigger-row__input 共用一套「按钮」外观
+   （等宽、同边框/圆角/内边距/白底），区别仅在于文字居中且无删除按钮、不可交互。 */
 .trigger-row__mouse-label {
   flex: none;
-  width: 140px;
-  font-weight: 600;
-  font-size: 14px;
-}
-
-.trigger-row__input {
-  flex: none;
-  width: 140px;
+  width: 160px;
   min-height: 32px;
   display: inline-flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: center;
+  padding: 0 10px;
+  border: 1px solid var(--el-border-color);
+  border-radius: 6px;
+  background: #fff;
+  font-weight: 600;
+  font-size: 14px;
+  flex-shrink: 0;
+  box-sizing: border-box;
+}
+
+.trigger-row__input {
+  position: relative;
+  flex: none;
+  width: 160px;
+  min-height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   gap: 6px;
   padding: 0 10px;
   border: 1px solid var(--el-border-color);
   border-radius: 6px;
   background: #fff;
   cursor: pointer;
-  transition: border-color 0.15s, box-shadow 0.15s;
+  transition:
+    border-color 0.15s,
+    box-shadow 0.15s;
   outline: none;
+  box-sizing: border-box;
+}
+
+/* 可清空时增大右侧内边距，避免文字与清除按钮重叠。 */
+.trigger-row__input--clearable {
+  padding-right: 26px;
 }
 .trigger-row__input:hover {
   border-color: var(--el-border-color-hover);
@@ -592,7 +627,31 @@ function onPassthroughChange(value: string | number | boolean) {
 
 .trigger-row__action {
   flex: 1;
-  min-width: 120px;
+  min-width: 0;
+}
+
+/* 右侧操作区：固定宽度，内部靠右排列，保证各行动作下拉框右边界对齐。 */
+.trigger-row__actions {
+  flex: none;
+  width: 100px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+}
+
+/* 全局复选框：不换行，避免撑开操作区。 */
+.trigger-row__global {
+  flex: none;
+  white-space: nowrap;
+}
+
+/* 删除按钮：固定 28px，与占位同宽。 */
+.trigger-row__delete {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  padding: 0;
 }
 
 .placeholder {
@@ -605,20 +664,14 @@ function onPassthroughChange(value: string | number | boolean) {
   font-size: 13px;
 }
 
+/* 删除按钮绝对定位到框右侧，使框内文字保持居中。 */
 .clear-btn {
+  position: absolute;
+  right: 4px;
+  top: 50%;
+  transform: translateY(-50%);
   padding: 2px 4px;
   height: auto;
-}
-
-.hint-block {
-  padding: 12px 0;
-  font-size: 13px;
-  color: var(--el-text-color-secondary);
-  line-height: 1.6;
-}
-
-.hint-block p {
-  margin: 0 0 4px 0;
 }
 
 .display-settings__trigger-actions {

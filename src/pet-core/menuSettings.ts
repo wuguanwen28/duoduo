@@ -2,7 +2,7 @@
  * 右键菜单配置 —— 数据驱动的菜单项列表（环形辐射菜单的数据源）。
  *
  * 菜单项分三类：
- *   - builtin   内置功能（偷看 / 穿透 / 校准 / 老板来了 / 下班）；
+ *   - builtin   内置功能（偷看 / 穿透 / 校准 / 设置 / 老板来了 / 下班）；
  *   - action    动作（manifest.actions 里的某个动作，点一次播一次）；
  *   - behavior  行为（manifest.behaviors 里的某个行为，点一次切过去）。
  *
@@ -30,7 +30,7 @@ export interface MenuItemConfig {
   kind: MenuItemKind;
   /**
    * 引用目标：
-   * - builtin 为功能标识（follow / passthrough / calibrate / boss / quit）；
+   * - builtin 为功能标识（follow / passthrough / calibrate / settings / boss / quit）；
    * - action / behavior 为对应的动作名 / 行为名。
    */
   ref: string;
@@ -60,6 +60,7 @@ export const BUILTIN_CATALOG: BuiltinCatalogItem[] = [
   { ref: "follow", emoji: "👀", label: "偷看", standardLabel: "切换跟随光标", isToggle: true },
   { ref: "passthrough", emoji: "🖱️", label: "穿透点击", standardLabel: "切换点击穿透", isToggle: true },
   { ref: "calibrate", emoji: "🎯", label: "校准猫头", standardLabel: "头部校准", isToggle: false },
+  { ref: "settings", emoji: "⚙️", label: "设置", standardLabel: "打开设置", isToggle: false },
   { ref: "boss", emoji: "🏃", label: "老板来了", standardLabel: "最小化窗口", isToggle: false },
   { ref: "quit", emoji: "👋", label: "下班", standardLabel: "退出应用", isToggle: false },
 ];

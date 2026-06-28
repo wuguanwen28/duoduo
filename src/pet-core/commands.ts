@@ -116,10 +116,10 @@ export const GESTURE_ACTION_KEYS: string[] = [
   "wake",
   "poke",
   "speak",
+  "minimize",
   "pokeAndSpeak",
   "openMenu",
   "openSettings",
-  "minimize",
   "quit",
 ];
 

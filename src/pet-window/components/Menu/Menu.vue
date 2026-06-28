@@ -241,6 +241,9 @@ function onPadClick(pad: { item: MenuItemConfig }) {
       case "calibrate":
         calibrating.value = true;
         break;
+      case "settings":
+        invoke("pet_open_settings").catch(() => {});
+        break;
       case "boss":
         getCurrentWindow().minimize().catch(() => {});
         break;
