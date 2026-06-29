@@ -1,3 +1,6 @@
+// 注意：发版流程已接入 server 端自动同步（server/server/api/webhooks/github-release.post.ts）。
+// 本脚本保留作为灾备/兜底，正常发版无需再手动运行。
+//
 // 半自动镜像发布（方案 A：以 GitHub Release 为唯一构建源）。
 //
 // 为什么不读本地 dist-package/：同一版本在 CI 与本机各构建一次会得到不同的
