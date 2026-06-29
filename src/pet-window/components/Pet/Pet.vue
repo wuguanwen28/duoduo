@@ -13,15 +13,17 @@
       <!-- 猫说话气泡 / 提示气泡：浮在猫头上方，尾巴朝下指向猫。 -->
       <div class="pet__speech">
         <SpeechBubble :show="!!speech" :text="speech" />
-        <SpeechBubble :show="updateAvailable" variant="cloud1">
+        <SpeechBubble :show="updateAvailable || updateReady" variant="cloud1">
           <div class="pet__update-content">
-            <div class="pet__update-text">🔔 发现新版本</div>
+            <div class="pet__update-text">
+              {{ updateReady ? "🎉 新版本已下载" : "🔔 发现新版本" }}
+            </div>
             <div class="pet__update-btns">
-              <el-button size="small" @click="updateAvailable = false"
+              <el-button size="small" @click="dismissUpdateBubble()"
                 >稍后再说</el-button
               >
               <el-button type="primary" size="small" @click="openUpdatePage()"
-                >去更新</el-button
+                >{{ updateReady ? "立即安装" : "去更新" }}</el-button
               >
             </div>
           </div>
@@ -372,16 +374,18 @@ watch(calibrating, (on) => {
 // `setIgnoreCursorEvents` 作用于整个窗口。穿透点击开启后直接穿透，
 // 但按住 Ctrl 时临时恢复交互，方便重新打开菜单或拖动猫咪。
 // 仅在状态变化时切换，以避免每个 tick 都产生 IPC 抖动。
-// 注意：`updateAvailable` 必须在此 computed 之前声明——下方
+// 注意：`updateAvailable` / `updateReady` 必须在此 computed 之前声明——下方
 // `watch(interactive, …, { immediate: true })` 会同步求值，若声明
 // 在其后会触发 TDZ（Cannot access before initialization）。
 /** 是否检测到新版本（控制轻提示气泡显示）。 */
 const updateAvailable = ref(false);
+/** 新版本是否已下载好（常驻提示，等待安装）。 */
+const updateReady = ref(false);
 
 /** 窗口是否应响应鼠标事件（非穿透）。 */
 const interactive = computed(() => {
   // 菜单 / 校准 / 更新提示期间，窗口必须可交互，否则按钮点不到。
-  if (menuOpen.value || calibrating.value || updateAvailable.value) return true;
+  if (menuOpen.value || calibrating.value || updateAvailable.value || updateReady.value) return true;
   if (passthrough.value && !ctrlPressed.value) return false;
   return brain.cursorOverCat.value;
 });
@@ -432,15 +436,32 @@ watch(
 async function silentCheckUpdate() {
   try {
     const r = await invoke<{ hasUpdate: boolean }>("pet_update_check");
+    const s = await invoke<{
+      isDownloading: boolean;
+      downloadedPath: string;
+    }>("pet_update_status");
+    // 下载中或已下载好时不弹「发现新版本」，避免与下载/安装提示冲突。
+    if (s.isDownloading) return;
+    if (s.downloadedPath) {
+      updateReady.value = true;
+      return;
+    }
     updateAvailable.value = r.hasUpdate;
   } catch {
     // 静默：网络不可达 / 无源时不提示。
   }
 }
 
+/** 关闭新版本提示气泡。 */
+function dismissUpdateBubble() {
+  updateAvailable.value = false;
+  updateReady.value = false;
+}
+
 /** 点击提示气泡：打开设置窗口的「关于/更新」页。 */
 function openUpdatePage() {
   updateAvailable.value = false;
+  updateReady.value = false;
   invoke("pet_open_settings", { tab: "update" }).catch(() => {});
 }
 
@@ -542,6 +563,7 @@ function onAppShortcutKeydown(e: KeyboardEvent) {
 let unlistenOpenMenu: UnlistenFn | undefined;
 let unlistenShortcuts: UnlistenFn | undefined;
 let unlistenFocus: UnlistenFn | undefined;
+let unlistenUpdateCompleted: UnlistenFn | undefined;
 
 onMounted(async () => {
   // 启动时将已持久化的头部偏移量同步给 Rust。
@@ -592,12 +614,23 @@ onMounted(async () => {
 
   // 启动后静默检查更新；失败不打扰用户。
   silentCheckUpdate();
+
+  // 后台下载完成后，显示常驻的安装提示气泡（下载中不弹发现新版本气泡）。
+  try {
+    unlistenUpdateCompleted = await listen("update://completed", () => {
+      updateAvailable.value = false;
+      updateReady.value = true;
+    });
+  } catch {
+    // 忽略——事件绑定不可用。
+  }
 });
 
 onUnmounted(() => {
   unlistenOpenMenu?.();
   unlistenShortcuts?.();
   unlistenFocus?.();
+  unlistenUpdateCompleted?.();
   window.removeEventListener("keydown", onAppShortcutKeydown);
   // 注销本窗口注册的全部全局键，避免热重载重挂后重复注册。
   unregisterAll().catch(() => {});

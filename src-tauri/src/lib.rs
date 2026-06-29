@@ -22,13 +22,12 @@ use std::sync::Mutex;
 
 use tauri::{Manager, PhysicalPosition};
 
-use state::PetState;
+use state::{DownloadState, PetState};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_fs::init())
         // 全局快捷键插件。具体按键由前端按用户配置经 JS 插件 API
         //（@tauri-apps/plugin-global-shortcut）注册，故此处无需 Rust 端 handler。
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
@@ -38,6 +37,7 @@ pub fn run() {
             tray_icon: Mutex::new(None),
             pending_tab: Mutex::new(None),
             settings_size: Mutex::new(None),
+            download: Mutex::new(DownloadState::default()),
         })
         .invoke_handler(tauri::generate_handler![
             gaze::pet_cursor_angle,
@@ -63,6 +63,8 @@ pub fn run() {
             updater::pet_app_version,
             updater::pet_update_check,
             updater::pet_update_download,
+            updater::pet_update_cancel,
+            updater::pet_update_status,
             updater::pet_update_apply
         ])
         .on_window_event(|window, event| {

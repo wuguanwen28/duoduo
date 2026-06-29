@@ -5,9 +5,71 @@
 //! 其中自建服务器基址为 `SERVER_BASE` 常量——当前为占位值，发布前必须替换为真实域名。
 
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
 
 use sha2::{Digest, Sha256};
-use tauri::Emitter;
+use tauri::{Emitter, Manager};
+
+use crate::state::{DownloadState, PetState};
+
+/// 当前正在执行的下载任务（用于取消与并发控制）。
+struct ActiveDownload {
+    id: u64,
+    cancel: Arc<AtomicBool>,
+}
+
+static CURRENT_DOWNLOAD: Mutex<Option<ActiveDownload>> = Mutex::new(None);
+static DOWNLOAD_ID_SEQ: AtomicU64 = AtomicU64::new(1);
+
+/// 下载成功后的返回结构。
+#[derive(serde::Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct DownloadResult {
+    pub path: String,
+    pub download_id: u64,
+}
+
+/** 将下载进度写回共享状态，供设置窗口重开时恢复。 */
+fn set_download_progress(app: &tauri::AppHandle, progress: u8) {
+    if let Ok(mut guard) = app.state::<PetState>().download.lock() {
+        guard.progress = progress;
+    }
+}
+
+/** 标记下载已开始，清空旧路径与进度。 */
+fn set_download_started(app: &tauri::AppHandle, id: u64, version: &str) {
+    if let Ok(mut guard) = app.state::<PetState>().download.lock() {
+        guard.is_downloading = true;
+        guard.download_id = id;
+        guard.progress = 0;
+        guard.downloaded_path = None;
+        guard.latest_version = Some(version.to_string());
+    }
+}
+
+/** 标记下载已完成，持久化路径并通知小猫窗口。 */
+fn set_download_completed(app: &tauri::AppHandle, path: &str) {
+    if let Ok(mut guard) = app.state::<PetState>().download.lock() {
+        guard.is_downloading = false;
+        guard.progress = 100;
+        guard.downloaded_path = Some(path.to_string());
+    }
+    let _ = app.emit(
+        "update://completed",
+        serde_json::json!({ "path": path }),
+    );
+}
+
+/** 标记下载已结束（取消或失败），清空下载中标志。 */
+fn set_download_finished(app: &tauri::AppHandle) {
+    if let Ok(mut guard) = app.state::<PetState>().download.lock() {
+        guard.is_downloading = false;
+        if guard.downloaded_path.is_none() {
+            guard.progress = 0;
+        }
+    }
+}
 
 /// 计算字节的 sha256，返回 64 位小写十六进制字符串。
 pub fn sha256_hex(bytes: &[u8]) -> String {
@@ -98,7 +160,10 @@ async fn fetch_manifest() -> Result<VersionManifest, String> {
         match client.get(&url).send().await {
             Ok(resp) if resp.status().is_success() => match resp.text().await {
                 Ok(body) => match serde_json::from_str::<VersionManifest>(&body) {
-                    Ok(m) => return Ok(m),
+                    Ok(m) => {
+                        println!("[duoduo updater] 使用清单源: {name} ({url})");
+                        return Ok(m);
+                    }
                     Err(e) => last_err = format!("[{name}] 解析 version.json 失败：{e}"),
                 },
                 Err(e) => last_err = format!("[{name}] 读取响应失败：{e}"),
@@ -141,6 +206,8 @@ async fn download_to(
     url: &str,
     dest: &PathBuf,
     expect_total: u64,
+    download_id: u64,
+    cancel: &Arc<AtomicBool>,
 ) -> Result<(), String> {
     use std::io::Write;
     let client = reqwest::Client::builder()
@@ -157,40 +224,125 @@ async fn download_to(
     let mut file = std::fs::File::create(dest).map_err(|e| e.to_string())?;
     let mut downloaded: u64 = 0;
     while let Some(chunk) = resp.chunk().await.map_err(|e| e.to_string())? {
+        if cancel.load(Ordering::SeqCst) {
+            return Err("下载已取消".into());
+        }
+        // 若新下载已接管 CURRENT_DOWNLOAD，旧任务也应退出，避免多任务并发。
+        let current_id = CURRENT_DOWNLOAD
+            .lock()
+            .ok()
+            .and_then(|g| g.as_ref().map(|d| d.id));
+        if current_id != Some(download_id) {
+            return Err("下载已取消".into());
+        }
         file.write_all(&chunk).map_err(|e| e.to_string())?;
         downloaded += chunk.len() as u64;
+        let pct = if total > 0 {
+            ((downloaded as f64 / total as f64) * 100.0) as u8
+        } else {
+            0
+        };
+        set_download_progress(app, pct);
         let _ = app.emit(
             "update://progress",
-            serde_json::json!({ "downloaded": downloaded, "total": total }),
+            serde_json::json!({
+                "downloaded": downloaded,
+                "total": total,
+                "downloadId": download_id,
+            }),
         );
     }
     file.flush().map_err(|e| e.to_string())?;
     Ok(())
 }
 
-/// 下载新版 exe：三源 fallback + sha256 校验，成功返回 .new 路径。
+/// 清理当前下载登记：只有传入的 id 仍匹配时才置空，避免误删新任务。
+fn clear_current_download(id: u64) {
+    if let Ok(mut guard) = CURRENT_DOWNLOAD.lock() {
+        if guard.as_ref().map(|d| d.id) == Some(id) {
+            *guard = None;
+        }
+    }
+}
+
+/// 下载新版 exe：三源 fallback + sha256 校验，成功返回 .new 路径与本次下载 id。
+/// 若已有下载在跑，会先将其取消，确保同一时刻只有一个活跃下载任务。
 #[tauri::command]
-pub async fn pet_update_download(app: tauri::AppHandle) -> Result<String, String> {
+pub async fn pet_update_download(app: tauri::AppHandle) -> Result<DownloadResult, String> {
     let m = fetch_manifest().await?;
+    let id = DOWNLOAD_ID_SEQ.fetch_add(1, Ordering::SeqCst);
+    let cancel = Arc::new(AtomicBool::new(false));
+
+    {
+        let mut guard = CURRENT_DOWNLOAD.lock().map_err(|e| e.to_string())?;
+        // 取消可能还在收尾的旧下载，避免新旧任务并发导致进度事件混乱。
+        if let Some(prev) = guard.as_ref() {
+            prev.cancel.store(true, Ordering::SeqCst);
+        }
+        *guard = Some(ActiveDownload { id, cancel: cancel.clone() });
+    }
+
+    // 立即通知前端本次下载的 id，便于前端过滤旧任务的迟到进度事件。
+    let _ = app.emit(
+        "update://started",
+        serde_json::json!({ "downloadId": id }),
+    );
+
+    set_download_started(&app, id, &m.version);
+
     let dest = new_exe_path()?;
     let mut last_err = String::from("所有下载源均失败");
     for (name, url) in exe_urls(&m.version, &m.exe.name) {
-        match download_to(&app, &url, &dest, m.exe.size).await {
+        match download_to(&app, &url, &dest, m.exe.size, id, &cancel).await {
             Ok(()) => {
                 let bytes = std::fs::read(&dest).map_err(|e| e.to_string())?;
                 if sha256_hex(&bytes).eq_ignore_ascii_case(&m.exe.sha256) {
-                    return Ok(dest.display().to_string());
+                    println!("[duoduo updater] 使用下载源: {name} ({url})");
+                    let path = dest.display().to_string();
+                    set_download_completed(&app, &path);
+                    clear_current_download(id);
+                    return Ok(DownloadResult {
+                        path,
+                        download_id: id,
+                    });
                 }
                 let _ = std::fs::remove_file(&dest);
                 last_err = format!("[{name}] sha256 校验不匹配");
             }
             Err(e) => {
                 let _ = std::fs::remove_file(&dest);
+                if e == "下载已取消" {
+                    set_download_finished(&app);
+                    clear_current_download(id);
+                    return Err(e);
+                }
                 last_err = format!("[{name}] {e}");
             }
         }
     }
+    set_download_finished(&app);
+    clear_current_download(id);
     Err(last_err)
+}
+
+/// 取消正在进行的下载。前端调用后，当前活跃任务的按块检查会立即退出。
+#[tauri::command]
+pub fn pet_update_cancel() {
+    if let Ok(guard) = CURRENT_DOWNLOAD.lock() {
+        if let Some(d) = guard.as_ref() {
+            d.cancel.store(true, Ordering::SeqCst);
+        }
+    }
+}
+
+/// 查询当前下载状态，供设置窗口重开时恢复。
+#[tauri::command]
+pub fn pet_update_status(app: tauri::AppHandle) -> DownloadState {
+    app.state::<PetState>()
+        .download
+        .lock()
+        .map(|guard| guard.clone())
+        .unwrap_or_default()
 }
 
 /// 应用更新：改名腾位（运行中的 exe 可被改名）→ 启动新 exe → 退出当前进程。

@@ -75,7 +75,7 @@ const navItems: NavItem[] = [
   { key: "resources", label: "资源设置", icon: "📂" },
   { key: "display", label: "显示与交互", icon: "🖥️" },
   { key: "tools", label: "视频转图片", icon: "🎞️" },
-  { key: "update", label: "关于 / 更新", icon: "🔄" },
+  { key: "update", label: "关于", icon: "ℹ️" },
 ];
 
 const activeKey = ref("basic");
