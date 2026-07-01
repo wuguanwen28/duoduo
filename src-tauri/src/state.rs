@@ -12,9 +12,11 @@ pub struct DownloadState {
 }
 
 /// Shared app state. `scale` mirrors the in-window size slider so the gaze and
-/// clamp logic know the cat's real on-screen size (the window itself is a fixed
-/// box sized for the largest cat + menu — see `geometry::fixed_window_size`; the
-/// sprite scales inside it without resizing the window).
+/// clamp logic know the cat's real on-screen size. The window itself is now
+/// **dynamic** — `geometry::window_size_for` sizes it for the current cat plus
+/// menu/bubble reserves, and `pet_set_content_scale` re-anchors it to the cat
+/// foot whenever the slider moves (the sprite no longer just scales inside a
+/// fixed box).
 ///
 /// `head_offset` stores the ratio of the head-centre offset to the sprite
 /// diameter, calibrated by the user so the dead-zone tracks the actual head.

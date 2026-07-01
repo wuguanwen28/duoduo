@@ -13,7 +13,10 @@
       <!-- 猫说话气泡 / 提示气泡：浮在猫头上方，尾巴朝下指向猫。 -->
       <div class="pet__speech">
         <SpeechBubble :show="!!speech" :text="speech" />
-        <SpeechBubble :show="updateAvailable || updateReady" variant="cloud1">
+        <SpeechBubble
+          :show="updateAvailable || updateReady"
+          variant="cloud1"
+        >
           <div class="pet__update-content">
             <div class="pet__update-text">
               {{ updateReady ? "🎉 新版本已下载" : "🔔 发现新版本" }}
@@ -22,7 +25,10 @@
               <el-button size="small" @click="dismissUpdateBubble()"
                 >稍后再说</el-button
               >
-              <el-button type="primary" size="small" @click="openUpdatePage()"
+              <el-button
+                type="primary"
+                size="small"
+                @click="openUpdatePage()"
                 >{{ updateReady ? "立即安装" : "去更新" }}</el-button
               >
             </div>
@@ -385,7 +391,13 @@ const updateReady = ref(false);
 /** 窗口是否应响应鼠标事件（非穿透）。 */
 const interactive = computed(() => {
   // 菜单 / 校准 / 更新提示期间，窗口必须可交互，否则按钮点不到。
-  if (menuOpen.value || calibrating.value || updateAvailable.value || updateReady.value) return true;
+  if (
+    menuOpen.value ||
+    calibrating.value ||
+    updateAvailable.value ||
+    updateReady.value
+  )
+    return true;
   if (passthrough.value && !ctrlPressed.value) return false;
   return brain.cursorOverCat.value;
 });
@@ -546,7 +558,9 @@ async function applyTriggerBindings() {
   }
 
   // 回传注册结果给设置窗（若其打开着），用于标记被占用的全局键。
-  emit(TRIGGER_BINDINGS_RESULT_EVENT, { failedIds } as TriggerResult).catch(() => {});
+  emit(TRIGGER_BINDINGS_RESULT_EVENT, { failedIds } as TriggerResult).catch(
+    () => {},
+  );
 }
 
 /** 窗口级 keydown：匹配应用内快捷键。仅主窗口聚焦时触发，故不与其他软件全局冲突。 */
@@ -644,8 +658,9 @@ onUnmounted(() => {
   width: 100vw;
   height: 100vh;
   display: flex;
-  // 横向居中、纵向贴窗口底：窗口顶部预留 BUBBLE_HEADROOM_PX 给气泡向上展开，
-  // 不会再因猫放大到 PET_MAX_SCALE 时把气泡顶出窗口。需与 Rust 端
+  // 横向居中、纵向贴窗口底：窗口大小随当前猫尺寸动态变化（见 Rust 端
+  // `geometry::window_size_for`），顶部始终预留 BUBBLE_HEADROOM_PX、左右各预留
+  // MENU_SIDE_RESERVE，故气泡向上展开、菜单贴边回收都不会被窗口裁掉。需与 Rust 端
   // `geometry::clamp_to_work_area` 和 `gaze::pet_cursor_angle` 的"贴底"约定一致。
   align-items: flex-end;
   justify-content: center;

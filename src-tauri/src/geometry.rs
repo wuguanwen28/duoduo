@@ -1,4 +1,9 @@
-//! 窗口几何：固定尺寸计算 + 把猫的内容框 clamp 到所有显示器并集 + 缩放缓存。
+//! 窗口几何：按当前猫尺寸动态计算窗口大小 + 把猫的内容框 clamp 到所有显示器并集 + 缩放缓存。
+//!
+//! 猫在窗口内始终**水平居中、纵向贴底**：上方预留 `BUBBLE_HEADROOM_PX` 给说话气泡 /
+//! 菜单向上展开，左右各预留 `MENU_SIDE_RESERVE` 给菜单横向贴边回收。窗口大小随当前
+//! `scale` 动态变化（不再固定为最大猫尺寸）；缩放时以猫脚（窗口底部中心）为屏幕锚点
+//! 保持不动，避免猫在调大调小时"挪位"。
 
 use tauri::{Manager, PhysicalPosition};
 
@@ -8,25 +13,30 @@ use crate::state::PetState;
 /// in Pet.vue's `imgStyle` (`Math.round(200 * size)`).
 pub const PET_BASE_PX: f64 = 200.0;
 
-/// The size slider's maximum multiplier — must match `:max` on Menu.vue's
-/// `el-slider`. The window is sized once to fit the cat at this scale, so it
-/// never has to resize as the slider moves (the sprite just scales inside the
-/// fixed, transparent, click-through window).
-const PET_MAX_SCALE: f64 = 2.0;
+/// 大小滑块的最大倍率 —— 必须与 `DisplaySettings.vue` 大小滑块的 `:max` 一致。
+/// 仅用于 clamp `scale`，不再决定窗口尺寸（窗口已改为随当前 scale 动态变化）。
+pub const PET_MAX_SCALE: f64 = 2.0;
 
-/// 窗口顶部预留给说话气泡的逻辑像素余量（向上展开的空间）。
+/// 窗口顶部预留给说话气泡 / 菜单向上展开的逻辑像素余量。
 /// 取值需 ≥ `SpeechBubble.vue` 里所有云朵的最大高度（最大 `maxW=210`，
-/// 比例约 1:1 → ≈210 px），这里再多留 10 px 防止顶端被裁。
+/// 比例约 1:1 → ≈210 px），且 ≥ 菜单高度 `MENU_HEIGHT=138`；这里取 220 同时覆盖两者。
 pub const BUBBLE_HEADROOM_PX: f64 = 220.0;
 
-/// 窗口固定物理尺寸：宽度等于"最大猫"边长，高度等于"最大猫" + 顶部气泡余量。
-/// 猫在窗口内**底对齐**（详见 `clamp_to_work_area` 的 `off_y` 计算），
-/// 上方留出 `BUBBLE_HEADROOM_PX` 给说话气泡向上展开，不会被窗口裁顶。
-/// 启动时按显示器缩放因子计算一次，窗口存续期间不再变化（大小滑块只缩内层精灵）。
-pub fn fixed_window_size(scale_factor: f64) -> tauri::PhysicalSize<u32> {
-    let cat_px = (PET_BASE_PX * PET_MAX_SCALE * scale_factor).round() as u32;
-    let headroom_px = (BUBBLE_HEADROOM_PX * scale_factor).round() as u32;
-    tauri::PhysicalSize::new(cat_px, cat_px + headroom_px)
+/// 窗口左右各预留的逻辑像素余量，需同时满足：
+/// 1) 菜单横向贴边回收：`MENU_SIDE_RESERVE ≥ (MENU_WIDTH + 2 * MENU_EDGE_PADDING) / 2`
+///    （`MENU_WIDTH=167`、`MENU_EDGE_PADDING=4` → ≥ 87.5）；
+/// 2) 气泡水平居中于猫后不被裁：`MENU_SIDE_RESERVE ≥ maxW / 2 + 安全边距`
+///    （气泡最大 `maxW=210` → ≥ 105，加边距取 120）。
+/// 取 120 同时覆盖菜单与气泡。
+pub const MENU_SIDE_RESERVE: f64 = 120.0;
+
+/// 按当前猫尺寸计算窗口物理尺寸：宽 = 猫 + 左右各 `MENU_SIDE_RESERVE`，
+/// 高 = 顶部 `BUBBLE_HEADROOM_PX` + 猫。猫在窗口内水平居中、纵向贴底。
+pub fn window_size_for(scale: f64, scale_factor: f64) -> tauri::PhysicalSize<u32> {
+    let cat_px = (PET_BASE_PX * scale * scale_factor).round() as u32;
+    let side_px = (MENU_SIDE_RESERVE * scale_factor).round() as u32;
+    let top_px = (BUBBLE_HEADROOM_PX * scale_factor).round() as u32;
+    tauri::PhysicalSize::new(cat_px + 2 * side_px, top_px + cat_px)
 }
 
 /// Clamp helper that tolerates an inverted range (lo > hi), which happens when
@@ -67,17 +77,15 @@ fn combined_full_area(window: &tauri::Window) -> Result<(i32, i32, i32, i32), St
 
 /// Clamp the window so the **cat sprite** (not the whole window) stays within
 /// the bounding box of all monitors' full screen areas (taskbar included). The
-/// cat is **bottom-aligned** in the window (top area is reserved as transparent
-/// headroom for the speech bubble); when the sprite is smaller than the cat
-/// slot the horizontal margin and the headroom hang off-screen as transparent
-/// padding — only the visible cat content is kept on-screen, and it may be
-/// dragged right up to the physical screen edges and over the taskbar.
+/// cat is **bottom-aligned and horizontally centered** in the window; the
+/// transparent margins (top headroom + side reserves) may hang off-screen as
+/// transparent padding — only the visible cat content is kept on-screen.
 ///
 /// The sprite is `PET_BASE_PX * scale` logical px, horizontally centered and
 /// bottom-aligned in the window; converting to physical px (× scale_factor)
 /// gives its real size. We compute the content box's top-left, clamp THAT to
 /// the screen area, then derive the window position back from it. Idempotent;
-/// called from the Moved handler.
+/// called from the Moved handler and after every anchored resize.
 pub fn clamp_to_work_area(window: &tauri::Window) -> Result<(), String> {
     let pos = window.outer_position().map_err(|e| e.to_string())?;
     let size = window.outer_size().map_err(|e| e.to_string())?;
@@ -118,16 +126,49 @@ pub fn clamp_to_work_area(window: &tauri::Window) -> Result<(), String> {
     Ok(())
 }
 
-/// Update the cached sprite scale (mirrors the in-window size slider). The
-/// window has a fixed size and is NOT resized here — the sprite just scales
-/// inside it. We still re-clamp so that enlarging the cat near a screen edge
-/// doesn't leave part of it hanging off-screen.
+/// 更新缓存的精灵缩放（镜像窗口内的大小滑块），并按当前 scale **动态调整窗口尺寸**：
+/// 以猫脚（窗口底部中心）为屏幕锚点保持不动 —— 先记录旧窗口的底部中心屏幕坐标，
+/// 再 `set_size` 成新尺寸，最后反推新左上角使猫脚落回原处，并重新 clamp 到屏幕内。
+///
+/// 最小化时 Windows 把窗口停到 `(-32000,-32000)`，此时跳过 resize/clamp，仅缓存 scale，
+/// 避免与最小化停靠坐标冲突导致抖动。
 #[tauri::command]
 pub fn pet_set_content_scale(window: tauri::Window, scale: f64) -> Result<(), String> {
-    let s = scale.clamp(0.1, 8.0);
+    let s = scale.clamp(0.1, PET_MAX_SCALE);
+
+    // 最小化状态下不调整几何，只更新缓存（恢复后由 Moved/手动触发重新 clamp）。
+    if window.is_minimized().unwrap_or(false) {
+        if let Ok(mut g) = window.state::<PetState>().scale.lock() {
+            *g = s;
+        }
+        return Ok(());
+    }
+
+    let pos = window.outer_position().map_err(|e| e.to_string())?;
+    let size = window.outer_size().map_err(|e| e.to_string())?;
+    let sf = window.scale_factor().map_err(|e| e.to_string())?;
+
+    // 旧猫脚 = 旧窗口底部中心（猫水平居中、纵向贴底）。
+    let old_foot_x = pos.x as f64 + size.width as f64 / 2.0;
+    let old_foot_y = pos.y as f64 + size.height as f64;
+
+    // 写入新 scale，供 gaze / clamp 计算使用。
     if let Ok(mut g) = window.state::<PetState>().scale.lock() {
         *g = s;
     }
+
+    let new_size = window_size_for(s, sf);
+    // 新窗口左上角：让新窗口底部中心 = 旧猫脚。
+    let new_x = (old_foot_x - new_size.width as f64 / 2.0).round() as i32;
+    let new_y = (old_foot_y - new_size.height as f64).round() as i32;
+
+    window
+        .set_size(new_size)
+        .map_err(|e| e.to_string())?;
+    window
+        .set_position(PhysicalPosition::new(new_x, new_y))
+        .map_err(|e| e.to_string())?;
+
     clamp_to_work_area(&window)?;
     Ok(())
 }

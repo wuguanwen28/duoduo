@@ -18,33 +18,33 @@
 import { computed, ref, watch } from "vue";
 
 const CLOUD_MAP = {
-  // 宽红云（1558×1024）：底部左右两角小云尾，尾巴大致居左。
+  // 宽红云（1558×1024）
   cloud1: {
     url: new URL("../../../assets/cloud1.png", import.meta.url).href,
     ratio: 3 / 2,
     maxW: 200,
-    offsetX: 0.3,
+    offsetX: 0.03,
     offsetY: 0,
     padding: "0 max(10%, 20px)",
     color: "#fff",
   },
-  // 蓝方云（1024×1024）：底部中-右一个尖尾，下方留白。浅蓝→深字。
+  // 蓝方云（564 / 400）：尾巴已居中（见 cloud2.svg），下方留白。浅蓝→深字。
   cloud2: {
     url: new URL("../../../assets/cloud2.png", import.meta.url).href,
-    ratio: 1,
-    maxW: 190,
-    offsetX: -0.23,
-    offsetY: 0.2,
-    padding: "4% max(15%, 20px) 8%",
+    ratio: 564 / 400,
+    maxW: 200,
+    offsetX: 0.03,
+    offsetY: 0,
+    padding: "8% max(15%, 20px) 0%",
     color: "#fff",
   },
-  // 思考云（1024×1024）：右下三个由大到小圆点尾，内容放左上主云区。白底→深字。
+  // 思考云（712 / 400）：右下三个由大到小圆点尾，内容放左上主云区。白底→深字。
   cloud3: {
     url: new URL("../../../assets/cloud3.png", import.meta.url).href,
-    ratio: 1,
-    maxW: 210,
+    ratio: 712 / 400,
+    maxW: 200,
     offsetX: 0,
-    offsetY: 0.1,
+    offsetY: -0.1,
     padding: "24% max(10%, 20px) 0%",
     color: "#333",
   },

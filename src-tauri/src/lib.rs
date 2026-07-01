@@ -103,14 +103,17 @@ pub fn run() {
             tray::build_tray(app.handle())?;
 
             // Position the pet window at the bottom-right of the primary
-            // monitor's work area (clear of the taskbar). The window uses its
-            // fixed size (largest cat + menu reserve); we set it explicitly here
-            // so it's correct from the start regardless of the config value.
+            // monitor's work area (clear of the taskbar). The window size is
+            // dynamic (sized for the current cat + menu/bubble reserves); here
+            // we use the default scale 1.0 — the frontend syncs the user's real
+            // size on mount, which re-anchors the window to the cat foot. The
+                    // window is transparent and empty until resources load, so this
+                    // initial resize is invisible.
             if let Some(window) = app.get_webview_window("duoduo") {
                 if let Ok(Some(monitor)) = window.current_monitor() {
                     let area = monitor.work_area();
                     let sf = window.scale_factor().unwrap_or(1.0);
-                    let win_size = geometry::fixed_window_size(sf);
+                    let win_size = geometry::window_size_for(1.0, sf);
                     let _ = window.set_size(win_size);
                     let x = area.position.x + area.size.width as i32 - win_size.width as i32;
                     let y = area.position.y + area.size.height as i32 - win_size.height as i32;
