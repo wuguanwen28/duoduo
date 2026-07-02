@@ -32,6 +32,12 @@
               </template>
               GitHub
             </el-button>
+            <el-button class="action-btn" @click="feedbackVisible = true">
+              <template #icon>
+                <span style="font-size: 16px">💬</span>
+              </template>
+              意见反馈
+            </el-button>
             <el-button
               type="primary"
               :icon="primaryIcon"
@@ -78,6 +84,8 @@
         </div>
       </el-card> -->
     </main>
+
+    <FeedbackDialog v-model="feedbackVisible" />
   </div>
 </template>
 
@@ -88,6 +96,7 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { Download, RefreshRight, Close } from "@element-plus/icons-vue";
 import githubIcon from "../../assets/github.svg";
 import giteeIcon from "../../assets/gitee.svg";
+import FeedbackDialog from "./FeedbackDialog.vue";
 
 /** 应用图标（与 BasicSettings 共用同一份默认图标资源）。 */
 const appIcon = new URL("../../assets/icon.png", import.meta.url).href;
@@ -126,6 +135,9 @@ const cancelling = ref(false);
 const progress = ref(0);
 const downloadedPath = ref("");
 const currentDownloadId = ref(0);
+
+/** 反馈弹窗显隐（托盘「意见反馈」经 open-feedback 事件打开）。 */
+const feedbackVisible = ref(false);
 
 /** 主按钮文案：根据当前状态在「检查中 / 下载中 / 更新到 / 安装并重启 / 检查更新」之间切换。 */
 const primaryText = computed(() => {
@@ -244,6 +256,8 @@ let unlisten: UnlistenFn | undefined;
 let unlistenStart: UnlistenFn | undefined;
 /** 监听下载完成事件，设置窗口打开时下载完毕可立即显示安装按钮。 */
 let unlistenCompleted: UnlistenFn | undefined;
+/** 监听托盘「意见反馈」事件，自动打开反馈弹窗。 */
+let unlistenFeedback: UnlistenFn | undefined;
 
 /** 从后端恢复之前的下载状态（支持关闭窗口后后台下载）。 */
 async function restoreDownloadState() {
@@ -300,11 +314,15 @@ onMounted(async () => {
       ElMessage.success("下载完成，可安装重启");
     },
   );
+  unlistenFeedback = await listen("open-feedback", () => {
+    feedbackVisible.value = true;
+  });
 });
 onUnmounted(() => {
   unlisten?.();
   unlistenStart?.();
   unlistenCompleted?.();
+  unlistenFeedback?.();
   // 关闭设置窗口不再取消下载，允许后台继续下载；下次打开通过 pet_update_status 恢复状态。
 });
 </script>

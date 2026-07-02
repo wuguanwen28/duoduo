@@ -2,7 +2,7 @@
 //! sha256 校验、Windows 改名腾位自替换、启动清理残留旧 exe。
 //!
 //! 下载源地址由 `manifest_urls()` / `exe_urls()` 按优先级提供（Gitee → GitHub → 自建服务器）。
-//! 其中自建服务器基址为 `SERVER_BASE` 常量——当前为占位值，发布前必须替换为真实域名。
+//! 其中自建服务器基址为 `config::SERVER_BASE` 常量（见 `config.rs`）。
 
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -124,17 +124,13 @@ pub fn is_newer(latest: &str, current: &str) -> bool {
     }
 }
 
-/// 占位服务器基址——发布前替换为真实服务器域名。
-/// 仅影响三源 fallback 的第三优先级（自建服务器），Gitee/GitHub 源不依赖此值。
-const SERVER_BASE: &str = "https://wuguanwen.cn:10000";
-
 /// 三源的 version.json 地址（与版本号无关），按优先级排序。
 /// gitee/github 两源均走各自 Release 的 latest 附件直链，无需先把 version.json 提交进仓库。
 pub fn manifest_urls() -> Vec<(&'static str, String)> {
     vec![
         ("gitee", "https://gitee.com/wuguanwen28/duoduo/releases/download/latest/version.json".into()),
         ("github", "https://github.com/wuguanwen28/duoduo/releases/latest/download/version.json".into()),
-        ("server", format!("{SERVER_BASE}/duoduo/version.json")),
+        ("server", format!("{}/duoduo/version.json", crate::config::SERVER_BASE)),
     ]
 }
 
@@ -144,7 +140,7 @@ pub fn exe_urls(version: &str, exe_name: &str) -> Vec<(&'static str, String)> {
     vec![
         ("gitee", format!("https://gitee.com/wuguanwen28/duoduo/releases/download/v{v}/{exe_name}")),
         ("github", format!("https://github.com/wuguanwen28/duoduo/releases/download/v{v}/{exe_name}")),
-        ("server", format!("{SERVER_BASE}/duoduo/v{v}/{exe_name}")),
+        ("server", format!("{}/duoduo/v{v}/{exe_name}", crate::config::SERVER_BASE)),
     ]
 }
 

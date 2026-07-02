@@ -3,7 +3,7 @@
 use tauri::{
     menu::{Menu, MenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-    Manager,
+    Emitter, Manager,
 };
 
 use crate::state::PetState;
@@ -12,10 +12,11 @@ use crate::window::{open_settings, toggle_pet};
 /// 构建系统托盘并把托盘 id 存入 `PetState`（供后续动态换图标）。
 /// 在 `setup` 阶段调用一次。
 pub fn build_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
-    // 托盘菜单：设置（打开菜单面板）/ 退出。
+    // 托盘菜单：设置（打开菜单面板）/ 意见反馈 / 退出。
     let settings = MenuItem::with_id(app, "settings", "设置", true, None::<&str>)?;
+    let feedback = MenuItem::with_id(app, "feedback", "意见反馈", true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", "退出", true, None::<&str>)?;
-    let menu = Menu::with_items(app, &[&settings, &quit])?;
+    let menu = Menu::with_items(app, &[&settings, &feedback, &quit])?;
 
     // 托盘使用 32×32 图标，系统托盘区本身就是小尺寸。
     let tray_icon = tauri::image::Image::from_bytes(include_bytes!("../icons/32x32.png"))
@@ -27,6 +28,11 @@ pub fn build_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
         .show_menu_on_left_click(false)
         .on_menu_event(|app, event| match event.id.as_ref() {
             "settings" => open_settings(app, None),
+            "feedback" => {
+                open_settings(app, Some("update".into()));
+                // 设置窗已存在时 open_settings 会发 navigate-to；再额外提示打开反馈弹窗。
+                let _ = app.emit("open-feedback", ());
+            }
             "quit" => app.exit(0),
             _ => {}
         })

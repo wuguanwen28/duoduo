@@ -7,8 +7,11 @@
 //! - `resources` 资源根定位与持久化 / 扫描 / manifest / 目录树
 //! - `icon`      自定义图标
 //! - `tray`      系统托盘
+//! - `feedback`  用户反馈提交
 
 mod converter;
+mod config;
+mod feedback;
 mod gaze;
 mod geometry;
 mod icon;
@@ -65,7 +68,8 @@ pub fn run() {
             updater::pet_update_download,
             updater::pet_update_cancel,
             updater::pet_update_status,
-            updater::pet_update_apply
+            updater::pet_update_apply,
+            feedback::pet_submit_feedback
         ])
         .on_window_event(|window, event| {
             // Clamp the pet to the union of all monitors. There is only one
