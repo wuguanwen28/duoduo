@@ -10,18 +10,37 @@
         <span class="menu-config__slot-icon">🐾</span>
         <span class="menu-config__slot-label">{{ slot.label }}</span>
         <el-select
-          :model-value="menuSettings[i]"
-          @update:model-value="(val: MenuItemConfig) => onSlotChange(i, val)"
-          value-key="id"
+          :model-value="menuSettings[i]?.actionId"
+          @update:model-value="(val: string) => onSlotChange(i, val)"
           size="small"
           class="menu-config__select"
+          clearable
+          placeholder="未绑定"
         >
-          <el-option
-            v-for="opt in allOptions"
-            :key="opt.id"
-            :label="opt.standardLabel ?? opt.label"
-            :value="opt"
-          />
+          <el-option-group label="内置">
+            <el-option
+              v-for="opt in builtinOpts"
+              :key="opt.id"
+              :label="opt.label"
+              :value="opt.id"
+            />
+          </el-option-group>
+          <el-option-group label="动作">
+            <el-option
+              v-for="opt in actionOpts"
+              :key="opt.id"
+              :label="opt.label"
+              :value="opt.id"
+            />
+          </el-option-group>
+          <el-option-group label="行为">
+            <el-option
+              v-for="opt in behaviorOpts"
+              :key="opt.id"
+              :label="opt.label"
+              :value="opt.id"
+            />
+          </el-option-group>
         </el-select>
         <el-input
           :model-value="menuSettings[i]?.label"
@@ -38,51 +57,65 @@
 
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
-import { invoke } from "@tauri-apps/api/core";
 import {
   menuSettings,
   PAW_SLOTS,
-  BUILTIN_CATALOG,
   menuItemId,
   saveAndBroadcast,
-  type MenuItemConfig,
 } from "../../pet-core/menuSettings";
+import { BUILTIN_ACTIONS, findBuiltin } from "../../pet-core/commands";
+import {
+  loadManifestNames,
+  type ManifestNameItem,
+} from "../../pet-core/manifestCatalog";
 
-/**
- * 所有可选功能：内置功能 + manifest 动作 + manifest 行为。
- * 每个选项是一个完整的 MenuItemConfig，下拉框显示 "emoji label"。
- */
-const actionOpts = ref<MenuItemConfig[]>([]);
-const behaviorOpts = ref<MenuItemConfig[]>([]);
+/** manifest 动作 / 行为条目（设置窗异步读取）。 */
+const actionItems = ref<ManifestNameItem[]>([]);
+const behaviorItems = ref<ManifestNameItem[]>([]);
 
-const builtinOpts = computed<MenuItemConfig[]>(() =>
-  BUILTIN_CATALOG.map((b) => ({
-    id: menuItemId("builtin", b.ref),
-    kind: "builtin" as const,
-    ref: b.ref,
+/** 内置组：过滤掉「打开菜单」（在菜单里点没意义）。 */
+const builtinOpts = computed(() =>
+  BUILTIN_ACTIONS.filter((b) => b.key !== "openMenu").map((b) => ({
+    id: b.key,
+    label: b.standardLabel,
     emoji: b.emoji,
-    label: b.label,
-    standardLabel: b.standardLabel,
   })),
 );
 
-const allOptions = computed<MenuItemConfig[]>(() => [
-  ...builtinOpts.value,
-  ...behaviorOpts.value,
-  ...actionOpts.value,
+/** 动作组：manifest 动作 + 随机动作。 */
+const actionOpts = computed(() => [
+  ...actionItems.value.map((item) => ({
+    id: `action:${item.key}`,
+    label: item.label,
+    emoji: "🎬",
+  })),
+  { id: "randomAction", label: "随机动作", emoji: "🎲" },
 ]);
 
-/** 替换第 i 个槽位的菜单项（展开去代理后触发响应式更新与持久化）。 */
-function onSlotChange(index: number, val: MenuItemConfig) {
-  const copy = { ...val };
-  copy.id = menuItemId(copy.kind, copy.ref);
+/** 行为组：manifest 行为 + 随机行为。 */
+const behaviorOpts = computed(() => [
+  ...behaviorItems.value.map((item) => ({
+    id: `behavior:${item.key}`,
+    label: item.label,
+    emoji: "🐾",
+  })),
+  { id: "randomBehavior", label: "随机行为", emoji: "🎲" },
+]);
+
+/** 替换第 i 个槽位的菜单项（按选中 actionId 构造，emoji 反查目录）。 */
+function onSlotChange(index: number, actionId: string) {
   const next = [...menuSettings.value];
-  next[index] = copy;
+  next[index] = {
+    id: menuItemId(actionId),
+    actionId,
+    emoji: emojiFor(actionId),
+    label: labelFor(actionId),
+  };
   menuSettings.value = next;
   saveAndBroadcast();
 }
 
-/** 修改第 i 个槽位的显示名称（只改 label，不动功能引用）。 */
+/** 修改第 i 个槽位的显示名称（只改 label，不动 actionId）。 */
 function onLabelChange(index: number, label: string) {
   const cur = menuSettings.value[index];
   if (!cur) return;
@@ -92,40 +125,38 @@ function onLabelChange(index: number, label: string) {
   saveAndBroadcast();
 }
 
-/**
- * 读取 manifest.json，解析出所有动作名与行为名作为下拉可选池。
- * 设置窗口是独立 webview，用 pet_read_manifest 拿到 manifest 文本再解析。
- */
-async function loadCatalog() {
-  try {
-    const r = await invoke<{ content: string; exists: boolean }>(
-      "pet_read_manifest",
-    );
-    if (!r.exists || !r.content.trim()) return;
-    const m = JSON.parse(r.content);
+/** 由 actionId 推导默认 emoji。 */
+function emojiFor(id: string): string {
+  const b = findBuiltin(id);
+  if (b) return b.emoji;
+  if (id.startsWith("action:")) return "🎬";
+  if (id.startsWith("behavior:")) return "🐾";
+  if (id === "randomAction" || id === "randomBehavior") return "🎲";
+  return "🎬";
+}
 
-    const acts = m.actions ?? {};
-    actionOpts.value = Object.keys(acts).map((name) => ({
-      id: menuItemId("action", name),
-      kind: "action" as const,
-      ref: name,
-      emoji: "🎬",
-      // 动作的中文名存在 name 字段（manifest.actions[x].name）；无则回退键名。
-      label: acts[name]?.name || name,
-    }));
-
-    const behs = m.behaviors ?? {};
-    behaviorOpts.value = Object.keys(behs).map((name) => ({
-      id: menuItemId("behavior", name),
-      kind: "behavior" as const,
-      ref: name,
-      emoji: "🐾",
-      // 行为的中文名存在 name 字段（manifest.behaviors[x].name）；无则回退键名。
-      label: behs[name]?.name || name,
-    }));
-  } catch {
-    // 读不到 manifest 时可选池只剩内置功能，不阻塞。
+/** 由 actionId 推导默认显示名（首次选中时填入，用户可改）。 */
+function labelFor(id: string): string {
+  const b = findBuiltin(id);
+  if (b) return b.menuLabel;
+  if (id.startsWith("action:")) {
+    const key = id.slice("action:".length);
+    return actionItems.value.find((item) => item.key === key)?.label ?? key;
   }
+  if (id.startsWith("behavior:")) {
+    const key = id.slice("behavior:".length);
+    return behaviorItems.value.find((item) => item.key === key)?.label ?? key;
+  }
+  if (id === "randomAction") return "随机动作";
+  if (id === "randomBehavior") return "随机行为";
+  return "";
+}
+
+/** 读取 manifest 动作 / 行为条目，供下拉「动作」/「行为」组使用。 */
+async function loadCatalog() {
+  const names = await loadManifestNames();
+  actionItems.value = names.actions;
+  behaviorItems.value = names.behaviors;
 }
 
 onMounted(loadCatalog);

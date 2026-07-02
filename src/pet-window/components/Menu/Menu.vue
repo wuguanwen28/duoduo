@@ -70,27 +70,22 @@ export const MENU_HEIGHT = 138;
 
 <script setup lang="ts">
 import { computed } from "vue";
-import { invoke } from "@tauri-apps/api/core";
-import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
   PAW_SLOTS,
   type MenuItemConfig,
 } from "../../../pet-core/menuSettings";
-import type { CatBrain } from "../../../pet-core/useCatBrain";
 
 const props = defineProps<{
   /** 菜单项配置列表（固定 5 项，与 PAW_SLOTS 一一对应）。 */
   items: MenuItemConfig[];
-  /** 猫大脑实例，用于触发动作/行为。 */
-  brain: CatBrain;
 }>();
 
 const follow = defineModel<boolean>("follow", { required: true });
 const passthrough = defineModel<boolean>("passthrough", { required: true });
-const calibrating = defineModel<boolean>("calibrating", { required: true });
 
 const emit = defineEmits<{
   (e: "close"): void;
+  (e: "select", actionId: string): void;
 }>();
 
 /** 原 SVG 坐标系到 200px 画布的缩放系数。 */
@@ -212,9 +207,8 @@ const pawPads = computed(() =>
     const item = props.items[i];
     const def = PAD_DEFS[i];
     const active =
-      item.kind === "builtin" &&
-      ((item.ref === "follow" && follow.value) ||
-        (item.ref === "passthrough" && passthrough.value));
+      (item.actionId === "toggleFollow" && follow.value) ||
+      (item.actionId === "togglePassthrough" && passthrough.value);
     return {
       slot,
       item,
@@ -227,34 +221,9 @@ const pawPads = computed(() =>
   }),
 );
 
-/** 点击一个爪垫：按类型与功能标识直接执行或修改状态。 */
+/** 点击一个爪垫：把 actionId 抛给父组件统一分发，然后关菜单。 */
 function onPadClick(pad: { item: MenuItemConfig }) {
-  const item = pad.item;
-  if (item.kind === "builtin") {
-    switch (item.ref) {
-      case "follow":
-        follow.value = !follow.value;
-        return;
-      case "passthrough":
-        passthrough.value = !passthrough.value;
-        return;
-      case "calibrate":
-        calibrating.value = true;
-        break;
-      case "settings":
-        invoke("pet_open_settings").catch(() => {});
-        break;
-      case "boss":
-        getCurrentWindow().minimize().catch(() => {});
-        break;
-      case "quit":
-        invoke("pet_quit").catch((e) => console.error("pet_quit failed", e));
-        break;
-    }
-    emit("close");
-    return;
-  }
-  props.brain.trigger(item.ref);
+  emit("select", pad.item.actionId);
   emit("close");
 }
 </script>

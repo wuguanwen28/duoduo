@@ -247,3 +247,21 @@ export async function loadResources(): Promise<LoadResult> {
   model = { root: scan.root, actions, behaviors, follow, frameToAction, defaultBehavior };
   return { ok: true };
 }
+
+/** 全部已解析动作名（manifest.actions 的键），供「随机动作」等枚举使用。 */
+export function getActionNames(): string[] {
+  try {
+    return Object.keys(getModel().actions);
+  } catch {
+    return [];
+  }
+}
+
+/** 全部已解析行为名（manifest.behaviors 的键），供「随机行为」等枚举使用。 */
+export function getBehaviorNames(): string[] {
+  try {
+    return Object.keys(getModel().behaviors);
+  } catch {
+    return [];
+  }
+}

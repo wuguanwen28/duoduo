@@ -47,10 +47,9 @@
       <Menu
         :style="menuStyle"
         :items="menuSettings"
-        :brain="brain"
         v-model:follow="followCursor"
         v-model:passthrough="passthrough"
-        v-model:calibrating="calibrating"
+        @select="onMenuSelect"
         @close="menuOpen = false"
       />
     </div>
@@ -105,7 +104,7 @@ import {
 } from "../../../pet-core/displaySettings";
 import { menuSettings } from "../../../pet-core/menuSettings";
 import { useCatBrain } from "../../../pet-core/useCatBrain";
-import { PET_ACTIONS, type PetActionContext } from "../../../pet-core/commands";
+import { resolveAction, type PetActionContext } from "../../../pet-core/commands";
 import { useGestures } from "../../composables/useGestures";
 import { actionOfFrame, transformOfAction } from "../../../pet-core/clips";
 import {
@@ -184,7 +183,10 @@ function placeMenuAt(cx?: number, cy?: number) {
   menuOpen.value = true;
 }
 
-/** 右键打开菜单：以光标位置为中心，贴边自动回收。 */
+/** 菜单选中一个动作：统一走 resolveAction（与手势 / 快捷键同路径）。 */
+function onMenuSelect(actionId: string): void {
+  resolveAction(actionId, petCtx);
+}
 function openMenuAt(e: MouseEvent) {
   placeMenuAt(e.clientX, e.clientY);
 }
@@ -334,7 +336,7 @@ const petCtx: PetActionContext = {
   pendingMenuPos,
 };
 
-useGestures(catWrapRef, triggerBindings, PET_ACTIONS, petCtx);
+useGestures(catWrapRef, triggerBindings, petCtx);
 
 // ── 拖动处理（校准模式） ─────────────────────────────────
 const dragAnchor = ref<{ x: number; y: number } | null>(null);
@@ -514,8 +516,7 @@ let appKeyMap: Record<string, TriggerBinding> = {};
  * 对 togglePassthrough 补一次 toast，保持与迁移前独立实现一致。
  */
 function dispatchKeyBinding(entry: TriggerBinding): void {
-  const action = PET_ACTIONS[entry.actionId] ?? PET_ACTIONS.none;
-  action(petCtx);
+  resolveAction(entry.actionId, petCtx);
   if (entry.actionId === "togglePassthrough") {
     showToast(passthrough.value ? "已开启穿透" : "已关闭穿透");
   }

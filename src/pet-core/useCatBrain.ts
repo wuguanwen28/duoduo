@@ -23,6 +23,7 @@ import { getBehaviors, getDefaultBehavior } from "./behaviors";
 import { getClip } from "./clips";
 import { useGaze } from "./useGaze";
 import { useBehavior } from "./useBehavior";
+import type { TwitchItem } from "./resources";
 
 /** Rust 端 `pet_cursor_angle` 命令返回的注视采样数据。 */
 interface GazeSample {
@@ -88,6 +89,8 @@ export interface CatBrain {
   wake: () => void;
   /** 点击互动：idle/follow 状态下随机播放一个空闲小动作。 */
   poke: () => void;
+  /** 从当前行为的随机插播池里挑一个动作播放；当前无行为时回退到默认行为。 */
+  playCurrentBehaviorTwitch: () => void;
   /** 当前点击是否会唤醒（供 Pet.vue 决定点击手势）。 */
   canWake: () => boolean;
 }
@@ -238,9 +241,9 @@ export function useCatBrain(opts: BrainOptions): CatBrain {
     goToBehavior(defaultBehavior); // 播当前 exit（如 wakeUp 起身）→ 默认行为
   }
 
-  /** 从 idle 的随机插播池里按权重挑一个动作。 */
-  function pickIdleTwitch() {
-    const items = behaviors[defaultBehavior]?.loop.random ?? [];
+  /** 从指定行为的随机插播池里按权重挑一个动作。 */
+  function pickTwitchFrom(behaviorName: string): TwitchItem | null {
+    const items = behaviors[behaviorName]?.loop.random ?? [];
     if (items.length === 0) return null;
     const total = items.reduce((sum, item) => sum + (item.weight ?? 1), 0);
     if (total <= 0) return items[Math.floor(Math.random() * items.length)];
@@ -252,6 +255,11 @@ export function useCatBrain(opts: BrainOptions): CatBrain {
     return items[items.length - 1];
   }
 
+  /** 从默认行为的随机插播池里挑一个动作。 */
+  function pickIdleTwitch() {
+    return pickTwitchFrom(defaultBehavior);
+  }
+
   function poke() {
     const pick = pickIdleTwitch();
     if (!pick) return;
@@ -261,6 +269,19 @@ export function useCatBrain(opts: BrainOptions): CatBrain {
     }
     if (state.value.kind === "follow") {
       goToBehavior(defaultBehavior, pick.clip);
+    }
+  }
+
+  /** 从当前行为的随机插播池里挑一个动作播放一次。 */
+  function playCurrentBehaviorTwitch() {
+    if (followOnly) return;
+    const name = state.value.kind === "behavior" ? currentBehavior : defaultBehavior;
+    const pick = pickTwitchFrom(name);
+    if (!pick) return;
+    if (state.value.kind === "behavior" && currentBehavior === name && beh.canWake()) {
+      beh.playOneShot(pick.clip);
+    } else {
+      goToBehavior(name, pick.clip);
     }
   }
 
@@ -386,5 +407,5 @@ export function useCatBrain(opts: BrainOptions): CatBrain {
     unlisten?.();
   });
 
-  return { state, currentSrc, cursorOverCat, config, trigger, wake, poke, canWake };
+  return { state, currentSrc, cursorOverCat, config, trigger, wake, poke, playCurrentBehaviorTwitch, canWake };
 }

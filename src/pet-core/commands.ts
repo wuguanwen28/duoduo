@@ -8,6 +8,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import type { CatBrain } from "./useCatBrain";
 import { pickSpeakPhrase } from "./speakPhrases";
+import { getBehaviorNames } from "./resources";
 
 /** 执行动作所需的上下文；由 Pet.vue 在实例化时注入。 */
 export interface PetActionContext {
@@ -37,9 +38,6 @@ export type PetAction = (ctx: PetActionContext) => void;
 
 /** 所有可绑定动作：key 同时作为手势配置的取值和设置页下拉选项的 value。 */
 export const PET_ACTIONS: Record<string, PetAction> = {
-  /** 空操作：用于禁用手势。 */
-  none: () => {},
-
   /** 点击唤醒：若当前行为可被唤醒，则起身回 idle。 */
   wake: (ctx) => ctx.brain.wake(),
 
@@ -88,59 +86,113 @@ export const PET_ACTIONS: Record<string, PetAction> = {
     invoke("pet_open_settings").catch(() => {});
   },
 
+  /** 头部校准：进入校准态（菜单 / 快捷键统一入口）。 */
+  calibrate: (ctx) => {
+    ctx.calibrating.value = true;
+  },
+
   /** 退出应用。 */
   quit: () => {
     invoke("pet_quit").catch((e) => console.error("pet_quit failed", e));
   },
 };
 
-/** 动作在设置页显示的中文标签。 */
-export const ACTION_LABELS: Record<string, string> = {
-  none: "无",
-  wake: "切换行为",
-  poke: "戳一下（随机小动作）",
-  speak: "说话",
-  pokeAndSpeak: "戳一下并说话",
-  minimize: "最小化窗口",
-  openMenu: "打开菜单",
-  openSettings: "打开设置",
-  toggleFollow: "切换跟随光标",
-  togglePassthrough: "切换点击穿透",
-  startCalibrate: "头部校准",
-  quit: "退出应用",
-};
-
-/** 允许在手势配置中绑定的动作 key（过滤掉状态切换类动作）。 */
-export const GESTURE_ACTION_KEYS: string[] = [
-  "none",
-  "wake",
-  "poke",
-  "speak",
-  "minimize",
-  "pokeAndSpeak",
-  "openMenu",
-  "openSettings",
-  "quit",
-];
+/** 内置动作目录条目：菜单与触发器两处下拉的「内置」组共用。 */
+export interface BuiltinAction {
+  /** PET_ACTIONS 键，同时是 actionId 的内置形式。 */
+  key: string;
+  /** 菜单上显示的 emoji。 */
+  emoji: string;
+  /** 菜单上显示的简短名。 */
+  menuLabel: string;
+  /** 设置页下拉显示的标准功能名。 */
+  standardLabel: string;
+  /** 是否为开关型（开 / 关有高亮，如偷看 / 穿透）。 */
+  isToggle?: boolean;
+}
 
 /**
- * 允许在快捷键配置中绑定的动作 key。
- * 含状态切换类与最小化；不含 `startCalibrate`（仓库尚无实现）、不含 `bossComing`
- * （「老板来了」直接复用 minimize）。
+ * 内置动作目录：菜单与触发器两处下拉「内置」组的数据源。
+ * 顺序即下拉顺序。
  */
-export const SHORTCUT_ACTION_KEYS: string[] = [
-  "none",
-  "wake",
-  "poke",
-  "speak",
-  "pokeAndSpeak",
-  "openMenu",
-  "openSettings",
-  "minimize",
-  "toggleFollow",
-  "togglePassthrough",
-  "quit",
+export const BUILTIN_ACTIONS: BuiltinAction[] = [
+  { key: "speak", emoji: "💬", menuLabel: "说话", standardLabel: "说话" },
+  { key: "pokeAndSpeak", emoji: "🗨️", menuLabel: "戳并说话", standardLabel: "戳一下并说话" },
+  { key: "toggleFollow", emoji: "👀", menuLabel: "偷看", standardLabel: "切换跟随光标", isToggle: true },
+  { key: "togglePassthrough", emoji: "🖱️", menuLabel: "穿透点击", standardLabel: "切换点击穿透", isToggle: true },
+  { key: "calibrate", emoji: "🎯", menuLabel: "校准猫头", standardLabel: "头部校准" },
+  { key: "minimize", emoji: "🏃", menuLabel: "老板来了", standardLabel: "最小化窗口" },
+  { key: "quit", emoji: "👋", menuLabel: "下班", standardLabel: "退出应用" },
+  { key: "openSettings", emoji: "⚙️", menuLabel: "设置", standardLabel: "打开设置" },
+  { key: "openMenu", emoji: "🧭", menuLabel: "打开菜单", standardLabel: "打开菜单" },
 ];
+
+/** 按 key 查内置目录条目。 */
+export function findBuiltin(key: string): BuiltinAction | undefined {
+  return BUILTIN_ACTIONS.find((b) => b.key === key);
+}
+
+/** 解析后的 actionId 分类。 */
+export interface ParsedActionId {
+  kind: "builtin" | "action" | "behavior" | "randomAction" | "randomBehavior" | "none";
+  /** 仅 kind=action/behavior 时有值：动作 / 行为名。 */
+  name?: string;
+}
+
+/**
+ * 把 actionId 字符串解析成结构化分类。
+ * - 内置键（PET_ACTIONS 的键）→ { kind:"builtin" }；
+ * - `action:<名>` → { kind:"action", name }；
+ * - `behavior:<名>` → { kind:"behavior", name }；
+ * - `randomAction` / `randomBehavior` → 同名 kind；
+ * - 空 / 未知名 → { kind:"none" }。
+ */
+export function parseActionId(id: string): ParsedActionId {
+  if (!id) return { kind: "none" };
+  if (id === "randomAction") return { kind: "randomAction" };
+  if (id === "randomBehavior") return { kind: "randomBehavior" };
+  if (id.startsWith("action:")) return { kind: "action", name: id.slice("action:".length) };
+  if (id.startsWith("behavior:")) return { kind: "behavior", name: id.slice("behavior:".length) };
+  if (PET_ACTIONS[id]) return { kind: "builtin" };
+  return { kind: "none" };
+}
+
+/** 从非空字符串数组里随机挑一个；空数组返回 undefined。 */
+function pickRandom(names: string[]): string | undefined {
+  if (names.length === 0) return undefined;
+  return names[Math.floor(Math.random() * names.length)];
+}
+
+/**
+ * 统一动作分发：按 actionId 解析后执行。
+ * 内置键走 PET_ACTIONS；动作 / 行为走 ctx.brain.trigger；
+ * 随机动作从当前行为的 random 池挑一个播放；随机行为从所有行为里挑一个切换；
+ * 空 / 未知为空操作。
+ */
+export function resolveAction(id: string, ctx: PetActionContext): void {
+  const p = parseActionId(id);
+  switch (p.kind) {
+    case "builtin":
+      PET_ACTIONS[id]?.(ctx);
+      return;
+    case "action":
+    case "behavior":
+      if (p.name) ctx.brain.trigger(p.name);
+      return;
+    case "randomAction": {
+      ctx.brain.playCurrentBehaviorTwitch();
+      return;
+    }
+    case "randomBehavior": {
+      const n = pickRandom(getBehaviorNames());
+      if (n) ctx.brain.trigger(n);
+      return;
+    }
+    case "none":
+    default:
+      return;
+  }
+}
 
 /** 鼠标手势触发方式的中文标签，供设置页只读显示。 */
 export const MOUSE_TRIGGER_LABELS: Record<string, string> = {

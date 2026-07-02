@@ -6,7 +6,7 @@
 import { onMounted, onUnmounted, type Ref } from "vue";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import type { TriggerBinding, MouseTrigger } from "../../pet-core/triggerBindings";
-import type { PetAction, PetActionContext } from "../../pet-core/commands";
+import { resolveAction, type PetActionContext } from "../../pet-core/commands";
 
 /** 达到该移动像素数即视为拖动。 */
 const DRAG_THRESHOLD = 5;
@@ -22,30 +22,27 @@ const LONG_PRESS_MS = 600;
  *
  * @param elRef 目标 DOM 元素（猫咪本体包裹层）
  * @param bindings 触发器绑定数组 ref
- * @param actions 动作仓库
  * @param ctx 动作执行上下文
  */
 export function useGestures(
   elRef: Ref<HTMLElement | undefined>,
   bindings: Ref<TriggerBinding[]>,
-  actions: Record<string, PetAction>,
   ctx: PetActionContext,
 ): void {
   let lastClickTime = 0;
   let pendingClickTimer: number | undefined;
 
-  /** 按 mouse 触发方式从绑定数组查 actionId；找不到降级 none。 */
+  /** 按 mouse 触发方式从绑定数组查 actionId；找不到返回空串（无操作）。 */
   function mouseAction(trigger: MouseTrigger): string {
     return (
-      bindings.value.find((b) => b.kind === "mouse" && b.trigger === trigger)?.actionId ?? "none"
+      bindings.value.find((b) => b.kind === "mouse" && b.trigger === trigger)?.actionId ?? ""
     );
   }
 
-  /** 按动作 id 查找并执行；找不到时降级为空操作。 */
+  /** 按动作 id 统一分发；空 / 未知为空操作。 */
   function dispatch(actionId: string, pos?: { x: number; y: number }): void {
     ctx.pendingMenuPos.value = pos;
-    const action = actions[actionId] ?? actions.none;
-    action(ctx);
+    resolveAction(actionId, ctx);
     ctx.pendingMenuPos.value = undefined;
   }
 
@@ -78,12 +75,6 @@ export function useGestures(
     }
 
     function handleClick() {
-      // 当前状态可唤醒时，单击直接唤醒（优先级高于普通单击配置）。
-      if (ctx.brain.canWake()) {
-        dispatch("wake", start);
-        return;
-      }
-
       const now = Date.now();
       if (now - lastClickTime < DOUBLE_CLICK_MS) {
         // 双击：清掉待处理的单击定时器，执行双击动作。

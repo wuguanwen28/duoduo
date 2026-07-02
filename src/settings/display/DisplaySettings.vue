@@ -126,55 +126,107 @@
               v-model="b.actionId"
               class="trigger-row__action"
               @change="persist"
+              clearable
+              placeholder="未绑定"
+              :fallback-placements="['top', 'bottom']"
             >
-              <el-option
-                v-for="key in actionKeysFor(b.kind)"
-                :key="key"
-                :label="ACTION_LABELS[key] ?? key"
-                :value="key"
-              />
+              <el-option-group label="内置">
+                <el-option
+                  v-for="opt in builtinOpts"
+                  :key="opt.id"
+                  :label="opt.label"
+                  :value="opt.id"
+                />
+              </el-option-group>
+              <el-option-group label="动作">
+                <el-option
+                  v-for="opt in actionOpts"
+                  :key="opt.id"
+                  :label="opt.label"
+                  :value="opt.id"
+                />
+              </el-option-group>
+              <el-option-group label="行为">
+                <el-option
+                  v-for="opt in behaviorOpts"
+                  :key="opt.id"
+                  :label="opt.label"
+                  :value="opt.id"
+                />
+              </el-option-group>
             </el-select>
 
             <!-- 右侧操作区：配置按钮 + 全局开关 + 删除按钮。
                  鼠标行同样保留此容器，使动作下拉框与快捷键行对齐。 -->
             <div class="trigger-row__actions">
-              <el-button
-                v-if="isPhraseAction(b.actionId)"
-                text
-                type="primary"
-                size="small"
-                class="display-settings__gesture-text"
-                @click="phraseDialogVisible = true"
-              >
-                说话设置
-              </el-button>
-              <el-button
-                v-else-if="isMenuAction(b.actionId)"
-                text
-                type="primary"
-                size="small"
-                class="display-settings__gesture-text"
-                @click="menuDialogVisible = true"
-              >
-                菜单设置
-              </el-button>
-
-              <el-checkbox
+              <el-tooltip
                 v-if="b.kind === 'key'"
-                v-model="b.isGlobal"
-                class="trigger-row__global"
-                @change="() => onScopeChange(i)"
+                :content="
+                  b.isGlobal
+                    ? '全局快捷键：注册到系统层，窗口不聚焦也能触发'
+                    : '应用内快捷键：仅猫咪窗口聚焦时才能触发'
+                "
+                placement="top"
               >
-                全局
-              </el-checkbox>
+                <el-button
+                  :plain="!b.isGlobal"
+                  type="primary"
+                  size="small"
+                  class="trigger-row__icon-btn"
+                  :class="{ 'trigger-row__icon-btn--active': b.isGlobal }"
+                  @click="toggleGlobal(i)"
+                >
+                  <template #icon>
+                    <EarthIcon class="trigger-row__earth" />
+                  </template>
+                </el-button>
+              </el-tooltip>
 
               <el-button
                 v-if="b.kind === 'key'"
-                text
+                plain
+                type="danger"
                 :icon="Delete"
-                class="trigger-row__delete"
+                size="small"
+                class="trigger-row__icon-btn"
                 @click="removeBinding(i)"
               />
+
+              <el-tooltip
+                v-if="isPhraseAction(b.actionId)"
+                content="说话短语设置"
+                placement="top"
+              >
+                <el-button
+                  plain
+                  type="primary"
+                  size="small"
+                  class="trigger-row__icon-btn"
+                  @click="phraseDialogVisible = true"
+                >
+                  <template #icon>
+                    <ChatLineRound />
+                  </template>
+                </el-button>
+              </el-tooltip>
+
+              <el-tooltip
+                v-else-if="isMenuAction(b.actionId)"
+                content="菜单内容设置"
+                placement="top"
+              >
+                <el-button
+                  plain
+                  type="primary"
+                  size="small"
+                  class="trigger-row__icon-btn"
+                  @click="menuDialogVisible = true"
+                >
+                  <template #icon>
+                    <Operation />
+                  </template>
+                </el-button>
+              </el-tooltip>
             </div>
           </div>
         </div>
@@ -192,7 +244,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from "vue";
+import { computed, ref, onMounted, onUnmounted } from "vue";
 import {
   size,
   opacity,
@@ -213,17 +265,24 @@ import {
   type TriggerBinding,
   type TriggerResult,
 } from "../../pet-core/triggerBindings";
+import { BUILTIN_ACTIONS, MOUSE_TRIGGER_LABELS } from "../../pet-core/commands";
 import {
-  ACTION_LABELS,
-  GESTURE_ACTION_KEYS,
-  SHORTCUT_ACTION_KEYS,
-  MOUSE_TRIGGER_LABELS,
-} from "../../pet-core/commands";
-import { Plus, Refresh, Close, Delete } from "@element-plus/icons-vue";
+  loadManifestNames,
+  type ManifestNameItem,
+} from "../../pet-core/manifestCatalog";
+import {
+  Plus,
+  Refresh,
+  Close,
+  Delete,
+  ChatLineRound,
+  Operation,
+} from "@element-plus/icons-vue";
 import { register, unregister } from "@tauri-apps/plugin-global-shortcut";
 import { listen, emit, type UnlistenFn } from "@tauri-apps/api/event";
 import PhraseConfigDialog from "./PhraseConfigDialog.vue";
 import MenuConfigDialog from "./MenuConfigDialog.vue";
+import EarthIcon from "./EarthIcon.vue";
 
 /** 格式化大小滑块 tooltip 文本，如 1x / 0.25x。 */
 function formatSize(value: number): string {
@@ -248,12 +307,37 @@ const conflictIds = ref<Set<string>>(new Set());
 /** 外部冲突：全局键被其他程序占用（实时探测 + 主窗回传）。 */
 const externalIds = ref<Set<string>>(new Set());
 
-let unlistenResult: UnlistenFn | undefined;
+/** manifest 动作 / 行为条目（设置窗异步读取）。 */
+const actionItems = ref<ManifestNameItem[]>([]);
+const behaviorItems = ref<ManifestNameItem[]>([]);
 
-/** 按触发类型返回可绑动作白名单。 */
-function actionKeysFor(kind: TriggerBinding["kind"]): string[] {
-  return kind === "mouse" ? GESTURE_ACTION_KEYS : SHORTCUT_ACTION_KEYS;
-}
+/** 内置组：过滤掉「头部校准」（快捷键校准体验差）。 */
+const builtinOpts = computed(() =>
+  BUILTIN_ACTIONS.filter((b) => b.key !== "calibrate").map((b) => ({
+    id: b.key,
+    label: b.standardLabel,
+  })),
+);
+
+/** 动作组：manifest 动作 + 随机动作。 */
+const actionOpts = computed(() => [
+  ...actionItems.value.map((item) => ({
+    id: `action:${item.key}`,
+    label: item.label,
+  })),
+  { id: "randomAction", label: "随机动作" },
+]);
+
+/** 行为组：manifest 行为 + 随机行为。 */
+const behaviorOpts = computed(() => [
+  ...behaviorItems.value.map((item) => ({
+    id: `behavior:${item.key}`,
+    label: item.label,
+  })),
+  { id: "randomBehavior", label: "随机行为" },
+]);
+
+let unlistenResult: UnlistenFn | undefined;
 
 /** 判断动作是否为说话类动作（需要配置短语）。 */
 function isPhraseAction(action: string): boolean {
@@ -317,7 +401,7 @@ function addKeyBinding() {
     id: crypto.randomUUID(),
     kind: "key",
     trigger: "",
-    actionId: "none",
+    actionId: "",
     isGlobal: false,
   });
   recordingIndex.value = rows.value.length - 1;
@@ -384,6 +468,14 @@ function onKeydown(e: KeyboardEvent, index: number) {
   }
 }
 
+/** 切换快捷键作用域（全局 / 应用内）。 */
+function toggleGlobal(index: number) {
+  const b = rows.value[index];
+  if (b.kind !== "key") return;
+  b.isGlobal = !b.isGlobal;
+  onScopeChange(index);
+}
+
 /** 作用域切换：切到全局时探测占用后再保存；切回应用内直接保存。 */
 function onScopeChange(index: number) {
   const b = rows.value[index];
@@ -413,6 +505,10 @@ async function probeAndMark(b: TriggerBinding): Promise<void> {
 }
 
 onMounted(async () => {
+  loadManifestNames().then((names) => {
+    actionItems.value = names.actions;
+    behaviorItems.value = names.behaviors;
+  });
   loadRows();
   try {
     unlistenResult = await listen<TriggerResult>(
@@ -522,10 +618,6 @@ function onPassthroughChange(value: string | number | boolean) {
 
 .display-settings__slider {
   flex: 1;
-}
-
-.display-settings__gesture-text {
-  padding: 0 6px;
 }
 
 .display-settings__switch-desc {
@@ -640,18 +732,27 @@ function onPassthroughChange(value: string | number | boolean) {
   gap: 8px;
 }
 
-/* 全局复选框：不换行，避免撑开操作区。 */
-.trigger-row__global {
-  flex: none;
-  white-space: nowrap;
-}
-
-/* 删除按钮：固定 28px，与占位同宽。 */
-.trigger-row__delete {
+/* 图标按钮：统一 28px，无边框。 */
+.trigger-row__icon-btn {
   flex: none;
   width: 28px;
   height: 28px;
   padding: 0;
+
+  + .el-button {
+    margin-left: 0px;
+  }
+}
+
+/* 图标按钮高亮：全局开启时。 */
+.trigger-row__icon-btn--active {
+  color: #fff;
+}
+
+/* 地球图标：填充满按钮。 */
+.trigger-row__earth {
+  width: 16px;
+  height: 16px;
 }
 
 .placeholder {
