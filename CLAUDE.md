@@ -257,8 +257,26 @@ Remote naming is assumed by scripts: `github` is GitHub and `origin` is Gitee.
 CI cache notes:
 
 - `release.yml` must remain tag-triggered without `paths` filters, otherwise tag releases can be skipped.
-- `cache-warm.yml` runs on `master` pushes for selected backend/build files only, to warm default-branch caches for later tag builds.
+- 发版前不再预热缓存：tag 触发的 release run 跨 tag 互相隔离、读不到彼此缓存，故每次发版全量编译 Rust 依赖（~7 分钟）。这是有意的简化，不维护养缓存工作流。
 - Rust release profile uses `opt-level=1` and `strip=true` to reduce CI build/link time for this low-runtime-load app.
+
+### 提交信息与 changelog 规范
+
+CHANGELOG.md 由 `cliff.toml` 通过 git-cliff 从 conventional commits 自动生成，面向终端用户，只收录 `feat`/`fix`/`perf`；`ci`/`build`/`chore`/`refactor`/`docs` 等前缀默认已跳过。
+
+但有些提交虽然语义上是 `feat`/`fix`，内容却与用户可感知的软件功能无关——例如 CI 流程调整、构建脚本修复、依赖升级、配置脚手架等内部改动。这类提交若直接用 `feat`/`fix` 前缀，会被误收入用户面向的更新日志。处理方式：在提交信息正文末尾追加 footer `changelog: ignore`，git-cliff 命中后即跳过、不进 CHANGELOG（见 `cliff.toml` 的 `commit_parsers` 首条规则）。
+
+写法：
+
+```
+fix: 修正发版脚本的版本号同步逻辑
+
+仅影响发布流程，用户无感。
+
+changelog: ignore
+```
+
+判定标准：若该改动用户在 release notes 里看到会困惑或无感（"这跟我有什么关系"），就加 `changelog: ignore`；若确实是新功能或用户能遇到的 bug 修复，则正常进日志、不加该标记。
 
 ## Nested `server/` architecture
 

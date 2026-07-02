@@ -1,6 +1,11 @@
 // 一键发版脚本：同步版本号 → 生成 CHANGELOG → 提交打标签 → 推送（触发 CI 构建+发布）。
 //
-// 用法：pnpm release <版本号>，如 pnpm release 0.2.0
+// 用法：
+//   pnpm release            # 自动递增 patch，如 0.2.2 → 0.2.3
+//   pnpm release patch      # 自动递增 patch
+//   pnpm release minor      # 自动递增 minor，并把 patch 归 0
+//   pnpm release major      # 自动递增 major，并把 minor/patch 归 0
+//   pnpm release 0.3.5      # 手动指定精确版本号
 //
 // 它会：
 //   1. 校验版本号格式、工作区干净；
@@ -14,16 +19,51 @@ import { join, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const version = process.argv[2];
+const releaseArg = process.argv[2] || "patch";
+const version = resolveVersion(releaseArg);
 const tag = `v${version}`;
 
 // 在仓库根目录跑 git（数组参数，安全）。
 const git = (args, opts = {}) =>
   execFileSync("git", args, { cwd: root, encoding: "utf-8", ...opts });
 
+function readPackageVersion() {
+  const packageJson = JSON.parse(readFileSync(join(root, "package.json"), "utf-8"));
+  const current = packageJson.version;
+  if (!/^\d+\.\d+\.\d+$/.test(current)) {
+    console.error(`✗ package.json 当前版本号不支持自动递增：${current}`);
+    console.error("  请先改成 x.y.z 格式，或使用 pnpm release x.y.z 手动指定。");
+    process.exit(1);
+  }
+  return current;
+}
+
+function bumpVersion(current, level) {
+  const [major, minor, patch] = current.split(".").map(Number);
+  if (level === "patch") return `${major}.${minor}.${patch + 1}`;
+  if (level === "minor") return `${major}.${minor + 1}.0`;
+  if (level === "major") return `${major + 1}.0.0`;
+  throw new Error(`未知递增类型：${level}`);
+}
+
+function resolveVersion(input) {
+  if (/^\d+\.\d+\.\d+$/.test(input)) return input;
+  if (["patch", "minor", "major"].includes(input)) {
+    return bumpVersion(readPackageVersion(), input);
+  }
+
+  console.error("✗ 用法：");
+  console.error("  pnpm release            # 自动递增 patch");
+  console.error("  pnpm release patch      # 自动递增 patch");
+  console.error("  pnpm release minor      # 自动递增 minor，并把 patch 归 0");
+  console.error("  pnpm release major      # 自动递增 major，并把 minor/patch 归 0");
+  console.error("  pnpm release 0.3.5      # 手动指定精确版本号");
+  process.exit(1);
+}
+
 // 1) 校验。
-if (!version || !/^\d+\.\d+\.\d+$/.test(version)) {
-  console.error("✗ 用法：pnpm release <版本号>，如 pnpm release 0.2.0");
+if (!/^\d+\.\d+\.\d+$/.test(version)) {
+  console.error(`✗ 解析后的版本号无效：${version}`);
   process.exit(1);
 }
 if (git(["status", "--porcelain"]).trim()) {
