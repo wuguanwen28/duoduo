@@ -14,6 +14,9 @@
           </transition>
         </div>
         <div class="topbar__btns">
+          <el-button plain type="primary" :icon="QuestionFilled" @click="helpVisible = true">
+            使用说明
+          </el-button>
           <el-button :icon="Refresh" @click="reload">重新加载</el-button>
         </div>
       </header>
@@ -100,6 +103,12 @@
         />
       </template>
     </main>
+
+    <ContentHelpDialog
+      v-model="helpVisible"
+      content-key="resource-settings"
+      title="资源设置使用说明"
+    />
   </div>
 </template>
 
@@ -108,7 +117,8 @@ import { computed, nextTick, onMounted, reactive, ref, watch } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import { emit as emitEvent } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
-import { Refresh, FolderOpened, CircleCheckFilled } from "@element-plus/icons-vue";
+import { Refresh, FolderOpened, CircleCheckFilled, QuestionFilled } from "@element-plus/icons-vue";
+import ContentHelpDialog from "../common/ContentHelpDialog.vue";
 import DirSelect, { type DirNode } from "./DirSelect.vue";
 import ActionsCard from "./ActionsCard.vue";
 import BehaviorsCard from "./BehaviorsCard.vue";
@@ -121,6 +131,8 @@ const hasManifest = ref(false);
 const dirTree = ref<DirNode[]>([]);
 /** 读取 manifest 期间显示加载遮罩。 */
 const loading = ref(false);
+/** 使用说明弹窗显隐。 */
+const helpVisible = ref(false);
 
 const follow = reactive({ dir: "follow", clockwise: true, startAngle: 0 });
 const actions = ref<ActionRow[]>([]);

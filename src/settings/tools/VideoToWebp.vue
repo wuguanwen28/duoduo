@@ -419,8 +419,12 @@
         crossorigin="anonymous"
       />
 
-      <!-- 抠图使用说明（独立组件）。 -->
-      <ChromaKeyHelp v-model="helpVisible" />
+      <!-- 使用说明由后台说明管理维护，方便后续直接改文案无需发版。 -->
+      <ContentHelpDialog
+        v-model="helpVisible"
+        content-key="video-to-webp"
+        title="视频转帧使用说明"
+      />
     </main>
   </div>
 </template>
@@ -447,7 +451,7 @@ import {
   type KeyRegion,
 } from "./chromaKey";
 import { getCachedClip, setCachedClip } from "./frameCache";
-import ChromaKeyHelp from "./ChromaKeyHelp.vue";
+import ContentHelpDialog from "../common/ContentHelpDialog.vue";
 
 /** requestVideoFrameCallback 元数据。 */
 interface VideoFrameMeta {
