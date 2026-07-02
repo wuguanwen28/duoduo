@@ -230,6 +230,16 @@ function parseInto(content: string) {
         ? b.random.map((r: any) => ({
             action: r?.action ?? "",
             weight: typeof r?.weight === "number" ? r.weight : 1,
+            // __speak 的独立短语池原样带出。
+            phrases:
+              Array.isArray(r?.phrases) && r?.action === "__speak"
+                ? r.phrases
+                    .filter((p: any) => p && typeof p.text === "string")
+                    .map((p: any) => ({
+                      text: String(p.text).trim(),
+                      weight: Math.max(0, Number(p.weight) || 0),
+                    }))
+                : undefined,
           }))
         : [],
     };
@@ -268,7 +278,17 @@ function build(): any {
       base: b.base,
       random: b.random
         .filter((r) => r.action)
-        .map((r) => ({ action: r.action, weight: r.weight })),
+        .map((r) => {
+          const o: any = { action: r.action, weight: r.weight };
+          // __speak 才写 phrases（非空数组时）。
+          if (r.action === "__speak" && Array.isArray(r.phrases) && r.phrases.length > 0) {
+            o.phrases = r.phrases.map((p) => ({
+              text: p.text.trim(),
+              weight: Math.max(0, Number(p.weight) || 0),
+            }));
+          }
+          return o;
+        }),
       delay: [b.delayVal[0] * b.delayUnit, b.delayVal[1] * b.delayUnit],
     };
     if (b.label) o.name = b.label;

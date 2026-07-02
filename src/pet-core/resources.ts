@@ -11,6 +11,7 @@
  * 状态机启动前完成（由 App.vue 控制：就绪才挂载 <Pet>，失败显示缺资源引导）。
  */
 import { invoke, convertFileSrc } from "@tauri-apps/api/core";
+import type { SpeakPhrase } from "./speakPhrases";
 
 /** 一个动作（=manifest 的一个 action）解析后的运行时形态。 */
 export interface ResolvedClip {
@@ -36,6 +37,11 @@ export interface TwitchItem {
   clip: string;
   /** 加权随机的相对权重，省略默认 1。 */
   weight?: number;
+  /**
+   * 仅 clip === "__speak" 时有意义：该说话入口的独立短语池。
+   * 缺省时说话动作为空（不出气泡）；用户在设置里编辑后写入 manifest。
+   */
+  phrases?: SpeakPhrase[];
 }
 
 /** 行为的循环段：基底动作 + 随机插播 + 插播间隔。 */
@@ -207,8 +213,23 @@ export async function loadResources(): Promise<LoadResult> {
     if (!b?.base || !actions[b.base]) continue; // 基底动作缺失：跳过该行为
     const random: TwitchItem[] = Array.isArray(b.random)
       ? b.random
-          .map((r: any) => ({ clip: r?.action, weight: r?.weight }))
-          .filter((r: TwitchItem) => r.clip && actions[r.clip])
+          .map((r: any) => ({
+            clip: r?.action,
+            weight: r?.weight,
+            // __speak 的独立短语池原样带出（数组校验 + 基础规整）。
+            phrases:
+              Array.isArray(r?.phrases) && r.clip === "__speak"
+                ? r.phrases
+                    .filter((p: any) => p && typeof p.text === "string")
+                    .map((p: any) => ({
+                      text: String(p.text).trim(),
+                      weight: Math.max(0, Number(p.weight) || 0),
+                    }))
+                : undefined,
+          }))
+          // 保留两类：资源动作（actions 里登记）或内置动作（`__` 前缀，如 `__speak`）。
+          // 内置动作由播放层 useBehavior 转交 Pet.vue 执行，不依赖资源帧。
+          .filter((r: TwitchItem) => r.clip && (actions[r.clip] || r.clip.startsWith("__")))
       : [];
     behaviors[name] = {
       label: typeof b.name === "string" ? b.name : undefined,

@@ -202,7 +202,7 @@
                   type="primary"
                   size="small"
                   class="trigger-row__icon-btn"
-                  @click="phraseDialogVisible = true"
+                  @click="openPhraseDialog(b)"
                 >
                   <template #icon>
                     <ChatLineRound />
@@ -238,7 +238,10 @@
       </el-card>
     </main>
 
-    <PhraseConfigDialog v-model:visible="phraseDialogVisible" />
+    <PhraseConfigDialog
+      v-model:visible="phraseDialogVisible"
+      v-model:phrases="phraseDialogTarget"
+    />
     <MenuConfigDialog v-model:visible="menuDialogVisible" />
   </div>
 </template>
@@ -266,6 +269,7 @@ import {
   type TriggerResult,
 } from "../../pet-core/triggerBindings";
 import { BUILTIN_ACTIONS, MOUSE_TRIGGER_LABELS } from "../../pet-core/commands";
+import { defaultSpeakPhrases, type SpeakPhrase } from "../../pet-core/speakPhrases";
 import {
   loadManifestNames,
   type ManifestNameItem,
@@ -297,6 +301,33 @@ function formatOpacity(value: number): string {
 /** 说话内容 / 菜单配置弹窗显隐。 */
 const phraseDialogVisible = ref(false);
 const menuDialogVisible = ref(false);
+
+/** 说话内容弹窗：当前编辑的触发器绑定（TriggerBinding 引用）。 */
+const phraseBinding = ref<TriggerBinding | null>(null);
+
+/** 弹窗 phrases 双向绑定代理：读写指向当前绑定的 phrases。
+ *  首次打开若无 phrases，用默认模板拷贝初始化。 */
+const phraseDialogTarget = computed<SpeakPhrase[]>({
+  get: () => {
+    const b = phraseBinding.value;
+    if (b && !Array.isArray(b.phrases)) {
+      b.phrases = defaultSpeakPhrases.value.map((p) => ({ ...p }));
+    }
+    return b?.phrases ?? [];
+  },
+  set: (v) => {
+    if (phraseBinding.value) {
+      phraseBinding.value.phrases = v;
+      saveTriggerBindings(rows.value.map((b) => ({ ...b })));
+    }
+  },
+});
+
+/** 打开说话内容弹窗，记录当前编辑的绑定。 */
+function openPhraseDialog(b: TriggerBinding) {
+  phraseBinding.value = b;
+  phraseDialogVisible.value = true;
+}
 
 // ── 触发器（鼠标手势 + 快捷键） ────────────────────────────────
 /** 触发器可编辑行（基于 TriggerBinding，id 复用）。 */

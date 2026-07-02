@@ -72,6 +72,12 @@ export interface BrainOptions {
   paused?: () => boolean;
   /** 合并到 DEFAULT_CONFIG 上的部分覆盖项。 */
   config?: Partial<BrainConfig>;
+  /**
+   * 行为随机插播挑中内置动作（`__` 前缀，如 `__speak`）时由 Pet.vue 注入执行。
+   * 传入整个 TwitchItem（含 phrases），返回 true 表示已处理（播放器不播帧）；
+   * 非内置动作返回 false。由 Pet.vue 持有 PetActionContext，故实际执行权交还上层。
+   */
+  runBuiltinTwitch?: (item: TwitchItem) => boolean;
 }
 
 export interface CatBrain {
@@ -105,7 +111,8 @@ export function useCatBrain(opts: BrainOptions): CatBrain {
   // 此时状态机不轮换行为，常驻 follow，由 gaze 出帧（死区锁正视帧）。
   const followOnly = Object.keys(behaviors).length === 0;
   const gaze = useGaze();
-  const beh = useBehavior();
+  // 透传内置动作执行钩子：随机插播挑中 __speak 等内置项时交还 Pet.vue 执行。
+  const beh = useBehavior(opts.runBuiltinTwitch ? { onTwitch: opts.runBuiltinTwitch } : {});
 
   const state = ref<CatState>(
     followOnly ? { kind: "follow" } : { kind: "behavior", behavior: defaultBehavior },

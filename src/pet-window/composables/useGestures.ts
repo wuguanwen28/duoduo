@@ -39,11 +39,24 @@ export function useGestures(
     );
   }
 
-  /** 按动作 id 统一分发；空 / 未知为空操作。 */
-  function dispatch(actionId: string, pos?: { x: number; y: number }): void {
+  /** 按 mouse 触发方式取对应绑定项（用于读取说话类动作的独立短语池）。 */
+  function mouseEntry(trigger: MouseTrigger): TriggerBinding | undefined {
+    return bindings.value.find((b) => b.kind === "mouse" && b.trigger === trigger);
+  }
+
+  /** 按动作 id 统一分发；空 / 未知为空操作。
+   *  说话类动作先把该触发器的独立短语池注入 ctx.speakPool，用完清空。 */
+  function dispatch(actionId: string, pos?: { x: number; y: number }, trigger?: MouseTrigger): void {
     ctx.pendingMenuPos.value = pos;
-    resolveAction(actionId, ctx);
-    ctx.pendingMenuPos.value = undefined;
+    if (trigger && (actionId === "speak" || actionId === "pokeAndSpeak")) {
+      ctx.speakPool = mouseEntry(trigger)?.phrases;
+    }
+    try {
+      resolveAction(actionId, ctx);
+    } finally {
+      ctx.pendingMenuPos.value = undefined;
+      ctx.speakPool = undefined;
+    }
   }
 
   function onMouseDown(e: MouseEvent) {
@@ -83,7 +96,7 @@ export function useGestures(
           window.clearTimeout(pendingClickTimer);
           pendingClickTimer = undefined;
         }
-        dispatch(mouseAction("doubleClick"), start);
+        dispatch(mouseAction("doubleClick"), start, "doubleClick");
         return;
       }
 
@@ -93,7 +106,7 @@ export function useGestures(
         pendingClickTimer = undefined;
         if (lastClickTime === now) {
           lastClickTime = 0;
-          dispatch(mouseAction("leftClick"), start);
+          dispatch(mouseAction("leftClick"), start, "leftClick");
         }
       }, DOUBLE_CLICK_MS);
     }
@@ -108,7 +121,7 @@ export function useGestures(
     longPressTimer = window.setTimeout(() => {
       dragging = true; // 标记为拖动态，阻止 mouseup 触发单击/双击
       cleanup();
-      dispatch(mouseAction("longPress"), start);
+      dispatch(mouseAction("longPress"), start, "longPress");
     }, LONG_PRESS_MS);
 
     window.addEventListener("mousemove", onMove);
@@ -117,7 +130,7 @@ export function useGestures(
 
   function onContextMenu(e: MouseEvent) {
     e.preventDefault();
-    dispatch(mouseAction("rightClick"), { x: e.clientX, y: e.clientY });
+    dispatch(mouseAction("rightClick"), { x: e.clientX, y: e.clientY }, "rightClick");
   }
 
   onMounted(() => {

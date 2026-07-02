@@ -14,6 +14,7 @@
 import { ref } from "vue";
 import { listen, emit } from "@tauri-apps/api/event";
 import { findBuiltin } from "./commands";
+import type { SpeakPhrase } from "./speakPhrases";
 
 /** 跨窗口同步事件名。 */
 export const MENU_SETTINGS_CHANGED_EVENT = "menu-settings-changed";
@@ -31,6 +32,11 @@ export interface MenuItemConfig {
   emoji: string;
   /** 展示用中文标签（菜单上显示）。 */
   label: string;
+  /**
+   * 仅 actionId 为 speak / pokeAndSpeak 时有意义：该菜单项的独立说话短语池。
+   * 缺省时说话为空（不出气泡）。
+   */
+  phrases?: SpeakPhrase[];
 }
 
 /** 猫爪菜单的 5 个固定槽位：4 趾 + 1 掌垫。 */

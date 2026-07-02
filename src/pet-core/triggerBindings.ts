@@ -9,6 +9,7 @@
  * 在设置窗与主窗之间同步。
  */
 import { ref } from "vue";
+import type { SpeakPhrase } from "./speakPhrases";
 
 /** 触发类型。 */
 export type TriggerKind = "mouse" | "key";
@@ -32,6 +33,11 @@ export interface TriggerBinding {
   actionId: string;
   /** 仅 kind=key 有效：是否系统层全局注册。mouse 不使用此字段。 */
   isGlobal?: boolean;
+  /**
+   * 仅 actionId 为 speak / pokeAndSpeak 时有意义：该触发器的独立说话短语池。
+   * 缺省时说话为空（不出气泡）。
+   */
+  phrases?: SpeakPhrase[];
 }
 
 /** localStorage 键。 */

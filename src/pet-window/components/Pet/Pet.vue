@@ -104,7 +104,7 @@ import {
 } from "../../../pet-core/displaySettings";
 import { menuSettings } from "../../../pet-core/menuSettings";
 import { useCatBrain } from "../../../pet-core/useCatBrain";
-import { resolveAction, type PetActionContext } from "../../../pet-core/commands";
+import { resolveAction, PET_ACTIONS, type PetActionContext } from "../../../pet-core/commands";
 import { useGestures } from "../../composables/useGestures";
 import { actionOfFrame, transformOfAction } from "../../../pet-core/clips";
 import {
@@ -140,6 +140,22 @@ const brain = useCatBrain({
   //（因为校准圆圈是随鼠标拖动的）。`calibrating` 在下方声明；
   // 该 getter 只会在之后的 brain tick 中被调用。
   paused: () => calibrating.value,
+  // 行为随机插播挑中内置动作（如 __speak）时执行：剥离 `__` 前缀查 PET_ACTIONS，
+  // 并把该项的独立短语池注入 ctx.speakPool，使说话内容按入口区分。
+  // petCtx 在下方声明，此回调只在 brain tick（onMounted 后）触发，彼时已就绪。
+  runBuiltinTwitch: (item) => {
+    if (!item.clip.startsWith("__")) return false;
+    const k = item.clip.slice(2);
+    const fn = PET_ACTIONS[k];
+    if (!fn) return false;
+    petCtx.speakPool = item.phrases;
+    try {
+      fn(petCtx);
+    } finally {
+      petCtx.speakPool = undefined;
+    }
+    return true;
+  },
 });
 const currentSrc = brain.currentSrc;
 
@@ -183,9 +199,18 @@ function placeMenuAt(cx?: number, cy?: number) {
   menuOpen.value = true;
 }
 
-/** 菜单选中一个动作：统一走 resolveAction（与手势 / 快捷键同路径）。 */
+/** 菜单选中一个动作：统一走 resolveAction（与手势 / 快捷键同路径）。
+ *  说话类动作先把对应菜单项的独立短语池注入 ctx.speakPool，用完清空。 */
 function onMenuSelect(actionId: string): void {
-  resolveAction(actionId, petCtx);
+  const item = menuSettings.value.find((m) => m.actionId === actionId);
+  if (item && (actionId === "speak" || actionId === "pokeAndSpeak")) {
+    petCtx.speakPool = item.phrases;
+  }
+  try {
+    resolveAction(actionId, petCtx);
+  } finally {
+    petCtx.speakPool = undefined;
+  }
 }
 function openMenuAt(e: MouseEvent) {
   placeMenuAt(e.clientX, e.clientY);
@@ -516,7 +541,15 @@ let appKeyMap: Record<string, TriggerBinding> = {};
  * 对 togglePassthrough 补一次 toast，保持与迁移前独立实现一致。
  */
 function dispatchKeyBinding(entry: TriggerBinding): void {
-  resolveAction(entry.actionId, petCtx);
+  // 说话类动作：把该触发器的独立短语池注入 ctx.speakPool，用完清空。
+  if (entry.actionId === "speak" || entry.actionId === "pokeAndSpeak") {
+    petCtx.speakPool = entry.phrases;
+  }
+  try {
+    resolveAction(entry.actionId, petCtx);
+  } finally {
+    petCtx.speakPool = undefined;
+  }
   if (entry.actionId === "togglePassthrough") {
     showToast(passthrough.value ? "已开启穿透" : "已关闭穿透");
   }

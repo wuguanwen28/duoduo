@@ -2,6 +2,7 @@
  * 资源设置编辑区的共享类型 —— 由 `ResourceSettings.vue`（解析/组装 manifest）
  * 与拆分出来的 `ActionsCard.vue`/`BehaviorsCard.vue` 共用。
  */
+import type { SpeakPhrase } from "../../pet-core/speakPhrases";
 
 /** 动作编辑行。 */
 export interface ActionRow {
@@ -22,6 +23,8 @@ export interface ActionRow {
 export interface RandomRow {
   action: string;
   weight: number;
+  /** 仅 action === "__speak" 时有意义：该说话入口的独立短语池。 */
+  phrases?: SpeakPhrase[];
 }
 
 /** 行为编辑行。 */

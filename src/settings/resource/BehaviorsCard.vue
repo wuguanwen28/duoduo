@@ -171,7 +171,7 @@
             <div class="random">
               <!-- 表头：仅第一行显示列标题 -->
               <div v-if="b.random.length > 0" class="random__header">
-                <span class="random__col-action">动作</span>
+                <span class="random__col-action">动作/内置</span>
                 <span class="random__col-weight">权重</span>
                 <span class="random__col-op"></span>
               </div>
@@ -182,12 +182,25 @@
                   filterable
                   class="random__col-action"
                 >
-                  <el-option
-                    v-for="o in actionOptions"
-                    :key="o.key"
-                    :label="o.label"
-                    :value="o.key"
-                  />
+                  <el-option-group
+                    v-if="BUILTIN_TWITCH_ACTIONS.length"
+                    label="内置"
+                  >
+                    <el-option
+                      v-for="o in BUILTIN_TWITCH_ACTIONS"
+                      :key="o.key"
+                      :label="o.label"
+                      :value="o.key"
+                    />
+                  </el-option-group>
+                  <el-option-group label="动作">
+                    <el-option
+                      v-for="o in actionOptions"
+                      :key="o.key"
+                      :label="o.label"
+                      :value="o.key"
+                    />
+                  </el-option-group>
                 </el-select>
                 <el-input-number
                   v-model="r.weight"
@@ -202,6 +215,19 @@
                   :icon="Delete"
                   @click="b.random.splice(j, 1)"
                 />
+                <el-tooltip
+                  v-if="r.action === '__speak'"
+                  content="设置说话内容"
+                  placement="top"
+                >
+                  <el-button
+                    class="random__col-op"
+                    plain
+                    type="primary"
+                    :icon="ChatLineRound"
+                    @click="openPhraseDialog(r)"
+                  />
+                </el-tooltip>
               </div>
               <el-button
                 :icon="Plus"
@@ -214,13 +240,25 @@
         </el-form>
       </el-collapse-item>
     </el-collapse>
+
+    <!-- 说话内容编辑弹窗（编辑当前 random 项的独立短语池） -->
+    <PhraseConfigDialog
+      v-model:visible="phraseDialogVisible"
+      v-model:phrases="phraseDialogTarget"
+    />
   </el-card>
 </template>
 
 <script setup lang="ts">
-import { ref, watch } from "vue";
-import { Plus, Delete } from "@element-plus/icons-vue";
-import type { ActionOption, BehaviorRow } from "./manifestTypes";
+import { ref, watch, computed } from "vue";
+import { Plus, Delete, ChatLineRound } from "@element-plus/icons-vue";
+import { BUILTIN_TWITCH_ACTIONS } from "../../pet-core/commands";
+import {
+  defaultSpeakPhrases,
+  type SpeakPhrase,
+} from "../../pet-core/speakPhrases";
+import PhraseConfigDialog from "../display/PhraseConfigDialog.vue";
+import type { ActionOption, BehaviorRow, RandomRow } from "./manifestTypes";
 
 const props = defineProps<{
   /** 行为列表（就地增删改；父组件持有同一引用）。 */
@@ -243,6 +281,31 @@ const TIME_UNITS = [
 
 /** 展开的折叠项（默认全展开）。 */
 const openBehaviors = ref<number[]>([]);
+
+/** 说话内容弹窗：当前编辑的 random 行（RandomRow 引用）。 */
+const phraseDialogVisible = ref(false);
+const phraseRow = ref<RandomRow | null>(null);
+
+/** 弹窗 phrases 双向绑定代理：读写指向当前 random 行的 phrases。
+ *  首次打开若该行无 phrases，用默认模板拷贝初始化，避免空池说话。 */
+const phraseDialogTarget = computed<SpeakPhrase[]>({
+  get: () => {
+    const row = phraseRow.value;
+    if (row && !Array.isArray(row.phrases)) {
+      row.phrases = defaultSpeakPhrases.value.map((p) => ({ ...p }));
+    }
+    return row?.phrases ?? [];
+  },
+  set: (v) => {
+    if (phraseRow.value) phraseRow.value.phrases = v;
+  },
+});
+
+/** 打开说话内容弹窗，记录当前编辑的 random 行。 */
+function openPhraseDialog(r: RandomRow) {
+  phraseRow.value = r;
+  phraseDialogVisible.value = true;
+}
 
 // 列表被整体替换（加载 manifest）时，重置为全部展开；就地增删不在此重置。
 watch(
@@ -307,7 +370,7 @@ function removeBehavior(i: number) {
 }
 </script>
 
-<style>
+<style scoped lang="scss">
 .block__title {
   font-weight: 600;
 }
@@ -397,6 +460,9 @@ function removeBehavior(i: number) {
 }
 .random__col-op {
   width: 32px;
+  &.el-button {
+    margin-left: 0px;
+  }
 }
 .random__row {
   display: flex;

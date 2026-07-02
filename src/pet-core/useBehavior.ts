@@ -16,6 +16,15 @@ import { useSpriteAnimation } from "./useSpriteAnimation";
 import { getClip, clipFrames } from "./clips";
 import type { Behavior, TwitchItem } from "./behaviors";
 
+export interface BehaviorOptions {
+  /**
+   * 随机插播挑中某项时先回调，返回 true 表示该项是内置动作（如说话）
+   * 且已处理，播放器无需播放帧、直接重排下一次插播；返回 false / 未提供则
+   * 按资源动作走 playOnce。传入整个 TwitchItem，便于内置动作读取其 phrases 等附加字段。
+   */
+  onTwitch?: (item: TwitchItem) => boolean;
+}
+
 export interface BehaviorController {
   /** 当前要显示的帧 URL。绑定到 <CatSprite :src>。 */
   currentSrc: Ref<string>;
@@ -36,7 +45,7 @@ export interface BehaviorController {
   playClipOnce(name: string, onDone?: () => void): void;
 }
 
-export function useBehavior(): BehaviorController {
+export function useBehavior(opts: BehaviorOptions = {}): BehaviorController {
   const anim = useSpriteAnimation();
   const currentSrc = anim.currentSrc;
 
@@ -102,6 +111,11 @@ export function useBehavior(): BehaviorController {
       if (exiting || !inLoop) return;
       const pick = pickWeighted(loop.random);
       if (!pick) {
+        scheduleNextTwitch();
+        return;
+      }
+      // 内置动作（如 __speak）：交给上层执行，不播帧；执行完直接重排下一次插播。
+      if (opts.onTwitch?.(pick)) {
         scheduleNextTwitch();
         return;
       }

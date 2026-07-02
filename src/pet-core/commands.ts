@@ -7,7 +7,7 @@ import type { Ref } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import type { CatBrain } from "./useCatBrain";
-import { pickSpeakPhrase } from "./speakPhrases";
+import { pickFromPool, type SpeakPhrase } from "./speakPhrases";
 import { getBehaviorNames } from "./resources";
 
 /** 执行动作所需的上下文；由 Pet.vue 在实例化时注入。 */
@@ -24,6 +24,12 @@ export interface PetActionContext {
   passthrough: Ref<boolean>;
   /** 让猫说一句话（气泡提示）。 */
   say: (msg: string, ms?: number) => void;
+  /**
+   * 本次 speak / pokeAndSpeak 动作使用的独立短语池。
+   * 由触发源（菜单 / 触发器 / 行为 random）在触发前填入，用完清空。
+   * 缺省 / 空池时不出气泡。
+   */
+  speakPool?: SpeakPhrase[];
   /**
    * 把菜单放到指定窗口坐标；不传时居中。
    * 由手势引擎在触发前写入 pendingMenuPos，供 openMenu 等动作使用。
@@ -44,16 +50,16 @@ export const PET_ACTIONS: Record<string, PetAction> = {
   /** 戳猫互动：播放一个空闲小动作。 */
   poke: (ctx) => ctx.brain.poke(),
 
-  /** 随机说话（可配置短语与权重）。 */
+  /** 随机说话（从触发源传入的独立短语池里挑）。 */
   speak: (ctx) => {
-    const msg = pickSpeakPhrase();
+    const msg = pickFromPool(ctx.speakPool ?? []);
     if (msg) ctx.say(msg);
   },
 
-  /** 戳猫互动 + 随机说话（可配置短语与权重）。 */
+  /** 戳猫互动 + 随机说话（从触发源传入的独立短语池里挑）。 */
   pokeAndSpeak: (ctx) => {
     ctx.brain.poke();
-    const msg = pickSpeakPhrase();
+    const msg = pickFromPool(ctx.speakPool ?? []);
     if (msg) ctx.say(msg);
   },
 
@@ -131,6 +137,28 @@ export const BUILTIN_ACTIONS: BuiltinAction[] = [
 export function findBuiltin(key: string): BuiltinAction | undefined {
   return BUILTIN_ACTIONS.find((b) => b.key === key);
 }
+
+/**
+ * 行为 random 插播可选的内置动作条目。
+ *
+ * 与 BUILTIN_ACTIONS 区分：那个面向「菜单 / 触发器」，含 minimize / quit /
+ * openSettings 等不适合自治插播的动作；本表只列适合在 idle 等自治行为里
+ * 随机插播的内置动作（当前仅「说话」）。
+ *
+ * key 带 `__` 前缀，写入 manifest 的 random[].action 字段；resources.ts 解析时
+ * 凭前缀保留（不过滤），播放层 useBehavior 凭前缀转交 Pet.vue 执行对应 PET_ACTIONS。
+ * `__` 是保留前缀，资源动作名不应以它开头（camelCase 标识符习惯下不会冲突）。
+ */
+export interface BuiltinTwitchAction {
+  /** 写入 manifest 的标识，形如 `__speak`。 */
+  key: string;
+  /** 设置页下拉显示名（含 emoji）。 */
+  label: string;
+}
+
+export const BUILTIN_TWITCH_ACTIONS: BuiltinTwitchAction[] = [
+  { key: "__speak", label: "💬 说话" },
+];
 
 /** 解析后的 actionId 分类。 */
 export interface ParsedActionId {

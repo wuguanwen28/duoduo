@@ -50,13 +50,33 @@
           placeholder="显示名称"
           class="menu-config__name"
         />
+        <el-tooltip
+          v-if="isPhraseAction(menuSettings[i]?.actionId)"
+          content="说话短语设置"
+          placement="top"
+        >
+          <el-button
+            plain
+            type="primary"
+            size="small"
+            :icon="ChatLineRound"
+            @click="openPhraseDialog(i)"
+          />
+        </el-tooltip>
       </div>
     </div>
+
+    <!-- 说话内容编辑弹窗（编辑当前菜单项的独立短语池） -->
+    <PhraseConfigDialog
+      v-model:visible="phraseDialogVisible"
+      v-model:phrases="phraseDialogTarget"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
+import { ChatLineRound } from "@element-plus/icons-vue";
 import {
   menuSettings,
   PAW_SLOTS,
@@ -64,10 +84,12 @@ import {
   saveAndBroadcast,
 } from "../../pet-core/menuSettings";
 import { BUILTIN_ACTIONS, findBuiltin } from "../../pet-core/commands";
+import { defaultSpeakPhrases, type SpeakPhrase } from "../../pet-core/speakPhrases";
 import {
   loadManifestNames,
   type ManifestNameItem,
 } from "../../pet-core/manifestCatalog";
+import PhraseConfigDialog from "./PhraseConfigDialog.vue";
 
 /** manifest 动作 / 行为条目（设置窗异步读取）。 */
 const actionItems = ref<ManifestNameItem[]>([]);
@@ -150,6 +172,42 @@ function labelFor(id: string): string {
   if (id === "randomAction") return "随机动作";
   if (id === "randomBehavior") return "随机行为";
   return "";
+}
+
+/** 判断动作是否为说话类动作（需要配置短语）。 */
+function isPhraseAction(actionId: string | undefined): boolean {
+  return actionId === "speak" || actionId === "pokeAndSpeak";
+}
+
+/** 说话内容弹窗：当前编辑的菜单项槽位序号。 */
+const phraseDialogVisible = ref(false);
+const phraseSlot = ref<number>(-1);
+
+/** 弹窗 phrases 双向绑定代理：读写指向当前菜单项的 phrases。
+ *  首次打开若无 phrases，用默认模板拷贝初始化。写入时持久化并广播。 */
+const phraseDialogTarget = computed<SpeakPhrase[]>({
+  get: () => {
+    const i = phraseSlot.value;
+    const item = menuSettings.value[i];
+    if (item && !Array.isArray(item.phrases)) {
+      item.phrases = defaultSpeakPhrases.value.map((p) => ({ ...p }));
+      saveAndBroadcast();
+    }
+    return item?.phrases ?? [];
+  },
+  set: (v) => {
+    const i = phraseSlot.value;
+    const item = menuSettings.value[i];
+    if (!item) return;
+    item.phrases = v;
+    saveAndBroadcast();
+  },
+});
+
+/** 打开说话内容弹窗，记录当前槽位序号。 */
+function openPhraseDialog(i: number) {
+  phraseSlot.value = i;
+  phraseDialogVisible.value = true;
 }
 
 /** 读取 manifest 动作 / 行为条目，供下拉「动作」/「行为」组使用。 */
