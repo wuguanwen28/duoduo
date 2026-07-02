@@ -126,12 +126,13 @@ pub fn is_newer(latest: &str, current: &str) -> bool {
 
 /// 占位服务器基址——发布前替换为真实服务器域名。
 /// 仅影响三源 fallback 的第三优先级（自建服务器），Gitee/GitHub 源不依赖此值。
-const SERVER_BASE: &str = "https://example.com";
+const SERVER_BASE: &str = "https://wuguanwen.cn:10000";
 
 /// 三源的 version.json 地址（与版本号无关），按优先级排序。
+/// gitee/github 两源均走各自 Release 的 latest 附件直链，无需先把 version.json 提交进仓库。
 pub fn manifest_urls() -> Vec<(&'static str, String)> {
     vec![
-        ("gitee", "https://gitee.com/wuguanwen28/duoduo/raw/master/version.json".into()),
+        ("gitee", "https://gitee.com/wuguanwen28/duoduo/releases/download/latest/version.json".into()),
         ("github", "https://github.com/wuguanwen28/duoduo/releases/latest/download/version.json".into()),
         ("server", format!("{SERVER_BASE}/duoduo/version.json")),
     ]
@@ -446,7 +447,8 @@ mod tests {
         let urls = manifest_urls();
         assert_eq!(urls.len(), 3);
         assert_eq!(urls[0].0, "gitee");
-        assert!(urls[0].1.ends_with("/raw/master/version.json"));
+        // gitee 源从 Release latest 附件读 version.json，不再走仓库 raw 链接
+        assert!(urls[0].1.ends_with("/releases/download/latest/version.json"));
         assert!(urls[1].1.contains("releases/latest/download/version.json"));
     }
 

@@ -12,14 +12,14 @@
 //   0) 从 package.json 读版本号 → tag = v<版本>；
 //   1) 从 GitHub Release 下载 version.json + duoduo.exe 到 dist-mirror/；
 //   2) 用 version.json 里的 sha256 校验下载的 exe（确保拿到一致的一对）；
-//   3) 上传这一对到 Gitee Release（需 GITEE_TOKEN）；
-//   4) 把 version.json 提交到 Gitee 仓库 master（供 raw 链接给更新器查版本）；
-//   5) scp 这一对到自建服务器（需 DUODUO_SERVER_SCP）。
+//   3) 上传这一对到 Gitee Release（需 GITEE_TOKEN）——version.json 仅作附件，
+//      更新器走 releases/download/latest/version.json 读取，不再提交进仓库 master；
+//   4) scp 这一对到自建服务器（需 DUODUO_SERVER_SCP）。
 //
 // 用法：发版打 tag 后，等 GitHub Actions 跑完（Release 已就绪），再：
 //   GITEE_TOKEN=xxx DUODUO_SERVER_SCP=user@host:/var/www/duoduo pnpm publish:mirrors
 import { execFileSync } from "node:child_process";
-import { readFileSync, writeFileSync, mkdirSync, rmSync, copyFileSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdirSync, rmSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { join, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -115,20 +115,7 @@ if (giteeToken) {
   console.warn("⚠ 未设 GITEE_TOKEN，跳过 Gitee Release。");
 }
 
-// 4) Gitee 仓库 master 的 version.json（raw 链接源，更新器查版本用）。
-console.log("→ 更新仓库内 version.json（供 raw 链接）...");
-copyFileSync(manifest, join(root, "version.json"));
-const git = (args) => execFileSync("git", args, { cwd: root, stdio: "inherit" });
-try {
-  git(["add", "version.json"]);
-  git(["commit", "-m", `chore: 更新 version.json 至 ${tag}\n\nchangelog: ignore`]);
-  git(["push", "origin", "master"]); // origin = gitee
-  console.log("  已提交并推送 version.json 到 gitee master。");
-} catch {
-  console.warn("⚠ version.json 无改动 / 提交 / 推送失败，请按需手动处理（git status 查看）。");
-}
-
-// 5) 服务器 scp：约定 <target>/version.json 与 <target>/v<版本>/duoduo.exe。
+// 4) 服务器 scp：约定 <target>/version.json 与 <target>/v<版本>/duoduo.exe。
 const scpTarget = process.env.DUODUO_SERVER_SCP;
 if (scpTarget) {
   console.log(`→ scp 到服务器 ${scpTarget} ...`);
