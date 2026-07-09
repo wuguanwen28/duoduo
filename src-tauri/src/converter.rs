@@ -1,57 +1,46 @@
 //! 视频转 WebP 帧 —— 后端只负责落盘。解码 / 抠图 / WebP 编码全部在前端
 //! （WebView2 的 `<video>` 解码 + Canvas 处理 + `toBlob('image/webp')`）完成，
-//! 这里提供两个命令：准备输出目录、把单帧字节写到资源目录子文件夹下。
+//! 这里提供两个命令：准备输出目录、把单帧字节写到指定目录下。
+//!
+//! 输出目录由前端用系统目录选择器确定（默认 `<视频所在目录>/<视频名>_帧图片`），
+//! 后端不再限定在资源根下；只校验路径合法、创建目录、可选清掉旧 `.webp`。
 
-use std::path::{Component, Path, PathBuf};
+use std::path::{Path, PathBuf};
 
-use crate::resources::resource_root;
-
-/// 校验并规整子目录：必须是相对路径，且不含 `..` 等逃逸成分。
-fn sanitize_subdir(subdir: &str) -> Result<PathBuf, String> {
-    let p = Path::new(subdir.trim());
+/// 准备输出目录：创建（不存在则建），可选清空其中已有的 .webp，
+/// 返回该目录的绝对路径（供后续 `pet_converter_write` 写入）。
+///
+/// `dir` 为用户自选的绝对路径；仅拒绝空串与含 `..` 逃逸成分的路径，不再强制相对资源根。
+#[tauri::command]
+pub fn pet_converter_begin(dir: String, clear: bool) -> Result<String, String> {
+    let p = PathBuf::from(dir.trim());
     if p.as_os_str().is_empty() {
-        return Err("子目录名不能为空".into());
+        return Err("输出目录不能为空".into());
     }
-    if p.is_absolute() {
-        return Err("子目录必须是相对资源根的路径".into());
-    }
+    // 拒绝 `..` 逃逸成分，避免用户粘贴恶意相对路径越权；绝对路径正常放行。
     for comp in p.components() {
-        match comp {
-            Component::Normal(_) => {}
-            _ => return Err("子目录不能包含 .. 等特殊路径成分".into()),
+        if !matches!(comp, std::path::Component::Normal(_) | std::path::Component::RootDir | std::path::Component::Prefix(_)) {
+            return Err("输出目录不能包含 .. 等特殊路径成分".into());
         }
     }
-    Ok(p.to_path_buf())
-}
-
-/// 准备输出目录：在当前资源根下创建 `subdir`，可选清空其中已有的 .webp，
-/// 返回该目录的绝对路径（供后续 `pet_converter_write` 写入）。
-#[tauri::command]
-pub fn pet_converter_begin(
-    app: tauri::AppHandle,
-    subdir: String,
-    clear: bool,
-) -> Result<String, String> {
-    let rel = sanitize_subdir(&subdir)?;
-    let dir = resource_root(&app).join(&rel);
-    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    std::fs::create_dir_all(&p).map_err(|e| e.to_string())?;
     if clear {
         // 清掉旧的 .webp，避免新旧帧数不同导致序列错乱。
-        if let Ok(entries) = std::fs::read_dir(&dir) {
+        if let Ok(entries) = std::fs::read_dir(&p) {
             for e in entries.flatten() {
-                let p = e.path();
-                let is_webp = p
+                let path = e.path();
+                let is_webp = path
                     .extension()
                     .and_then(|x| x.to_str())
                     .map(|x| x.eq_ignore_ascii_case("webp"))
                     .unwrap_or(false);
                 if is_webp {
-                    let _ = std::fs::remove_file(p);
+                    let _ = std::fs::remove_file(path);
                 }
             }
         }
     }
-    Ok(dir.display().to_string())
+    Ok(p.display().to_string())
 }
 
 /// 把单帧 WebP 字节写入 `dir`（须为 `pet_converter_begin` 返回的目录）下的 `name`。

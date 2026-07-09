@@ -7,8 +7,18 @@ import type { Ref } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import type { CatBrain } from "./useCatBrain";
-import { pickFromPool, type SpeakPhrase } from "./speakPhrases";
+import { pickFromPool, speakPhrases, type SpeakPhrase } from "./speakPhrases";
 import { getBehaviorNames } from "./resources";
+// BUILTIN_ACTIONS/findBuiltin/BUILTIN_TWITCH_ACTIONS/MOUSE_TRIGGER_LABELS 等纯数据
+// 已抽到零依赖的 actionCatalog；此处从其 re-export，兼容旧引用路径（外部仍从 commands 拿）。
+export {
+  BUILTIN_ACTIONS,
+  type BuiltinAction,
+  findBuiltin,
+  BUILTIN_TWITCH_ACTIONS,
+  type BuiltinTwitchAction,
+  MOUSE_TRIGGER_LABELS,
+} from "./actionCatalog";
 
 /** 执行动作所需的上下文；由 Pet.vue 在实例化时注入。 */
 export interface PetActionContext {
@@ -27,7 +37,7 @@ export interface PetActionContext {
   /**
    * 本次 speak / pokeAndSpeak 动作使用的独立短语池。
    * 由触发源（菜单 / 触发器 / 行为 random）在触发前填入，用完清空。
-   * 缺省 / 空池时不出气泡。
+   * 缺省 / 空池时回退到全局「说话内容」（speakPhrases）；全局也为空才不出气泡。
    */
   speakPool?: SpeakPhrase[];
   /**
@@ -37,10 +47,22 @@ export interface PetActionContext {
   placeMenuAt: (cx?: number, cy?: number) => void;
   /** 最近一次触发手势的指针位置（由手势引擎维护）。 */
   pendingMenuPos: Ref<{ x: number; y: number } | undefined>;
+  /** 当前窗口的猫 id；打开设置页时带入，使设置页默认编辑/激活这只猫。 */
+  catId: string;
 }
 
 /** 动作函数签名。 */
 export type PetAction = (ctx: PetActionContext) => void;
+
+/**
+ * 说话取词（含全局回退）：优先用触发源传入的独立短语池，池缺省 / 为空 / 全 0 权重
+ * 时回退到全局「说话内容」（speakPhrases）。两者都取不到才返回空串（不出气泡）。
+ *
+ * 供 speak / pokeAndSpeak 共用，保证鼠标手势 / 快捷键 / 菜单等所有说话入口回退行为一致。
+ */
+function pickSpeakMessage(pool?: SpeakPhrase[]): string {
+  return pickFromPool(pool ?? []) || pickFromPool(speakPhrases.value);
+}
 
 /** 所有可绑定动作：key 同时作为手势配置的取值和设置页下拉选项的 value。 */
 export const PET_ACTIONS: Record<string, PetAction> = {
@@ -50,25 +72,27 @@ export const PET_ACTIONS: Record<string, PetAction> = {
   /** 戳猫互动：播放一个空闲小动作。 */
   poke: (ctx) => ctx.brain.poke(),
 
-  /** 随机说话（从触发源传入的独立短语池里挑）。 */
+  /** 随机说话（优先触发源的独立短语池，未配则回退全局说话内容）。 */
   speak: (ctx) => {
-    const msg = pickFromPool(ctx.speakPool ?? []);
+    const msg = pickSpeakMessage(ctx.speakPool);
     if (msg) ctx.say(msg);
   },
 
-  /** 戳猫互动 + 随机说话（从触发源传入的独立短语池里挑）。 */
+  /** 戳猫互动 + 随机说话（优先触发源的独立短语池，未配则回退全局说话内容）。 */
   pokeAndSpeak: (ctx) => {
     ctx.brain.poke();
-    const msg = pickFromPool(ctx.speakPool ?? []);
+    const msg = pickSpeakMessage(ctx.speakPool);
     if (msg) ctx.say(msg);
   },
 
-  /** 最小化窗口（原双击行为）。 */
+  /**
+   * 「老板来了」：一键切换**所有**小猫窗的显隐（后端 toggle_pet 遍历 cat-* 窗，
+   * 有任一可见就全部藏起、否则全部恢复）。全局快捷键无论由哪只猫窗注册触发，
+   * 都影响全体，故不再用 getCurrentWindow() 只管自己那只。
+   */
   minimize: (ctx) => {
     ctx.menuOpen.value = false;
-    getCurrentWindow()
-      .minimize()
-      .catch(() => {});
+    invoke("pet_toggle_visibility").catch(() => {});
   },
 
   /** 打开右键菜单。 */
@@ -87,9 +111,10 @@ export const PET_ACTIONS: Record<string, PetAction> = {
     ctx.passthrough.value = !ctx.passthrough.value;
   },
 
-  /** 打开设置窗口。 */
-  openSettings: () => {
-    invoke("pet_open_settings").catch(() => {});
+  /** 打开设置窗口；带当前猫 id 使设置页默认编辑/激活这只猫。
+   *  快捷键路径在 Pet.vue dispatchKeyBinding 内特判、不传 catId，以保持「快捷键打开不激活」。 */
+  openSettings: (ctx) => {
+    invoke("pet_open_settings", { catId: ctx.catId }).catch(() => {});
   },
 
   /** 头部校准：进入校准态（菜单 / 快捷键统一入口）。 */
@@ -97,68 +122,19 @@ export const PET_ACTIONS: Record<string, PetAction> = {
     ctx.calibrating.value = true;
   },
 
-  /** 退出应用。 */
+  /** 「下班」：关闭当前这只猫的窗口（应用仍在托盘，可从设置页「上班」恢复）。 */
+  offWork: (ctx) => {
+    ctx.menuOpen.value = false;
+    getCurrentWindow()
+      .close()
+      .catch(() => {});
+  },
+
+  /** 退出应用（整个 app 关闭）。 */
   quit: () => {
     invoke("pet_quit").catch((e) => console.error("pet_quit failed", e));
   },
 };
-
-/** 内置动作目录条目：菜单与触发器两处下拉的「内置」组共用。 */
-export interface BuiltinAction {
-  /** PET_ACTIONS 键，同时是 actionId 的内置形式。 */
-  key: string;
-  /** 菜单上显示的 emoji。 */
-  emoji: string;
-  /** 菜单上显示的简短名。 */
-  menuLabel: string;
-  /** 设置页下拉显示的标准功能名。 */
-  standardLabel: string;
-  /** 是否为开关型（开 / 关有高亮，如偷看 / 穿透）。 */
-  isToggle?: boolean;
-}
-
-/**
- * 内置动作目录：菜单与触发器两处下拉「内置」组的数据源。
- * 顺序即下拉顺序。
- */
-export const BUILTIN_ACTIONS: BuiltinAction[] = [
-  { key: "speak", emoji: "💬", menuLabel: "说话", standardLabel: "说话" },
-  { key: "pokeAndSpeak", emoji: "🗨️", menuLabel: "戳并说话", standardLabel: "戳一下并说话" },
-  { key: "toggleFollow", emoji: "👀", menuLabel: "偷看", standardLabel: "切换跟随光标", isToggle: true },
-  { key: "togglePassthrough", emoji: "🖱️", menuLabel: "穿透点击", standardLabel: "切换点击穿透", isToggle: true },
-  { key: "calibrate", emoji: "🎯", menuLabel: "校准猫头", standardLabel: "头部校准" },
-  { key: "minimize", emoji: "🏃", menuLabel: "老板来了", standardLabel: "最小化窗口" },
-  { key: "quit", emoji: "👋", menuLabel: "下班", standardLabel: "退出应用" },
-  { key: "openSettings", emoji: "⚙️", menuLabel: "设置", standardLabel: "打开设置" },
-  { key: "openMenu", emoji: "🧭", menuLabel: "打开菜单", standardLabel: "打开菜单" },
-];
-
-/** 按 key 查内置目录条目。 */
-export function findBuiltin(key: string): BuiltinAction | undefined {
-  return BUILTIN_ACTIONS.find((b) => b.key === key);
-}
-
-/**
- * 行为 random 插播可选的内置动作条目。
- *
- * 与 BUILTIN_ACTIONS 区分：那个面向「菜单 / 触发器」，含 minimize / quit /
- * openSettings 等不适合自治插播的动作；本表只列适合在 idle 等自治行为里
- * 随机插播的内置动作（当前仅「说话」）。
- *
- * key 带 `__` 前缀，写入 manifest 的 random[].action 字段；resources.ts 解析时
- * 凭前缀保留（不过滤），播放层 useBehavior 凭前缀转交 Pet.vue 执行对应 PET_ACTIONS。
- * `__` 是保留前缀，资源动作名不应以它开头（camelCase 标识符习惯下不会冲突）。
- */
-export interface BuiltinTwitchAction {
-  /** 写入 manifest 的标识，形如 `__speak`。 */
-  key: string;
-  /** 设置页下拉显示名（含 emoji）。 */
-  label: string;
-}
-
-export const BUILTIN_TWITCH_ACTIONS: BuiltinTwitchAction[] = [
-  { key: "__speak", label: "💬 说话" },
-];
 
 /** 解析后的 actionId 分类。 */
 export interface ParsedActionId {
@@ -221,11 +197,3 @@ export function resolveAction(id: string, ctx: PetActionContext): void {
       return;
   }
 }
-
-/** 鼠标手势触发方式的中文标签，供设置页只读显示。 */
-export const MOUSE_TRIGGER_LABELS: Record<string, string> = {
-  leftClick: "左键单击",
-  doubleClick: "左键双击",
-  rightClick: "右键",
-  longPress: "长按",
-};

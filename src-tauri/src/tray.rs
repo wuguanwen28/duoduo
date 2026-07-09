@@ -7,7 +7,7 @@ use tauri::{
 };
 
 use crate::state::PetState;
-use crate::window::{open_settings, toggle_pet};
+use crate::window::{open_settings, toggle_settings};
 
 /// 构建系统托盘并把托盘 id 存入 `PetState`（供后续动态换图标）。
 /// 在 `setup` 阶段调用一次。
@@ -27,9 +27,9 @@ pub fn build_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
         // 左键点击托盘图标 → 最小化/恢复来回切换；右键显示菜单。
         .show_menu_on_left_click(false)
         .on_menu_event(|app, event| match event.id.as_ref() {
-            "settings" => open_settings(app, None),
+            "settings" => open_settings(app, None, None),
             "feedback" => {
-                open_settings(app, Some("update".into()));
+                open_settings(app, Some("update".into()), None);
                 // 设置窗已存在时 open_settings 会发 navigate-to；再额外提示打开反馈弹窗。
                 let _ = app.emit("open-feedback", ());
             }
@@ -43,7 +43,7 @@ pub fn build_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
                 ..
             } = event
             {
-                toggle_pet(tray.app_handle());
+                toggle_settings(tray.app_handle());
             }
         })
         .build(app)?;

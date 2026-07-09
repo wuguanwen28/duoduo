@@ -1,18 +1,19 @@
 <template>
   <div class="v2w">
-    <header class="v2w__top">
-      <span>
-        <span class="v2w__title">🎞️ 视频转帧</span>
+    <SettingsHeader title="视频转帧">
+      <template #left>
         <span class="v2w__hint">绿幕/纯色背景视频 → 背景透明的连续图片</span>
-      </span>
-      <el-button
-        plain
-        type="primary"
-        :icon="QuestionFilled"
-        @click="helpVisible = true"
-        >使用说明</el-button
-      >
-    </header>
+      </template>
+      <template #actions>
+        <el-button
+          plain
+          type="primary"
+          :icon="QuestionFilled"
+          @click="helpVisible = true"
+          >使用说明</el-button
+        >
+      </template>
+    </SettingsHeader>
 
     <main class="v2w__body">
       <el-card shadow="never" class="block">
@@ -377,9 +378,17 @@
               </el-form-item>
             </el-col>
           </el-row>
-          <el-form-item label="输出子目录">
-            <el-input v-model="subdir" placeholder="相对资源根，如 idle/wink">
-              <template #prepend>{{ root || "资源根" }}/</template>
+          <el-form-item label="输出目录">
+            <el-input
+              v-model="outputDir"
+              placeholder="点击右侧选择，或留空随视频自动默认"
+              readonly
+            >
+              <template #append>
+                <el-button :icon="FolderOpened" @click="pickOutputDir"
+                  >选择</el-button
+                >
+              </template>
             </el-input>
           </el-form-item>
         </el-form>
@@ -389,7 +398,7 @@
             type="primary"
             :icon="VideoPlay"
             :loading="running"
-            :disabled="running || !subdir"
+            :disabled="running || !outputDir"
             @click="start"
           >
             {{ running ? "转换中…" : "开始转换" }}
@@ -430,7 +439,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, reactive, ref } from "vue";
+import { computed, nextTick, onUnmounted, reactive, ref } from "vue";
 import { invoke, convertFileSrc } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import {
@@ -442,6 +451,7 @@ import {
   MagicStick,
   QuestionFilled,
   Refresh,
+  FolderOpened,
 } from "@element-plus/icons-vue";
 import {
   processFrame,
@@ -452,6 +462,7 @@ import {
 } from "./chromaKey";
 import { getCachedClip, setCachedClip } from "./frameCache";
 import ContentHelpDialog from "../common/ContentHelpDialog.vue";
+import SettingsHeader from "../common/SettingsHeader.vue";
 
 /** requestVideoFrameCallback 元数据。 */
 interface VideoFrameMeta {
@@ -490,12 +501,12 @@ const origCanvas = ref<HTMLCanvasElement | null>(null);
 const resultCanvas = ref<HTMLCanvasElement | null>(null);
 const stageEl = ref<HTMLElement | null>(null);
 
-const root = ref("");
+/** 输出目录（绝对路径）。用户自选，默认 <视频所在目录>/<视频名>_帧图片。 */
+const outputDir = ref("");
 const videoPath = ref("");
 const videoUrl = computed(() =>
   videoPath.value ? convertFileSrc(videoPath.value) : "",
 );
-const subdir = ref("");
 const quality = ref(90);
 const erode = ref(2);
 /** 剔除坏帧：导出时跳过抠图边缘异常粗糙的帧（多为 H.264 关键帧的块噪声帧）。 */
@@ -547,13 +558,6 @@ let cancelled = false;
 let lastOriginal: Uint8ClampedArray | null = null;
 const curTime = computed(() => times[frameIndex.value] ?? 0);
 
-onMounted(async () => {
-  try {
-    root.value = await invoke<string>("pet_get_resource_root");
-  } catch {
-    /* 忽略 */
-  }
-});
 onUnmounted(() => {
   if (debounceTimer !== undefined) window.clearTimeout(debounceTimer);
   freeFrames();
@@ -613,10 +617,36 @@ async function pickVideo() {
     });
     if (typeof picked !== "string") return;
     videoPath.value = picked;
+    // 默认输出目录：<视频所在目录>/<视频名去扩展>_帧图片。用户已手选过则不覆盖。
+    if (!outputDir.value) outputDir.value = defaultOutputDir(picked);
     await loadAndDecode();
   } catch (e) {
     decoding.value = false;
     ElMessage.error(`处理视频失败：${e}`);
+  }
+}
+
+/**
+ * 由视频路径推导默认输出目录：与视频同级的 `<视频名去扩展>_帧图片`。
+ * 取不到父目录时回退空串（让用户手动选）。
+ */
+function defaultOutputDir(videoFile: string): string {
+  const slash = Math.max(videoFile.lastIndexOf("/"), videoFile.lastIndexOf("\\"));
+  const dir = slash >= 0 ? videoFile.slice(0, slash) : "";
+  const file = slash >= 0 ? videoFile.slice(slash + 1) : videoFile;
+  const dot = file.lastIndexOf(".");
+  const name = dot > 0 ? file.slice(0, dot) : file;
+  if (!dir) return "";
+  return `${dir}/${name}_帧图片`;
+}
+
+/** 弹系统目录选择器选输出目录；取消则保持原值不变。 */
+async function pickOutputDir() {
+  try {
+    const p = await open({ directory: true, multiple: false });
+    if (typeof p === "string") outputDir.value = p;
+  } catch (e) {
+    ElMessage.error(`选择目录失败：${e}`);
   }
 }
 
@@ -1103,7 +1133,7 @@ function encodeWebp(canvas: HTMLCanvasElement, q: number): Promise<Uint8Array> {
 /** 主流程：遍历缓存帧 → 抠图 → 编码 → 落盘。 */
 async function start() {
   const rc = resultCanvas.value;
-  if (!rc || !subdir.value || frames.length === 0) return;
+  if (!rc || !outputDir.value || frames.length === 0) return;
 
   running.value = true;
   done.value = false;
@@ -1114,7 +1144,7 @@ async function start() {
   let dir = "";
   try {
     dir = await invoke<string>("pet_converter_begin", {
-      subdir: subdir.value,
+      dir: outputDir.value,
       clear: true,
     });
   } catch (e) {
@@ -1190,30 +1220,9 @@ async function start() {
   min-height: 100vh;
   min-width: 700px;
 
-  &__top {
-    position: sticky;
-    top: 0;
-    z-index: 10;
-    display: flex;
-    justify-content: space-between;
-    align-items: baseline;
-    gap: 10px;
-    padding: 12px 16px;
-    height: 54px;
-    box-sizing: border-box;
-    background: #fff;
-    border-bottom: 1px solid var(--el-border-color-light);
-
-    .v2w__title {
-      font-size: 16px;
-      font-weight: 600;
-      margin-right: 8px;
-    }
-
-    .v2w__hint {
-      font-size: 12px;
-      color: var(--el-text-color-secondary);
-    }
+  &__hint {
+    font-size: 12px;
+    color: var(--el-text-color-secondary);
   }
 
   &__body {

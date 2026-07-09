@@ -1,11 +1,12 @@
 <template>
   <div class="display-settings">
     <!-- 顶部工具条 -->
-    <header class="topbar">
-      <div class="topbar__left">
-        <span class="topbar__title">显示与交互</span>
-      </div>
-    </header>
+    <SettingsHeader title="显示与交互">
+      <template #left>
+        <!-- 选猫：切换当前正在编辑的小猫（大小/透明度/触发器等按猫独立） -->
+        <CatPicker />
+      </template>
+    </SettingsHeader>
 
     <main class="display-settings__body">
       <el-card shadow="never" class="block">
@@ -59,6 +60,20 @@
             />
             <span class="display-settings__switch-desc">
               开启后窗口整体穿透，按住 Ctrl 可临时恢复交互
+            </span>
+          </el-form-item>
+
+          <el-form-item label="跟随光标">
+            <el-switch :model-value="follow" @change="onFollowChange" />
+            <span class="display-settings__switch-desc">
+              开启后猫咪头部会跟随鼠标转动（关闭则不偷看）
+            </span>
+          </el-form-item>
+
+          <el-form-item label="猫头校准">
+            <el-button :icon="Aim" @click="onCalibrate">校准猫头</el-button>
+            <span class="display-settings__switch-desc">
+              点击后到猫咪窗口拖动圆圈对准猫头，确定注视原点
             </span>
           </el-form-item>
         </el-form>
@@ -259,7 +274,6 @@ import {
 import {
   loadTriggerBindings,
   saveTriggerBindings,
-  DEFAULT_TRIGGER_BINDINGS,
   TRIGGER_BINDINGS_CHANGED_EVENT,
   TRIGGER_BINDINGS_RESULT_EVENT,
   serializeKeyEvent,
@@ -268,7 +282,41 @@ import {
   type TriggerBinding,
   type TriggerResult,
 } from "../../pet-core/triggerBindings";
+import { DEFAULT_TRIGGER_BINDINGS } from "../../pet-core/defaults";
 import { BUILTIN_ACTIONS, MOUSE_TRIGGER_LABELS } from "../../pet-core/commands";
+import { Aim } from "@element-plus/icons-vue";
+import { invoke } from "@tauri-apps/api/core";
+import {
+  currentCatId,
+  follow,
+  startCalibrate,
+} from "../../pet-core/appSettings";
+import CatPicker from "../common/CatPicker.vue";
+import SettingsHeader from "../common/SettingsHeader.vue";
+
+// ── 切猫回调：CatPicker 选猫 / cat-loaded 事件（打开设置页激活、增删猫）触发 ──
+// 重新加载触发器绑定行 + 该猫的 manifest 动作/行为下拉（manifest 按猫独立）。
+function onCatChange() {
+  loadRows();
+  loadManifestNames().then((names) => {
+    actionItems.value = names.actions;
+    behaviorItems.value = names.behaviors;
+  });
+}
+
+// ── 跟随光标 / 校准 ──
+/** 跟随光标开关：改 ref + 走 display 广播（对应猫窗实时生效 + appSettings 监听写盘）。 */
+function onFollowChange(value: string | number | boolean) {
+  follow.value = Boolean(value);
+  saveAndBroadcast();
+}
+/** 校准猫头：先确保该猫窗已显示，再触发它进入校准模式。 */
+async function onCalibrate() {
+  await invoke("pet_show_cat_window", { catId: currentCatId.value }).catch(
+    () => {},
+  );
+  startCalibrate();
+}
 import { defaultSpeakPhrases, type SpeakPhrase } from "../../pet-core/speakPhrases";
 import {
   loadManifestNames,
@@ -369,6 +417,8 @@ const behaviorOpts = computed(() => [
 ]);
 
 let unlistenResult: UnlistenFn | undefined;
+/** 监听 cat-loaded（loadAppSettings 完成后发），切猫后重载触发器行/动作下拉。 */
+let unlistenCatLoaded: UnlistenFn | undefined;
 
 /** 判断动作是否为说话类动作（需要配置短语）。 */
 function isPhraseAction(action: string): boolean {
@@ -554,6 +604,12 @@ onMounted(async () => {
   } catch {
     // 忽略——事件绑定不可用。
   }
+  try {
+    // 切猫后（loadAppSettings 完成、triggerBindings 已 hydrate）重载触发器行与动作下拉。
+    unlistenCatLoaded = await listen("cat-loaded", () => onCatChange());
+  } catch {
+    // 忽略——事件绑定不可用。
+  }
   // 让主窗按当前已保存配置应用一次并回传占用情况。
   emit(
     TRIGGER_BINDINGS_CHANGED_EVENT,
@@ -561,11 +617,14 @@ onMounted(async () => {
   ).catch(() => {});
 });
 
-onUnmounted(() => unlistenResult?.());
+onUnmounted(() => {
+  unlistenResult?.();
+  unlistenCatLoaded?.();
+});
 
 /**
  * 滑块拖动时：更新本地 ref + 广播（主窗实时响应），
- * 等 @change（松手）时才持久化到 localStorage。
+ * 等 @change（松手）时广播最终值（持久化由 appSettings 监听后写盘）。
  */
 function onSizeInput(value: number | number[]) {
   const v = Array.isArray(value) ? value[0] : value;
@@ -605,32 +664,6 @@ function onPassthroughChange(value: string | number | boolean) {
 <style scoped>
 .display-settings {
   min-height: 100vh;
-}
-
-.topbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 0 16px;
-  height: 54px;
-  box-sizing: border-box;
-  background: #fff;
-  border-bottom: 1px solid var(--el-border-color-light);
-  position: sticky;
-  top: 0;
-  z-index: 10;
-}
-
-.topbar__left {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.topbar__title {
-  font-size: 16px;
-  font-weight: 600;
 }
 
 .display-settings__body {

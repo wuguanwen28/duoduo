@@ -100,7 +100,6 @@ const builtinOpts = computed(() =>
   BUILTIN_ACTIONS.filter((b) => b.key !== "openMenu").map((b) => ({
     id: b.key,
     label: b.standardLabel,
-    emoji: b.emoji,
   })),
 );
 
@@ -109,9 +108,8 @@ const actionOpts = computed(() => [
   ...actionItems.value.map((item) => ({
     id: `action:${item.key}`,
     label: item.label,
-    emoji: "🎬",
   })),
-  { id: "randomAction", label: "随机动作", emoji: "🎲" },
+  { id: "randomAction", label: "随机动作" },
 ]);
 
 /** 行为组：manifest 行为 + 随机行为。 */
@@ -119,18 +117,16 @@ const behaviorOpts = computed(() => [
   ...behaviorItems.value.map((item) => ({
     id: `behavior:${item.key}`,
     label: item.label,
-    emoji: "🐾",
   })),
-  { id: "randomBehavior", label: "随机行为", emoji: "🎲" },
+  { id: "randomBehavior", label: "随机行为" },
 ]);
 
-/** 替换第 i 个槽位的菜单项（按选中 actionId 构造，emoji 反查目录）。 */
+/** 替换第 i 个槽位的菜单项（按选中 actionId 构造）。 */
 function onSlotChange(index: number, actionId: string) {
   const next = [...menuSettings.value];
   next[index] = {
     id: menuItemId(actionId),
     actionId,
-    emoji: emojiFor(actionId),
     label: labelFor(actionId),
   };
   menuSettings.value = next;
@@ -145,16 +141,6 @@ function onLabelChange(index: number, label: string) {
   next[index] = { ...cur, label };
   menuSettings.value = next;
   saveAndBroadcast();
-}
-
-/** 由 actionId 推导默认 emoji。 */
-function emojiFor(id: string): string {
-  const b = findBuiltin(id);
-  if (b) return b.emoji;
-  if (id.startsWith("action:")) return "🎬";
-  if (id.startsWith("behavior:")) return "🐾";
-  if (id === "randomAction" || id === "randomBehavior") return "🎲";
-  return "🎬";
 }
 
 /** 由 actionId 推导默认显示名（首次选中时填入，用户可改）。 */

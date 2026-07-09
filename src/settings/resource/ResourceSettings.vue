@@ -1,26 +1,24 @@
 <template>
   <div class="resource-settings">
-    <!-- 顶部工具条 + 提示一起固定在窗口顶部。 -->
-    <div class="stickytop">
-      <!-- 顶部工具条：标题 + 自动保存指示 + 操作。 -->
-      <header class="topbar">
-        <div class="topbar__left">
-          <span class="topbar__title">资源设置</span>
-          <transition name="saved-fade">
-            <span v-if="savedShown" class="topbar__saved">
-              <el-icon class="topbar__saved-icon"><CircleCheckFilled /></el-icon>
-              已自动保存
-            </span>
-          </transition>
-        </div>
-        <div class="topbar__btns">
-          <el-button plain type="primary" :icon="QuestionFilled" @click="helpVisible = true">
-            使用说明
-          </el-button>
-          <el-button :icon="Refresh" @click="reload">重新加载</el-button>
-        </div>
-      </header>
-    </div>
+    <!-- 顶部工具条：标题 + 选猫 + 自动保存指示 + 操作。 -->
+    <SettingsHeader title="资源设置">
+      <template #left>
+        <!-- 切猫后重载该猫的资源（目录树/manifest）；由 cat-loaded 事件统一触发。 -->
+        <CatPicker />
+        <transition name="saved-fade">
+          <span v-if="savedShown" class="topbar__saved">
+            <el-icon class="topbar__saved-icon"><CircleCheckFilled /></el-icon>
+            已自动保存
+          </span>
+        </transition>
+      </template>
+      <template #actions>
+        <el-button plain type="primary" :icon="QuestionFilled" @click="helpVisible = true">
+          使用说明
+        </el-button>
+        <el-button :icon="Refresh" @click="reload()">重新加载</el-button>
+      </template>
+    </SettingsHeader>
 
     <main
       class="resource-settings__body"
@@ -113,9 +111,11 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onMounted, reactive, ref, watch } from "vue";
+import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from "vue";
 import { invoke } from "@tauri-apps/api/core";
-import { emit as emitEvent } from "@tauri-apps/api/event";
+import { changeResourceRoot } from "../../pet-core/appSettings";
+import { emitForCat, currentCatId } from "../../pet-core/catContext";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
 import { Refresh, FolderOpened, CircleCheckFilled, QuestionFilled } from "@element-plus/icons-vue";
 import ContentHelpDialog from "../common/ContentHelpDialog.vue";
@@ -123,6 +123,8 @@ import DirSelect, { type DirNode } from "./DirSelect.vue";
 import ActionsCard from "./ActionsCard.vue";
 import BehaviorsCard from "./BehaviorsCard.vue";
 import type { ActionRow, BehaviorRow } from "./manifestTypes";
+import CatPicker from "../common/CatPicker.vue";
+import SettingsHeader from "../common/SettingsHeader.vue";
 
 const root = ref("");
 /** 资源根下是否已存在 manifest.json；为 false 时整页显示空状态。 */
@@ -155,18 +157,20 @@ function inferUnit(a: number, b: number): number {
   return 1000;
 }
 
-/** 拉取资源根下的子目录树（失败时置空，不阻塞）。 */
+/** 拉取当前猫资源根下的子目录树（失败时置空，不阻塞）。 */
 async function loadDirTree() {
   try {
-    dirTree.value = await invoke<DirNode[]>("pet_list_dirs");
+    dirTree.value = await invoke<DirNode[]>("pet_list_dirs", {
+      catId: currentCatId.value,
+    });
   } catch {
     dirTree.value = [];
   }
 }
 
 /**
- * 更换资源目录：弹系统目录选择器 → `pet_set_resource_root`（持久化到 AppData，
- * 缺 manifest.json 时自动创建空白模板）→ 重新加载本页 + 通知主窗热重载。
+ * 更换资源目录：弹系统目录选择器 → appSettings.changeResourceRoot（写该猫 cats/<id>.json 的
+ * resourceRoot，缺 manifest.json 时自动创建空白模板）→ 重新加载本页 + 通知**本猫**主窗热重载。
  */
 async function changeDir() {
   let picked: string | null = null;
@@ -179,11 +183,11 @@ async function changeDir() {
   }
   if (!picked) return;
   try {
-    await invoke("pet_set_resource_root", { path: picked });
+    await changeResourceRoot(picked);
     ElMessage.success("已切换资源目录");
     await reload();
-    // 通知主窗用新资源根重新扫描并重挂宠物。
-    await emitEvent("manifest-updated");
+    // 通知本猫主窗用新资源根重新扫描并重挂宠物（按猫广播，不影响其他猫窗）。
+    emitForCat("manifest-updated", null);
   } catch (e) {
     ElMessage.error(`切换目录失败：${e}`);
   }
@@ -322,28 +326,38 @@ function build(): any {
   };
 }
 
-async function reload() {
+/**
+ * 重载当前猫的 manifest 到编辑区。
+ * @param opts.silent 静默模式：不显示 loading 遮罩、不弹加载成功/失败 toast。
+ *   切猫（cat-loaded）用静默——读 manifest 极快，遮罩+toast 反而造成闪烁与噪音；
+ *   首次进页面 / 手动「重新加载」用非静默，给明确的读取反馈。
+ */
+async function reload(opts: { silent?: boolean } = {}) {
+  const silent = opts.silent ?? false;
   // 加载期间抑制自动保存：parseInto 写入响应式状态会触发监听，不应回存。
   suppressSave = true;
-  loading.value = true;
+  if (!silent) loading.value = true;
   try {
     const r = await invoke<{ root: string; content: string; exists: boolean }>(
       "pet_read_manifest",
+      { catId: currentCatId.value },
     );
     root.value = r.root;
     hasManifest.value = r.exists;
     parseInto(r.content);
     await loadDirTree();
-    if (r.exists) {
+    if (silent) {
+      // 切猫静默：不弹 toast，仅在缺 manifest 时靠空状态引导，无需打扰。
+    } else if (r.exists) {
       ElMessage.success("已加载 manifest.json");
     } else {
       // 不再静默载入模板，而是由上层的空状态引导用户选择资源目录。
       ElMessage.warning("未找到 manifest.json，请选择资源目录");
     }
   } catch (e) {
-    ElMessage.error(`读取失败：${e}`);
+    if (!silent) ElMessage.error(`读取失败：${e}`);
   } finally {
-    loading.value = false;
+    if (!silent) loading.value = false;
     // 等本次状态变更引发的监听跑完，再恢复自动保存，避免"加载即保存"。
     await nextTick();
     suppressSave = false;
@@ -368,9 +382,12 @@ function flashSaved() {
 async function save() {
   try {
     const json = JSON.stringify(build(), null, 2);
-    await invoke("pet_write_manifest", { content: json });
-    // 广播事件，主窗收到后热重载资源并重挂宠物，改动即时生效。
-    await emitEvent("manifest-updated");
+    await invoke("pet_write_manifest", {
+      catId: currentCatId.value,
+      content: json,
+    });
+    // 按猫广播，只有本猫主窗热重载，改动即时生效且不影响其他猫。
+    emitForCat("manifest-updated", null);
     flashSaved();
   } catch (e) {
     // 失败仍提示，避免静默丢改动。
@@ -389,7 +406,19 @@ watch(
   { deep: true },
 );
 
-onMounted(reload);
+let unlistenCatLoaded: UnlistenFn | undefined;
+onMounted(async () => {
+  await reload();
+  // 切猫后重载该猫资源（CatPicker / 打开设置页激活 / 增删猫）；manifest 是本地
+  // reactive，不在 loadAppSettings 的 hydrate 范围，须监听 cat-loaded 事件单独 reload。
+  try {
+    // 切猫静默重载：不闪 loading 遮罩、不弹 toast。
+    unlistenCatLoaded = await listen("cat-loaded", () => void reload({ silent: true }));
+  } catch {
+    // 事件不可用时忽略——可手动点「重新加载」。
+  }
+});
+onUnmounted(() => unlistenCatLoaded?.());
 </script>
 
 <style scoped>
@@ -397,32 +426,6 @@ onMounted(reload);
   min-height: 100vh;
 }
 
-.stickytop {
-  position: sticky;
-  top: 0;
-  z-index: 10;
-}
-.topbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 12px 16px;
-  height: 54px;
-  box-sizing: border-box;
-  background: #fff;
-  border-bottom: 1px solid var(--el-border-color-light);
-}
-.topbar__left {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  overflow: hidden;
-}
-.topbar__title {
-  font-size: 16px;
-  font-weight: 600;
-}
 .topbar__saved {
   display: inline-flex;
   align-items: center;
@@ -442,11 +445,6 @@ onMounted(reload);
 .saved-fade-enter-from,
 .saved-fade-leave-to {
   opacity: 0;
-}
-.topbar__btns {
-  flex: none;
-  display: flex;
-  gap: 8px;
 }
 
 .resource-settings__body {

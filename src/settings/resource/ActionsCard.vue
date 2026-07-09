@@ -51,20 +51,26 @@
           </div>
         </template>
         <el-form label-width="80px" label-position="right">
-          <el-form-item label="名称">
-            <el-input
-              v-model="a.name"
-              placeholder="动作名称（如 眨眼、摇尾巴）"
-            />
-          </el-form-item>
-          <el-form-item label="图片目录">
-            <DirSelect
-              v-model="a.dir"
-              :tree="dirTree"
-              placeholder="相对资源根或绝对路径"
-              @refresh="emit('refresh-dirs')"
-            />
-          </el-form-item>
+          <el-row :gutter="16">
+            <el-col :span="8">
+              <el-form-item label="名称">
+                <el-input
+                  v-model="a.name"
+                  placeholder="动作名称（如 眨眼、摇尾巴）"
+                />
+              </el-form-item>
+            </el-col>
+            <el-col :span="16">
+              <el-form-item label="图片目录">
+                <DirSelect
+                  v-model="a.dir"
+                  :tree="dirTree"
+                  placeholder="相对资源根或绝对路径"
+                  @refresh="emit('refresh-dirs')"
+                />
+              </el-form-item>
+            </el-col>
+          </el-row>
           <el-row :gutter="16">
             <el-col :span="8">
               <el-form-item label="帧率fps">
@@ -72,7 +78,6 @@
                   v-model="a.fps"
                   :min="1"
                   :max="120"
-                  size="small"
                   controls-position="right"
                 />
               </el-form-item>
@@ -88,14 +93,13 @@
               </el-form-item>
             </el-col>
           </el-row>
-          <el-row :gutter="16">
+          <el-row :gutter="16" v-if="showTransform">
             <el-col :span="8">
               <el-form-item label="X轴偏移">
                 <el-input-number
                   v-model="a.offsetX"
                   :step="0.01"
                   :precision="3"
-                  size="small"
                   controls-position="right"
                 />
               </el-form-item>
@@ -106,7 +110,6 @@
                   v-model="a.offsetY"
                   :step="0.01"
                   :precision="3"
-                  size="small"
                   controls-position="right"
                 />
               </el-form-item>
@@ -118,7 +121,6 @@
                   :step="0.05"
                   :precision="2"
                   :min="0.1"
-                  size="small"
                   controls-position="right"
                 />
               </el-form-item>
@@ -151,6 +153,8 @@ const emit = defineEmits<{
 
 /** 展开的折叠项（默认全展开）。 */
 const openActions = ref<number[]>([]);
+
+const showTransform = ref(false);
 
 // 列表被整体替换（加载 manifest）时，重置为全部展开；就地增删不在此重置。
 watch(

@@ -12,7 +12,7 @@
           role="button"
           tabindex="0"
           aria-label="最小化"
-          @mousedown.stop.prevent="onMinimize"
+          @click="onClose"
         >
           ×
         </div>
@@ -26,7 +26,7 @@
           打开设置页面
         </el-button>
         <el-button size="small" @click="$emit('reload')">重新加载</el-button>
-        <el-button size="small" type="danger" @click="onQuit">退出</el-button>
+        <el-button size="small" @click="onClose">关闭</el-button>
       </div>
     </div>
   </div>
@@ -121,24 +121,22 @@ onUnmounted(() => {
     .catch(() => {});
 });
 
-/** 打开设置窗口并导航到资源设置标签页。 */
+/** 打开设置窗口并导航到资源设置标签页。带当前猫 id：从这只猫的缺资源引导打开设置页时激活它。 */
 async function openResourceSettings() {
   try {
-    await invoke("pet_open_settings", { tab: "resources" });
+    const label = getCurrentWindow().label;
+    const catId = label.startsWith("cat-") ? label.slice(4) : "default";
+    await invoke("pet_open_settings", { tab: "resources", catId });
   } catch (e) {
     console.error("打开设置窗口失败：", e);
   }
 }
 
-/** 退出应用（与托盘「退出」一致）。 */
-function onQuit() {
-  invoke("pet_quit").catch(() => {});
-}
-
-/** 最小化当前窗口。 */
-function onMinimize() {
+/** 关闭当前宠物窗（销毁，等同设置页「下班」）。
+ *  cat 窗 CloseRequested 不 prevent，close() 即销毁，与 pet_close_cat_window 同效。 */
+function onClose() {
   getCurrentWindow()
-    .minimize()
+    .close()
     .catch(() => {});
 }
 </script>

@@ -12,6 +12,7 @@
  */
 import { invoke, convertFileSrc } from "@tauri-apps/api/core";
 import type { SpeakPhrase } from "./speakPhrases";
+import { currentCatId } from "./catContext";
 
 /** 一个动作（=manifest 的一个 action）解析后的运行时形态。 */
 export interface ResolvedClip {
@@ -160,7 +161,10 @@ function preload(urls: string[]) {
 export async function loadResources(): Promise<LoadResult> {
   let scan: ScanResult;
   try {
-    scan = await invoke<ScanResult>("pet_scan_resources");
+    // 按本窗口当前猫扫描其资源（loadAppSettings 已在 boot 前设好 currentCatId）。
+    scan = await invoke<ScanResult>("pet_scan_resources", {
+      catId: currentCatId.value,
+    });
   } catch (e) {
     return { ok: false, error: `调用 pet_scan_resources 失败：${e}` };
   }

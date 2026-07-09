@@ -110,8 +110,7 @@
         8000
       ],
       "name": "待机",
-      "interruptible": true,
-      "enter": "wink"
+      "interruptible": true
     },
     "sleep": {
       "weight": 2,

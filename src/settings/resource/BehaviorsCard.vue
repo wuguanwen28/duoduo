@@ -51,22 +51,27 @@
           </div>
         </template>
         <el-form label-width="92px" label-position="right">
-          <el-form-item label="名称">
-            <el-input
-              v-model="b.label"
-              placeholder="行为名称（如 待机、睡觉）"
-            />
-          </el-form-item>
-          <el-form-item label="循环动作">
-            <el-select v-model="b.base" placeholder="选一个动作" filterable>
-              <el-option
-                v-for="o in actionOptions"
-                :key="o.key"
-                :label="o.label"
-                :value="o.key"
-              />
-            </el-select>
-          </el-form-item>
+          <el-row :gutter="16">
+            <el-col :span="12">
+              <el-form-item label="名称">
+                <el-input
+                  v-model="b.label"
+                  placeholder="行为名称（如 待机、睡觉）"
+                />
+              </el-form-item> </el-col
+            ><el-col :span="12">
+              <el-form-item label="循环动作">
+                <el-select v-model="b.base" placeholder="选一个动作" filterable>
+                  <el-option
+                    v-for="o in actionOptions"
+                    :key="o.key"
+                    :label="o.label"
+                    :value="o.key"
+                  />
+                </el-select>
+              </el-form-item>
+            </el-col>
+          </el-row>
           <el-row :gutter="16">
             <el-col :span="12">
               <el-form-item label="进入动作">

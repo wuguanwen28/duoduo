@@ -81,9 +81,18 @@ This folder is the shared model layer used by both the pet window and settings w
 - `useSpriteAnimation.ts` is the generic frame player.
 - `commands.ts` is the executable pet-action registry used by gestures, shortcuts, and settings dropdowns.
 - `triggerBindings.ts` stores the unified trigger binding model: fixed mouse gestures plus dynamic keyboard shortcuts.
-- `basicSettings.ts`, `displaySettings.ts`, `menuSettings.ts`, and `speakPhrases.ts` are localStorage-backed reactive settings with Tauri event synchronization across windows.
+- `basicSettings.ts`, `displaySettings.ts`, `menuSettings.ts`, and `speakPhrases.ts` are file-backed reactive settings (persisted to `~/.duoduo/` via `appSettings`) with cross-window Tauri-event synchronization.
 
 Settings synchronization generally follows a one-way pattern: settings UI saves/broadcasts; the pet window listens and applies. Avoid broadcasting from the pet window unless the file explicitly supports it.
+
+### Persisted data layout (`~/.duoduo/`)
+
+- `setting.json` — global: `version`, `activeCatId`, `updateDismiss`, and `cats: { <id>: { name, birthday, gender, tags, description } }` (the **identity profile**; used by card list / cat picker so they need not open every cat file).
+- `cats/<id>.json` — per-cat **behavior config**: `display`, `menu`, `speakPhrases`, `speakPhrasesDefault`, `triggerBindings`, `windowPos`, and `resourceRoot`. Writing one cat never touches another (no races, no cat loss).
+- `avatars/<id>.png` — per-cat avatar image; **file existence is the sole source of truth** for "has avatar" (no `hasAvatar` flag).
+- `app-icon.png` — custom app/tray icon; global, decoupled from any cat's resource root.
+
+`resourceRoot` is a **server-owned field**: `pet_save_cat` preserves the on-disk value (only `pet_set_resource_root` may change it), so a pet window's full-file snapshot (e.g. on `windowPos` save) cannot clobber the resource root a settings window just set. Identity (basic) is written to `setting.json` by `saveNow`; behavior is written to `cats/<id>.json`.
 
 ### `src/pet-window/` — transparent pet window
 
@@ -106,7 +115,7 @@ The main window is transparent, borderless, always-on-top, skip-taskbar, non-res
 - `tools/VideoToWebp.vue` implements video-to-WebP frame extraction; decoding/chroma-key/WebP encoding happen in the WebView with `<video>` + Canvas, then Rust writes frames to disk.
 - `update/UpdateSettings.vue` drives update check/download/apply and the about links.
 
-The settings window is created lazily by Rust (`window::open_settings`) as label `settings`, loads `settings.html`, remembers its last logical size in memory, and supports opening directly to a tab via `pet_open_settings(tab)` / `pet_consume_pending_tab` / `navigate-to`.
+The settings window (label `settings`) is defined in `tauri.conf.json` and starts hidden; `window::open_settings` / `toggle_settings` show and focus it. It loads `settings.html`, remembers its last logical size in memory, and supports opening directly to a tab via `pet_open_settings(tab)` / `pet_consume_pending_tab` / `navigate-to`.
 
 ### `src-tauri/` — Rust backend
 
@@ -116,7 +125,7 @@ The settings window is created lazily by Rust (`window::open_settings`) as label
 - `geometry.rs`: fixed pet window sizing, content-scale caching, monitor-union clamping, and work-area bounds.
 - `gaze.rs`: cursor sampling, head-offset calibration, dead-zone detection.
 - `window.rs`: pet visibility, settings-window creation/navigation, quit, Ctrl polling, frontend action events, and opening external URLs.
-- `resources.rs`: resource root selection, manifest read/write, frame scanning, directory listing, and persisted resource root.
+- `resources.rs`: per-cat resource root resolution, manifest read/write, frame scanning, and directory listing.
 - `converter.rs`: validates resource subdirectories and writes generated `.webp` frames.
 - `icon.rs`: save/reset/load custom app/window/tray icon.
 - `tray.rs`: system tray icon and menu.
@@ -126,16 +135,16 @@ Custom `pet_*` commands must be implemented in a module and registered in `tauri
 
 ## External resources and manifest
 
-The app ships no sprite frames. Frames are loaded from `resources/manifest.json` and folders under the current resource root.
+The app ships no sprite frames. Frames are loaded from each cat's `manifest.json` and the folders under that cat's resource root.
 
-Resource root priority in `resources::resource_root()`:
+Resource root is **per-cat**: each cat's `cats/<id>.json` carries its own `resourceRoot` (a behavior-layer field, see below). `resources::resource_root(app, cat_id)` resolves per cat:
 
-1. User-selected/persisted resource root, if set.
-2. `DUODUO_RESOURCES` environment variable.
-3. Development mode: root repo `resources/` derived from `CARGO_MANIFEST_DIR`.
-4. Release mode: `resources/` next to the current exe.
+1. `DUODUO_RESOURCES` environment variable (global dev override; **when set, per-cat is disabled** — all cats share this root).
+2. That cat's `resourceRoot` if it points at a valid directory.
+3. Only the default cat `"default"` falls back to the bundled `resources/` (debug: repo-root `resources/` from `CARGO_MANIFEST_DIR`; release: `resources/` next to the exe).
+4. Otherwise `None` — the cat has no assets yet; the pet window shows the `MissingResources` guide directing the user to resource settings to pick a directory.
 
-`pet_scan_resources` reads the manifest, resolves `follow.dir` and every action `dir`, lists supported image extensions (`webp/png/jpg/jpeg/gif/bmp`) by filename order, and returns absolute paths. The frontend converts those to asset URLs with `convertFileSrc()`. `tauri.conf.json` enables the asset protocol with scope `**`.
+`pet_scan_resources(catId)` reads the manifest, resolves `follow.dir` and every action `dir`, lists supported image extensions (`webp/png/jpg/jpeg/gif/bmp`) by filename order, and returns absolute paths. A cat with no resource root returns an `error` instead of crashing. The frontend converts those to asset URLs with `convertFileSrc()`. `tauri.conf.json` enables the asset protocol with scope `**`.
 
 Manifest shape:
 
@@ -195,7 +204,7 @@ When `follow.clockwise === false`, the direction is inverted. Follow assets are 
 
 ### Head calibration
 
-Head offset is stored as a ratio of sprite diameter in localStorage and synchronized to Rust through `pet_set_head_offset`. Rust uses it to compute the gaze origin and dead zone. Calibration UI lives in the pet window/menu flow.
+Head offset is stored as a ratio of sprite diameter in the cat's `display.headOffset` (`cats/<id>.json`) and synchronized to Rust through `pet_set_head_offset`. Rust uses it to compute the gaze origin and dead zone. Calibration UI lives in the pet window/menu flow.
 
 ### Gesture and shortcut model
 
@@ -203,7 +212,7 @@ Head offset is stored as a ratio of sprite diameter in localStorage and synchron
 
 - Mouse bindings are the first fixed concepts: `leftClick`, `doubleClick`, `rightClick`, `longPress`. Their triggers are not editable; their actions are.
 - Key bindings are dynamic and may be app-local or global. Global shortcuts use `@tauri-apps/plugin-global-shortcut` and accelerator conversion from `toAccelerator()`.
-- Settings changes are saved to localStorage and broadcast through `trigger-bindings-changed`; the pet window reapplies all bindings and emits `trigger-bindings-result` with failed global registrations so settings can mark conflicts.
+- Settings changes are persisted to `cats/<id>.json` (via `appSettings.scheduleSave`) and broadcast through `trigger-bindings-changed`; the pet window reapplies all bindings and emits `trigger-bindings-result` with failed global registrations so settings can mark conflicts.
 - Available actions come from `PET_ACTIONS` in `commands.ts`; expose labels and allowed action-key lists there when adding a new bindable action.
 
 Dragging is intentionally separate: left-button movement beyond threshold calls `getCurrentWindow().startDragging()` and is not configurable.
@@ -214,10 +223,10 @@ The transparent window normally lets empty space click through. Enabling click-t
 
 ## Tauri windows and capabilities
 
-- Main window label: `duoduo`; defined in `tauri.conf.json` with `visible:false`, fixed config size, no decorations, transparent, always-on-top, skip-taskbar, no shadow.
-- Runtime setup positions the main window at the bottom-right of the current monitor work area, sets the true fixed size from `geometry::fixed_window_size`, then shows it to avoid flash.
-- Settings window label: `settings`; created lazily in `window.rs` as a normal decorated, resizable window loading `settings.html`.
-- `src-tauri/capabilities/default.json` currently includes both `duoduo` and `settings` and allows required core window APIs plus global-shortcut permissions.
+- Settings window label: `settings`; defined in `tauri.conf.json` as a normal decorated, resizable window loading `settings.html`, with `visible:false` on startup. It doubles as the bootstrap entry: `src/settings/main.ts` runs `bootstrapIfEmpty` + `loadAppSettings`, then invokes `pet_show_cat_window` to bring up the default cat window — so on launch only the cat appears, not the settings UI. The settings window is shown later via tray / `pet_open_settings` / `toggle_settings`.
+- Cat window label: `cat-<id>` (one per cat); created dynamically by `window::show_cat_window` — transparent, borderless, always-on-top, skip-taskbar, no shadow, non-resizable, built hidden then positioned at the bottom-right of the current monitor work area and shown to avoid flash.
+- Settings window close (×) = hide to tray (tray "退出" is the real quit); cat window close = destroy that window.
+- `src-tauri/capabilities/default.json` lists `duoduo`, `settings`, and `cat-*` and allows required core window APIs plus global-shortcut permissions.
 - `src-tauri/capabilities/settings.json` separately allows settings-window defaults, close/minimize, and dialog open.
 - If using new Tauri core/plugin APIs from frontend, add the corresponding capability permission. Do not add permissions for custom `pet_*` commands.
 
@@ -234,8 +243,8 @@ The transparent window normally lets empty space click through. Enabling click-t
 The conversion tool is split deliberately:
 
 - Frontend (`src/settings/tools/VideoToWebp.vue`, `chromaKey.ts`, `frameCache.ts`) handles video decoding, frame stepping, chroma key processing, caching, and WebP encoding using browser APIs.
-- Rust (`converter.rs`) only validates the target subdirectory under the current resource root, optionally clears old `.webp` files, and writes received frame bytes.
-- Paths must remain relative to resource root; reject absolute paths or `..` traversal.
+- Rust (`converter.rs`) only creates the target directory, optionally clears old `.webp` files, and writes received frame bytes.
+- **Output directory is user-chosen** (system directory picker), defaulting to `<video parent dir>/<video name without ext>_帧图片`. It is no longer forced under the resource root — `pet_converter_begin(dir, clear)` takes an absolute path and only rejects `..` traversal components. Generated frames can then be referenced from the manifest via an absolute `dir`.
 
 ## Hot update and release flow
 

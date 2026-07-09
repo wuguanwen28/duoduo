@@ -1,23 +1,36 @@
 /**
  * 显示设置 —— 大小、透明度、窗口层级、点击穿透。
  *
- * 全部存在 localStorage，key 前缀 `pet-display-`。
+ * 持久化由 appSettings.ts 统一管理（~/.duoduo/setting.json）。
  * 【单向同步模式】：只有设置窗会调用 `saveAndBroadcast()` 广播；
  * 主窗只监听事件更新本地状态，永远不广播，避免死循环。
+ * 默认值见 ./defaults.ts。
  */
 import { ref } from "vue";
 import { listen, emit } from "@tauri-apps/api/event";
+import { DISPLAY_DEFAULTS } from "./defaults";
+import { currentCatId } from "./catContext";
 
 /** 跨窗口同步事件名。 */
 export const DISPLAY_SETTINGS_CHANGED_EVENT = "display-settings-changed";
 
-/** 显示设置结构。 */
+/**
+ * 显示设置结构（size / opacity / alwaysOnTop / passthrough + 跟随开关 + 头部校准偏移）。
+ * 六个字段 UI 同在显示页、存储归 display、跨窗口同步统一走 display-settings-changed 广播。
+ */
 export interface DisplaySettings {
   size: number;
   opacity: number;
   alwaysOnTop: boolean;
   passthrough: boolean;
+  /** 跟随光标开关。 */
+  follow: boolean;
+  /** 头部校准偏移（占精灵直径比例；0,0=图像中心）。 */
+  headOffset: { x: number; y: number };
 }
+
+/** 持久化形态（与 DisplaySettings 同构，供 appSettings 使用）。 */
+export type DisplayStored = DisplaySettings;
 
 /**
  * 广播 payload 在 DisplaySettings 基础上多带一个源窗口标识，
@@ -26,6 +39,8 @@ export interface DisplaySettings {
 interface DisplaySettingsPayload extends DisplaySettings {
   /** 发出该事件的会话实例 ID。 */
   _src: string;
+  /** 该变更所属的猫 id，接收方按本窗口 currentCatId 过滤。 */
+  catId: string;
 }
 
 /** 本次会话（本窗口本次加载）的唯一标识，模块加载时生成一次，永不变。 */
@@ -36,34 +51,32 @@ const SOURCE_ID = `${Date.now().toString(36)}-${Math.random()
 /** 广播节流间隔（毫秒）：滑块 ~60Hz 抖动太多，合并到 ~20Hz 即可。 */
 const BROADCAST_THROTTLE_MS = 50;
 
-const DEFAULTS: DisplaySettings = {
-  size: 0.5,
-  opacity: 1,
-  alwaysOnTop: true,
-  passthrough: true,
-};
+/** 当前显示设置；初始为默认值，由 appSettings 启动时填充。 */
+export const size = ref(DISPLAY_DEFAULTS.size);
+export const opacity = ref(DISPLAY_DEFAULTS.opacity);
+export const alwaysOnTop = ref(DISPLAY_DEFAULTS.alwaysOnTop);
+export const passthrough = ref(DISPLAY_DEFAULTS.passthrough);
+/** 跟随光标开关（原在 appSettings，现随 display 统一管理）。 */
+export const follow = ref(DISPLAY_DEFAULTS.follow);
+/** 头部校准偏移（原在 appSettings，现随 display 统一管理）。 */
+export const headOffset = ref<{ x: number; y: number }>({ ...DISPLAY_DEFAULTS.headOffset });
 
-/** 从 localStorage 读取数字/布尔值；缺失或非法时回退到默认值。 */
-function loadNumber(key: string, def: number): number {
-  const raw = localStorage.getItem(key);
-  if (raw === null) return def;
-  const n = Number(raw);
-  return Number.isFinite(n) ? n : def;
+/** 从持久化数据填充（appSettings.loadAppSettings 调用）。 */
+export function hydrateDisplay(data: Partial<DisplayStored> | undefined): void {
+  size.value = typeof data?.size === "number" ? data.size : DISPLAY_DEFAULTS.size;
+  opacity.value = typeof data?.opacity === "number" ? data.opacity : DISPLAY_DEFAULTS.opacity;
+  alwaysOnTop.value =
+    typeof data?.alwaysOnTop === "boolean" ? data.alwaysOnTop : DISPLAY_DEFAULTS.alwaysOnTop;
+  passthrough.value =
+    typeof data?.passthrough === "boolean" ? data.passthrough : DISPLAY_DEFAULTS.passthrough;
+  follow.value = typeof data?.follow === "boolean" ? data.follow : DISPLAY_DEFAULTS.follow;
+  headOffset.value =
+    data?.headOffset &&
+    typeof data.headOffset.x === "number" &&
+    typeof data.headOffset.y === "number"
+      ? { x: data.headOffset.x, y: data.headOffset.y }
+      : { ...DISPLAY_DEFAULTS.headOffset };
 }
-
-function loadBool(key: string, def: boolean): boolean {
-  const raw = localStorage.getItem(key);
-  return raw === null ? def : raw === "true";
-}
-
-export const size = ref(loadNumber("pet-display-size", DEFAULTS.size));
-export const opacity = ref(loadNumber("pet-display-opacity", DEFAULTS.opacity));
-export const alwaysOnTop = ref(
-  loadBool("pet-display-alwaysOnTop", DEFAULTS.alwaysOnTop),
-);
-export const passthrough = ref(
-  loadBool("pet-display-passthrough", loadBool("pet-passthrough", DEFAULTS.passthrough)),
-);
 
 /** 将当前显示设置序列化为对象。 */
 function snapshot(): DisplaySettings {
@@ -72,6 +85,8 @@ function snapshot(): DisplaySettings {
     opacity: opacity.value,
     alwaysOnTop: alwaysOnTop.value,
     passthrough: passthrough.value,
+    follow: follow.value,
+    headOffset: { x: headOffset.value.x, y: headOffset.value.y },
   };
 }
 
@@ -92,13 +107,18 @@ export function broadcast(): void {
   broadcastTimer = window.setTimeout(() => {
     broadcastTimer = undefined;
     const s = snapshot();
-    const payload: DisplaySettingsPayload = { ...s, _src: SOURCE_ID };
+    const payload: DisplaySettingsPayload = {
+      ...s,
+      _src: SOURCE_ID,
+      catId: currentCatId.value,
+    };
     emit(DISPLAY_SETTINGS_CHANGED_EVENT, payload).catch(() => {});
   }, BROADCAST_THROTTLE_MS);
 }
 
 /**
- * 【仅设置窗调用】持久化并广播一次。
+ * 【仅设置窗调用】广播一次（松手等最终变更）。
+ * 持久化由 appSettings 监听本事件后统一写盘。
  * 主窗不要调用这个函数！
  */
 export function saveAndBroadcast(): void {
@@ -107,12 +127,11 @@ export function saveAndBroadcast(): void {
     clearTimeout(broadcastTimer);
     broadcastTimer = undefined;
   }
-  const s = snapshot();
-  localStorage.setItem("pet-display-size", String(s.size));
-  localStorage.setItem("pet-display-opacity", String(s.opacity));
-  localStorage.setItem("pet-display-alwaysOnTop", String(s.alwaysOnTop));
-  localStorage.setItem("pet-display-passthrough", String(s.passthrough));
-  const payload: DisplaySettingsPayload = { ...s, _src: SOURCE_ID };
+  const payload: DisplaySettingsPayload = {
+    ...snapshot(),
+    _src: SOURCE_ID,
+    catId: currentCatId.value,
+  };
   emit(DISPLAY_SETTINGS_CHANGED_EVENT, payload).catch(() => {});
 }
 
@@ -124,8 +143,14 @@ export function saveAndBroadcast(): void {
 listen<DisplaySettingsPayload>(DISPLAY_SETTINGS_CHANGED_EVENT, (event) => {
   const p = event.payload;
   if (p._src === SOURCE_ID) return;
+  // 只应用属于本窗口当前猫的变更，避免多宠物窗互相污染。
+  if (p.catId !== currentCatId.value) return;
   if (!areFloatsEqual(size.value, p.size)) size.value = p.size;
   if (!areFloatsEqual(opacity.value, p.opacity)) opacity.value = p.opacity;
   if (alwaysOnTop.value !== p.alwaysOnTop) alwaysOnTop.value = p.alwaysOnTop;
   if (passthrough.value !== p.passthrough) passthrough.value = p.passthrough;
+  if (follow.value !== p.follow) follow.value = p.follow;
+  if (headOffset.value.x !== p.headOffset.x || headOffset.value.y !== p.headOffset.y) {
+    headOffset.value = { x: p.headOffset.x, y: p.headOffset.y };
+  }
 });

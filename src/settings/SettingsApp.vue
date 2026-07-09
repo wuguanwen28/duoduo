@@ -3,23 +3,6 @@
     <div class="settings-layout">
       <!-- 左侧导航栏 -->
       <aside class="settings-nav">
-        <div class="settings-nav__header">
-          <div class="settings-nav__avatar-wrap">
-            <img
-              class="settings-nav__avatar"
-              :src="basicSettings.avatar || defaultAvatar"
-              alt="头像"
-            />
-            <span
-              v-if="basicSettings.gender !== 'unknown'"
-              class="settings-nav__gender"
-              :class="`settings-nav__gender--${basicSettings.gender}`"
-            >
-              {{ basicSettings.gender === "boy" ? "♂" : "♀" }}
-            </span>
-          </div>
-          <span class="settings-nav__name">{{ basicSettings.name }}</span>
-        </div>
         <nav class="settings-nav__menu">
           <div
             v-for="item in navItems"
@@ -57,12 +40,8 @@ import ResourceSettings from "./resource/ResourceSettings.vue";
 import VideoToWebp from "./tools/VideoToWebp.vue";
 import DisplaySettings from "./display/DisplaySettings.vue";
 import UpdateSettings from "./update/UpdateSettings.vue";
-import { basicSettings } from "../pet-core/basicSettings";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-
-/** 默认头像：项目内置 icon.png。 */
-const defaultAvatar = new URL("../assets/icon.png", import.meta.url).href;
 
 interface NavItem {
   key: string;

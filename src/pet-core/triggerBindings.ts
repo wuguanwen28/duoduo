@@ -5,11 +5,13 @@
  * - 键盘快捷键（动态新增）：trigger 为按键串，可改动作 / 作用域 / 删除。
  * 两者动作统一引用 PET_ACTIONS，由主窗分发时查表执行。
  *
- * 配置存 localStorage（key `duoduo-trigger-bindings`），并通过 Tauri 事件
- * 在设置窗与主窗之间同步。
+ * 持久化由 appSettings.ts 统一管理（~/.duoduo/setting.json），通过 Tauri 事件
+ * 在设置窗与主窗之间同步。默认绑定见 ./defaults.ts。
  */
 import { ref } from "vue";
 import type { SpeakPhrase } from "./speakPhrases";
+import { DEFAULT_TRIGGER_BINDINGS } from "./defaults";
+import { emitForCat, listenForCat } from "./catContext";
 
 /** 触发类型。 */
 export type TriggerKind = "mouse" | "key";
@@ -40,9 +42,6 @@ export interface TriggerBinding {
   phrases?: SpeakPhrase[];
 }
 
-/** localStorage 键。 */
-export const TRIGGER_BINDINGS_STORAGE_KEY = "duoduo-trigger-bindings";
-
 /** 设置窗改动保存后广播；主窗收到后重新应用全部绑定。 */
 export const TRIGGER_BINDINGS_CHANGED_EVENT = "trigger-bindings-changed";
 
@@ -55,59 +54,40 @@ export interface TriggerResult {
   failedIds: string[];
 }
 
-/**
- * 默认预置绑定（首次加载无任何配置、或「恢复默认」时用）。
- * 鼠标 4 条 + 快捷键 3 条。
- */
-export const DEFAULT_TRIGGER_BINDINGS: TriggerBinding[] = [
-  { id: "m-leftClick", kind: "mouse", trigger: "leftClick", actionId: "pokeAndSpeak" },
-  { id: "m-doubleClick", kind: "mouse", trigger: "doubleClick", actionId: "minimize" },
-  { id: "m-rightClick", kind: "mouse", trigger: "rightClick", actionId: "openMenu" },
-  { id: "m-longPress", kind: "mouse", trigger: "longPress", actionId: "wake" },
-  { id: "k-boss", kind: "key", trigger: "Alt+Z", actionId: "minimize", isGlobal: true },
-  { id: "k-settings", kind: "key", trigger: "Alt+S", actionId: "openSettings", isGlobal: false },
-  { id: "k-passthrough", kind: "key", trigger: "Alt+C", actionId: "togglePassthrough", isGlobal: false },
-];
+/** 当前生效的触发器绑定；初始为默认预置，由 appSettings 启动时填充。 */
+export const triggerBindings = ref<TriggerBinding[]>(
+  DEFAULT_TRIGGER_BINDINGS.map((e) => ({ ...e })),
+);
 
-/** localStorage 持久化结构。 */
-interface StoredBindings {
-  entries: TriggerBinding[];
+/** 从持久化数据填充；无配置或损坏时回退默认预置。 */
+export function hydrateTriggerBindings(entries: any): void {
+  if (Array.isArray(entries) && entries.length > 0) {
+    triggerBindings.value = entries.map((e: any) => ({ ...e }));
+  } else {
+    triggerBindings.value = DEFAULT_TRIGGER_BINDINGS.map((e) => ({ ...e }));
+  }
 }
 
-/**
- * 从 localStorage 读取触发器绑定列表。
- * 无配置或损坏时返回默认预置（不写盘）。
- */
+/** 返回当前生效绑定的副本（供设置页初始化编辑行 / 主窗热重载后重载）。 */
 export function loadTriggerBindings(): TriggerBinding[] {
-  let raw: string | null = null;
-  try {
-    raw = localStorage.getItem(TRIGGER_BINDINGS_STORAGE_KEY);
-  } catch {
-    return DEFAULT_TRIGGER_BINDINGS.map((e) => ({ ...e }));
-  }
-
-  if (!raw) return DEFAULT_TRIGGER_BINDINGS.map((e) => ({ ...e }));
-
-  try {
-    const parsed = JSON.parse(raw) as StoredBindings;
-    if (parsed && Array.isArray(parsed.entries)) {
-      return parsed.entries.map((e) => ({ ...e }));
-    }
-  } catch {
-    // 损坏 → 回默认
-  }
-
-  return DEFAULT_TRIGGER_BINDINGS.map((e) => ({ ...e }));
+  return triggerBindings.value.map((e) => ({ ...e }));
 }
 
-/** 把绑定列表写回 localStorage（新格式 `{ entries }`，全量写入）。 */
+/** 保存绑定列表：更新内存 ref 并广播（持久化由 appSettings 监听本事件后统一写盘）。 */
 export function saveTriggerBindings(entries: TriggerBinding[]): void {
-  const data: StoredBindings = { entries: entries.map((e) => ({ ...e })) };
-  localStorage.setItem(TRIGGER_BINDINGS_STORAGE_KEY, JSON.stringify(data));
+  triggerBindings.value = entries.map((e) => ({ ...e }));
+  emitForCat(TRIGGER_BINDINGS_CHANGED_EVENT, triggerBindings.value);
 }
 
-/** 当前生效的触发器绑定（模块级 ref，主窗读它）。 */
-export const triggerBindings = ref<TriggerBinding[]>(loadTriggerBindings());
+/**
+ * 跨窗口同步：只应用属于本窗口当前猫的变更（catId 过滤）。
+ * 主窗据此刷新触发器绑定并重新应用（Pet.vue 另有 listen 触发 applyTriggerBindings）。
+ */
+listenForCat<TriggerBinding[]>(TRIGGER_BINDINGS_CHANGED_EVENT, (data) => {
+  if (Array.isArray(data)) {
+    triggerBindings.value = data.map((e) => ({ ...e }));
+  }
+});
 
 // ── 按键序列化（从原 useShortcuts 迁入） ────────────────────────
 

@@ -16,6 +16,7 @@ mod gaze;
 mod geometry;
 mod icon;
 mod resources;
+mod settings;
 mod state;
 mod tray;
 mod updater;
@@ -23,17 +24,30 @@ mod window;
 
 use std::sync::Mutex;
 
-use tauri::{Manager, PhysicalPosition};
+use tauri::Manager;
 
 use state::{DownloadState, PetState};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let builder = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         // 全局快捷键插件。具体按键由前端按用户配置经 JS 插件 API
         //（@tauri-apps/plugin-global-shortcut）注册，故此处无需 Rust 端 handler。
-        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
+        .plugin(tauri_plugin_global_shortcut::Builder::new().build());
+
+    // 单实例锁：第二个实例启动时聚焦主窗，而非新开进程。
+    // 多猫=单进程多窗口，仍禁止开第二个应用进程。
+    #[cfg(desktop)]
+    let builder = builder.plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
+        if let Some(w) = app.get_webview_window("settings") {
+            let _ = w.unminimize();
+            let _ = w.show();
+            let _ = w.set_focus();
+        }
+    }));
+
+    builder
         .manage(PetState {
             scale: Mutex::new(1.0),
             head_offset: Mutex::new((0.0, 0.0)),
@@ -51,7 +65,12 @@ pub fn run() {
             window::pet_ctrl_pressed,
             window::pet_quit,
             window::pet_toggle_visibility,
+            window::pet_toggle_cat_visible,
             window::pet_open_settings,
+            window::pet_show_cat_window,
+            window::pet_close_cat_window,
+            window::pet_list_shown_cats,
+            window::pet_list_visible_cats,
             window::pet_consume_pending_tab,
             window::pet_play_action,
             window::pet_open_url,
@@ -59,7 +78,6 @@ pub fn run() {
             resources::pet_read_manifest,
             resources::pet_write_manifest,
             resources::pet_set_resource_root,
-            resources::pet_get_resource_root,
             resources::pet_list_dirs,
             converter::pet_converter_begin,
             converter::pet_converter_write,
@@ -72,18 +90,33 @@ pub fn run() {
             updater::pet_update_status,
             updater::pet_update_apply,
             updater::pet_update_last_result,
-            feedback::pet_submit_feedback
+            feedback::pet_submit_feedback,
+            settings::pet_settings_exists,
+            settings::pet_load_global,
+            settings::pet_save_global,
+            settings::pet_load_cat,
+            settings::pet_save_cat,
+            settings::pet_delete_cat,
+            settings::pet_list_cats,
+            settings::pet_save_avatar,
+            settings::pet_avatar_url,
+            settings::pet_reset_avatar,
+            settings::pet_apply_avatar_as_icon,
+            settings::pet_ensure_default_avatar
         ])
         .on_window_event(|window, event| {
-            // Clamp the pet to the union of all monitors. There is only one
-            // window now (the menu lives inside it), so this affects the
-            // single "duoduo" window.
+            // settings 主窗关闭(×)=隐藏到托盘（托盘「退出」才真退）。
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                if window.label() == "settings" {
+                    api.prevent_close();
+                    let _ = window.hide();
+                    return;
+                }
+            }
+            // 宠物窗 Moved：clamp 到工作区。最小化时 Windows 把窗口停到
+            // (-32000,-32000)，clamp 会与最小化打架、ping-pong 到卡死，故跳过。
             if let tauri::WindowEvent::Moved(_) = event {
-                if window.label() == "duoduo" {
-                    // When the window is minimized, Windows parks it off-screen
-                    // at (-32000, -32000). Clamping that back into view would
-                    // fight the minimize and ping-pong Moved events forever,
-                    // freezing the app — so skip clamping while minimized.
+                if window.label().starts_with("cat-") {
                     if window.is_minimized().unwrap_or(false) {
                         return;
                     }
@@ -92,7 +125,7 @@ pub fn run() {
                     }
                 }
             }
-            // Remember the settings window size so it can be restored on reopen.
+            // settings 窗 Resized：记忆逻辑尺寸，重开恢复。
             if let tauri::WindowEvent::Resized(size) = event {
                 if window.label() == "settings" {
                     let sf = window.scale_factor().unwrap_or(1.0);
@@ -104,32 +137,33 @@ pub fn run() {
                     }
                 }
             }
+            // 宠物窗销毁（下班/关窗）：广播让设置页实时刷新上班/下班、显隐状态。
+            if let tauri::WindowEvent::Destroyed = event {
+                if window.label().starts_with("cat-") {
+                    use tauri::Emitter;
+                    let _ = window.app_handle().emit("cat-windows-changed", ());
+                    // 通知其余存活猫窗重新登记全局快捷键：全局键是进程级资源，
+                    // 关掉的这只猫可能正是当前持有者，存活猫需重新抢注，否则快捷键失效。
+                    let _ = window.app_handle().emit("cat-window-destroyed", ());
+                }
+            }
         })
         .setup(|app| {
             // 构建系统托盘（图标 + 菜单 + 左键显隐）。
             tray::build_tray(app.handle())?;
 
-            // Position the pet window at the bottom-right of the primary
-            // monitor's work area (clear of the taskbar). The window size is
-            // dynamic (sized for the current cat + menu/bubble reserves); here
-            // we use the default scale 1.0 — the frontend syncs the user's real
-            // size on mount, which re-anchors the window to the cat foot. The
-                    // window is transparent and empty until resources load, so this
-                    // initial resize is invisible.
-            if let Some(window) = app.get_webview_window("duoduo") {
-                if let Ok(Some(monitor)) = window.current_monitor() {
-                    let area = monitor.work_area();
-                    let sf = window.scale_factor().unwrap_or(1.0);
-                    let win_size = geometry::window_size_for(1.0, sf);
-                    let _ = window.set_size(win_size);
-                    let x = area.position.x + area.size.width as i32 - win_size.width as i32;
-                    let y = area.position.y + area.size.height as i32 - win_size.height as i32;
-                    let _ = window.set_position(PhysicalPosition::new(x, y));
-                    // Window was created with visible:false — show it now that
-                    // it's at the correct size and position (no flash).
-                    let _ = window.show();
+            // 给设置主窗设置高清默认图标（256×256），避免任务栏/标题栏图标模糊。
+            // 若用户设过自定义图标，下面的 load_custom_icon 会再覆盖。
+            if let Some(win) = app.get_webview_window("settings") {
+                if let Ok(img) = tauri::image::Image::from_bytes(include_bytes!(
+                    "../icons/128x128@2x.png"
+                )) {
+                    let _ = win.set_icon(img);
                 }
             }
+
+            // 默认宠物窗由设置页主窗 mount 后通过 pet_show_cat_window 创建，
+            // 避免在 setup 同步 build webview 卡死。
 
             // 加载自定义图标（如果用户设置过）。
             icon::load_custom_icon(app.handle());

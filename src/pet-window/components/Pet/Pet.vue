@@ -101,6 +101,7 @@ import {
   opacity,
   alwaysOnTop,
   passthrough,
+  saveAndBroadcast,
 } from "../../../pet-core/displaySettings";
 import { menuSettings } from "../../../pet-core/menuSettings";
 import { useCatBrain } from "../../../pet-core/useCatBrain";
@@ -111,29 +112,26 @@ import {
   triggerBindings,
   TRIGGER_BINDINGS_CHANGED_EVENT,
   TRIGGER_BINDINGS_RESULT_EVENT,
-  loadTriggerBindings,
   matchesKey,
   toAccelerator,
   type TriggerBinding,
   type TriggerResult,
 } from "../../../pet-core/triggerBindings";
+import {
+  follow,
+  headOffset,
+  windowPos,
+  scheduleSave,
+  START_CALIBRATE_EVENT,
+} from "../../../pet-core/appSettings";
+import { currentCatId, listenForCat } from "../../../pet-core/catContext";
+import { shouldShowUpdateBubble, recordUpdateDismiss } from "../../../pet-core/appSettings";
 
 // ── 行为状态机 ──────────────────────────────────────────
 // 所有"显示哪一帧"的逻辑都集中在 brain 中；Pet.vue 只负责
 // 窗口层面的事务（拖动、菜单、校准、提示、尺寸缩放）。
-/** 从 localStorage 读数字/布尔设置；缺失或非法时用默认值。用于热重载（重挂）后恢复用户设置。 */
-function loadSetting<T extends number | boolean>(key: string, def: T): T {
-  const raw = localStorage.getItem(key);
-  if (raw === null) return def;
-  if (typeof def === "number") {
-    const n = Number(raw);
-    return (Number.isFinite(n) ? n : def) as T;
-  }
-  return (raw === "true") as T;
-}
-
-/** 为 false 时，猫咪会忽略光标（即"别偷看"开关）。 */
-const followCursor = ref(loadSetting<boolean>("pet-follow", true));
+/** 为 false 时，猫咪会忽略光标（即"别偷看"开关）。值来自 appSettings.follow。 */
+const followCursor = follow;
 const brain = useCatBrain({
   followEnabled: () => followCursor.value,
   // 校准期间让猫咪停留在 idle 状态，使其头部停止跟踪光标
@@ -293,9 +291,8 @@ watch(
   { immediate: true },
 );
 
-// 持久化用户设置：热重载重挂 <Pet> 后自动恢复（headOffset 另有持久化）。
-// size / opacity / passthrough 由 useDisplaySettings composable 统一持久化和跨窗口同步。
-watch(followCursor, (v) => localStorage.setItem("pet-follow", String(v)));
+// follow / headOffset 现随 display 广播统一同步：设置窗改开关、或本窗校准改偏移，都走
+// display-settings-changed 广播，appSettings 监听后统一写盘，宠物窗无需再单独 watch 写盘。
 
 // 窗口层级：监听 composable 中 alwaysOnTop 的变化，调 Tauri API 实际应用到主窗口。
 watch(
@@ -317,27 +314,19 @@ const menuOpen = ref(false);
 // 头部偏移量相对于精灵图*直径*的比例，使其在尺寸变化时保持稳定。
 //（0,0）= 图像中心，（0,-0.2）= 略微偏上。
 const calibrating = ref(false);
-const headOffset = ref<{ x: number; y: number }>({ x: 0, y: 0 });
 
-// 启动时加载已持久化的偏移量。
-try {
-  const raw = localStorage.getItem("pet-head-offset");
-  if (raw) {
-    const parsed = JSON.parse(raw);
-    if (typeof parsed.x === "number" && typeof parsed.y === "number") {
-      headOffset.value = parsed;
-    }
-  }
-} catch {
-  /* 数据损坏——忽略 */
-}
+// 设置窗「校准猫头」按钮 → 广播 START_CALIBRATE（带 catId）→ 本猫窗进入校准模式。
+listenForCat<boolean>(START_CALIBRATE_EVENT, () => {
+  calibrating.value = true;
+});
 
 function confirmCalibrate() {
-  localStorage.setItem("pet-head-offset", JSON.stringify(headOffset.value));
   invoke("pet_set_head_offset", {
     x: headOffset.value.x,
     y: headOffset.value.y,
   }).catch(() => {});
+  // 头部偏移走 display 广播上报：同步给设置窗镜像 + appSettings 监听后写盘。
+  saveAndBroadcast();
   calibrating.value = false;
   showToast("猫头位置已校准 ✓");
 }
@@ -359,6 +348,7 @@ const petCtx: PetActionContext = {
   say,
   placeMenuAt,
   pendingMenuPos,
+  catId: currentCatId.value,
 };
 
 useGestures(catWrapRef, triggerBindings, petCtx);
@@ -470,11 +460,23 @@ watch(
 
 // ── 更新检查 ─────────────────────────────────────────────────────
 // `updateAvailable` 已在上方「点击穿透」块声明（供 `interactive` computed 引用）。
+// 检查本身已改为后端常驻的后台轮询（见 updater::spawn_update_polling，每 4 小时一次，
+// 与本窗口的开关无关）；这里只被动读缓存 + 监听后续结果，不再主动发请求。
 
-/** 启动后台静默检查更新；失败完全忽略（不打扰用户）。 */
-async function silentCheckUpdate() {
+/** 后端 `pet_update_last_result` / `update://checked` 共用的检查结果结构。 */
+interface CheckResult {
+  hasUpdate: boolean;
+  current: string;
+  latest: string;
+  notes: string;
+}
+
+/** 当前若显示气泡，对应的新版本号（供关闭时计次用；未显示时为空串）。 */
+let pendingBubbleVersion = "";
+
+/** 根据一次检查结果决定是否显示「发现新版本」气泡：下载中/已下载优先，其次按版本计次。 */
+async function applyCheckResult(r: CheckResult) {
   try {
-    const r = await invoke<{ hasUpdate: boolean }>("pet_update_check");
     const s = await invoke<{
       isDownloading: boolean;
       downloadedPath: string;
@@ -485,23 +487,43 @@ async function silentCheckUpdate() {
       updateReady.value = true;
       return;
     }
-    updateAvailable.value = r.hasUpdate;
   } catch {
-    // 静默：网络不可达 / 无源时不提示。
+    // 状态查询失败：按无下载处理，继续走下面的气泡逻辑。
+  }
+  const show = r.hasUpdate && shouldShowUpdateBubble(r.latest);
+  pendingBubbleVersion = show ? r.latest : "";
+  updateAvailable.value = show;
+}
+
+/** 挂载时读一次后台轮询缓存兜底（覆盖"本窗口是在后台已经查过之后才挂载"的情况）。 */
+async function loadCachedUpdateResult() {
+  try {
+    const cached = await invoke<{ result: CheckResult | null }>(
+      "pet_update_last_result",
+    );
+    if (cached.result) await applyCheckResult(cached.result);
+  } catch {
+    // 静默：命令不可用时保持初始状态。
   }
 }
 
-/** 关闭新版本提示气泡。 */
+/** 关闭新版本提示气泡：记录本版本的关闭次数，达到上限后不再自动弹出。 */
 function dismissUpdateBubble() {
   updateAvailable.value = false;
   updateReady.value = false;
+  if (pendingBubbleVersion) {
+    void recordUpdateDismiss(pendingBubbleVersion);
+    pendingBubbleVersion = "";
+  }
 }
 
 /** 点击提示气泡：打开设置窗口的「关于/更新」页。 */
 function openUpdatePage() {
   updateAvailable.value = false;
   updateReady.value = false;
-  invoke("pet_open_settings", { tab: "update" }).catch(() => {});
+  invoke("pet_open_settings", { tab: "update", catId: currentCatId.value }).catch(
+    () => {},
+  );
 }
 
 // ── 云朵气泡（猫说话 / 轻提示共用） ────────────────────────────────
@@ -546,7 +568,12 @@ function dispatchKeyBinding(entry: TriggerBinding): void {
     petCtx.speakPool = entry.phrases;
   }
   try {
-    resolveAction(entry.actionId, petCtx);
+    if (entry.actionId === "openSettings") {
+      // 快捷键打开设置页不激活当前猫（与托盘一致），区别于菜单/按钮等带猫上下文的入口。
+      invoke("pet_open_settings").catch(() => {});
+    } else {
+      resolveAction(entry.actionId, petCtx);
+    }
   } finally {
     petCtx.speakPool = undefined;
   }
@@ -610,8 +637,11 @@ function onAppShortcutKeydown(e: KeyboardEvent) {
 
 let unlistenOpenMenu: UnlistenFn | undefined;
 let unlistenShortcuts: UnlistenFn | undefined;
+let unlistenCatDestroyed: UnlistenFn | undefined;
 let unlistenFocus: UnlistenFn | undefined;
+let unlistenMoved: UnlistenFn | undefined;
 let unlistenUpdateCompleted: UnlistenFn | undefined;
+let unlistenUpdateChecked: UnlistenFn | undefined;
 
 onMounted(async () => {
   // 启动时将已持久化的头部偏移量同步给 Rust。
@@ -649,19 +679,56 @@ onMounted(async () => {
     .then((fn) => {
       unlistenFocus = fn;
     });
+  // 记忆窗口位置：拖动结束（Moved）后记录物理坐标，防抖写回 cats/<id>.json，
+  // 供下次上班/重启恢复原位。最小化时 Windows 把窗停到 (-32000,-32000)，需过滤。
+  getCurrentWindow()
+    .onMoved(({ payload: pos }) => {
+      if (pos.x <= -30000 || pos.y <= -30000) return;
+      windowPos.value = { x: pos.x, y: pos.y };
+      scheduleSave();
+    })
+    .then((fn) => {
+      unlistenMoved = fn;
+    });
   // 设置窗保存快捷键后会广播该事件，主窗收到即重新应用。
   try {
-    unlistenShortcuts = await listen(TRIGGER_BINDINGS_CHANGED_EVENT, () => {
-      // 设置窗保存后广播新绑定；主窗刷新本地 ref 并重新应用。
-      triggerBindings.value = loadTriggerBindings();
+    unlistenShortcuts = await listen<{ catId: string }>(
+      TRIGGER_BINDINGS_CHANGED_EVENT,
+      (ev) => {
+        // 只对本窗口当前猫的变更重新应用；别的猫的广播忽略。
+        if (ev.payload?.catId !== currentCatId.value) return;
+        // triggerBindings.value 已被模块级 listenForCat 更新，这里只需重新应用。
+        applyTriggerBindings();
+      },
+    );
+  } catch {
+    // 忽略——事件绑定不可用。
+  }
+
+  // 任一猫窗销毁（下班/关窗）后，后端广播 cat-window-destroyed。
+  // 全局快捷键是进程级资源：关掉的那只可能正是当前持有者，且它 onUnmounted
+  // 时不再 unregisterAll（避免误杀存活猫）。故存活猫在此重新登记全局键，
+  // applyTriggerBindings 内部会先清掉已死回调、再用本窗回调重新抢注。
+  try {
+    unlistenCatDestroyed = await listen("cat-window-destroyed", () => {
       applyTriggerBindings();
     });
   } catch {
     // 忽略——事件绑定不可用。
   }
 
-  // 启动后静默检查更新；失败不打扰用户。
-  silentCheckUpdate();
+  // 更新检查已改为后台定时轮询（见上方小节）；这里只被动读缓存 + 监听后续结果。
+  await loadCachedUpdateResult();
+  try {
+    unlistenUpdateChecked = await listen<CheckResult>(
+      "update://checked",
+      (ev) => {
+        void applyCheckResult(ev.payload);
+      },
+    );
+  } catch {
+    // 忽略——事件绑定不可用。
+  }
 
   // 后台下载完成后，显示常驻的安装提示气泡（下载中不弹发现新版本气泡）。
   try {
@@ -677,11 +744,15 @@ onMounted(async () => {
 onUnmounted(() => {
   unlistenOpenMenu?.();
   unlistenShortcuts?.();
+  unlistenCatDestroyed?.();
   unlistenFocus?.();
+  unlistenMoved?.();
   unlistenUpdateCompleted?.();
+  unlistenUpdateChecked?.();
   window.removeEventListener("keydown", onAppShortcutKeydown);
-  // 注销本窗口注册的全部全局键，避免热重载重挂后重复注册。
-  unregisterAll().catch(() => {});
+  // 注意：不在此 unregisterAll()。全局键是进程级资源，多猫=单进程多窗口，
+  // 本窗口下班时若注销会连带清掉存活猫的全局键。改由后端 cat-window-destroyed
+  // 广播驱动存活猫重新抢注（见 onMounted）；进程真正退出时 OS 自动释放热键。
   if (ctrlPollTimer !== undefined) window.clearInterval(ctrlPollTimer);
   if (speechTimer !== undefined) window.clearTimeout(speechTimer);
 });

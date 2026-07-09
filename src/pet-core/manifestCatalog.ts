@@ -6,6 +6,7 @@
  * 「行为」组复用。
  */
 import { invoke } from "@tauri-apps/api/core";
+import { currentCatId } from "./catContext";
 
 /** manifest 解析出的单条动作 / 行为条目。 */
 export interface ManifestNameItem {
@@ -29,6 +30,7 @@ export async function loadManifestNames(): Promise<ManifestNames> {
   try {
     const r = await invoke<{ content: string; exists: boolean }>(
       "pet_read_manifest",
+      { catId: currentCatId.value },
     );
     if (!r.exists || !r.content.trim()) return { actions: [], behaviors: [] };
     const m = JSON.parse(r.content) as {

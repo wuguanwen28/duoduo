@@ -12,11 +12,13 @@
 </template>
 
 <script lang="ts" setup>
-import { onMounted, onUnmounted, ref } from "vue";
-import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { onMounted, ref } from "vue";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import Pet from "./components/Pet/Pet.vue";
 import MissingResources from "./components/MissingResources/MissingResources.vue";
 import { loadResources, getResourceRoot } from "../pet-core/resources";
+import { loadAppSettings } from "../pet-core/appSettings";
+import { listenForCat } from "../pet-core/catContext";
 
 /** 启动状态：加载中 / 就绪 / 失败。 */
 const status = ref<"loading" | "ready" | "error">("loading");
@@ -42,21 +44,24 @@ async function boot() {
   }
 }
 
-let unlisten: UnlistenFn | undefined;
-
 onMounted(async () => {
-  await boot();
-  // 设置窗保存 manifest 后广播 manifest-updated，主窗据此热重载资源并重挂宠物。
+  // 从窗口 label 解析猫 id（cat-<id> → <id>）；无前缀时回退 default。
+  const label = getCurrentWindow().label;
+  const catId = label.startsWith("cat-") ? label.slice(4) : "default";
+  // 配置加载失败不阻断启动：仍用默认值 boot，至少能显示猫 + 拖动。
   try {
-    unlisten = await listen("manifest-updated", () => {
-      void boot();
-    });
-  } catch {
-    // 事件不可用——忽略。
+    await loadAppSettings(catId);
+  } catch (e) {
+    console.error("loadAppSettings 失败，用默认值启动", e);
   }
+  await boot();
+  // 设置窗保存 manifest 后按猫广播 manifest-updated；只有**本猫**的变更才热重载，
+  // 避免编辑 A 的素材把 B 的窗口也重挂。listenForCat 已按 currentCatId 过滤。
+  // （宠物窗生命周期=进程窗口，不注销监听可接受。）
+  listenForCat("manifest-updated", () => {
+    void boot();
+  });
 });
-
-onUnmounted(() => unlisten?.());
 </script>
 
 <style>

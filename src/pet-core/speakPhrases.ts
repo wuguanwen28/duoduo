@@ -1,10 +1,12 @@
 /**
  * 猫说话内容配置 —— 每条短语带权重，说话时按权重随机抽取。
  *
- * 配置存 localStorage（key `pet-speak-phrases`），通过 Tauri 事件跨窗口同步。
+ * 持久化由 appSettings.ts 统一管理（~/.duoduo/setting.json），通过 Tauri 事件跨窗口同步。
+ * 默认短语见 ./defaults.ts。
  */
 import { ref } from "vue";
-import { listen, emit } from "@tauri-apps/api/event";
+import { DEFAULT_SPEAK_PHRASES } from "./defaults";
+import { emitForCat, listenForCat } from "./catContext";
 
 /** 跨窗口同步事件名。 */
 export const SPEAK_PHRASES_CHANGED_EVENT = "speak-phrases-changed";
@@ -20,46 +22,46 @@ export interface SpeakPhrase {
   weight: number;
 }
 
-const STORAGE_KEY = "pet-speak-phrases";
-
-/** 默认说话模板持久化键（用户可编辑的「默认说话内容」，区别于出厂默认）。 */
-const DEFAULT_STORAGE_KEY = "pet-speak-phrases-default";
-
-/** 默认说话池。 */
-export const DEFAULT_SPEAK_PHRASES: SpeakPhrase[] = [
-  { text: "喵~", weight: 10 },
-  { text: "干嘛戳我！！", weight: 5 },
-  { text: "今天也要加油哦！", weight: 5 },
-  { text: "我在认真看着你工作呢", weight: 3 },
-  { text: "老大，喝口水休息一下吧", weight: 3 },
-  { text: "摸鱼一时爽，一直摸鱼一直爽~", weight: 3 },
-];
-
-/** 从 localStorage 读取；解析失败或空时返回默认值。 */
-function loadPhrases(): SpeakPhrase[] {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        return parsed
-          .filter(
-            (p: unknown) => p && typeof (p as SpeakPhrase).text === "string",
-          )
-          .map((p: SpeakPhrase) => ({
-            text: p.text.trim(),
-            weight: Math.max(0, Number(p.weight) || 0),
-          }));
-      }
-    }
-  } catch {
-    // 损坏——回退默认。
-  }
-  return DEFAULT_SPEAK_PHRASES.map((p) => ({ ...p }));
+/** 规整短语数组：过滤无文本项、修剪空白、权重非负。 */
+function normalizePhrases(list: any[]): SpeakPhrase[] {
+  return list
+    .filter((p) => p && typeof p.text === "string")
+    .map((p) => ({ text: String(p.text).trim(), weight: Math.max(0, Number(p.weight) || 0) }));
 }
 
-/** 当前说话配置；模块级 ref，主窗与设置窗共享。 */
-export const speakPhrases = ref<SpeakPhrase[]>(loadPhrases());
+/** 当前说话配置；初始为出厂默认，由 appSettings 启动时填充。 */
+export const speakPhrases = ref<SpeakPhrase[]>(DEFAULT_SPEAK_PHRASES.map((p) => ({ ...p })));
+
+/** 当前默认说话模板；初始为出厂默认，由 appSettings 启动时填充。 */
+export const defaultSpeakPhrases = ref<SpeakPhrase[]>(
+  DEFAULT_SPEAK_PHRASES.map((p) => ({ ...p })),
+);
+
+/** 从持久化数据填充说话配置；缺失/损坏/空时回退出厂默认。 */
+export function hydrateSpeakPhrases(data: any): void {
+  if (Array.isArray(data) && data.length > 0) {
+    const normalized = normalizePhrases(data);
+    speakPhrases.value =
+      normalized.length > 0
+        ? normalized
+        : DEFAULT_SPEAK_PHRASES.map((p) => ({ ...p }));
+  } else {
+    speakPhrases.value = DEFAULT_SPEAK_PHRASES.map((p) => ({ ...p }));
+  }
+}
+
+/** 从持久化数据填充默认模板；缺失/损坏/空时回退出厂默认。 */
+export function hydrateDefaultSpeakPhrases(data: any): void {
+  if (Array.isArray(data) && data.length > 0) {
+    const normalized = normalizePhrases(data);
+    defaultSpeakPhrases.value =
+      normalized.length > 0
+        ? normalized
+        : DEFAULT_SPEAK_PHRASES.map((p) => ({ ...p }));
+  } else {
+    defaultSpeakPhrases.value = DEFAULT_SPEAK_PHRASES.map((p) => ({ ...p }));
+  }
+}
 
 /**
  * 按权重随机抽取一条短语。
@@ -95,51 +97,16 @@ export function saveSpeakPhrases(phrases: SpeakPhrase[]): void {
     .filter((p) => p.text.trim() !== "")
     .map((p) => ({ text: p.text.trim(), weight: Math.max(0, p.weight) }));
   speakPhrases.value = normalized;
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(normalized));
-  emit(SPEAK_PHRASES_CHANGED_EVENT, normalized).catch(() => {});
+  emitForCat(SPEAK_PHRASES_CHANGED_EVENT, normalized);
 }
 
-/**
- * 跨窗口同步：监听其他窗口广播的变更事件。
- * 模块级监听，应用生命周期内只需注册一次。
- */
-listen<SpeakPhrase[]>(SPEAK_PHRASES_CHANGED_EVENT, (event) => {
-  if (!Array.isArray(event.payload)) return;
-  speakPhrases.value = event.payload
-    .filter((p) => p && typeof p.text === "string")
-    .map((p) => ({
-      text: p.text.trim(),
-      weight: Math.max(0, Number(p.weight) || 0),
-    }));
+/** 跨窗口同步：只应用属于本窗口当前猫的变更（catId 过滤）。 */
+listenForCat<SpeakPhrase[]>(SPEAK_PHRASES_CHANGED_EVENT, (data) => {
+  if (!Array.isArray(data)) return;
+  speakPhrases.value = normalizePhrases(data);
 });
 
 // ── 默认说话模板（用户可编辑的「默认说话内容」，一键写入到任意说话入口） ──
-
-/**
- * 从 localStorage 读取默认模板；缺失 / 损坏 / 空时回退出厂默认 DEFAULT_SPEAK_PHRASES。
- */
-function loadDefaultPhrases(): SpeakPhrase[] {
-  try {
-    const raw = localStorage.getItem(DEFAULT_STORAGE_KEY);
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        return parsed
-          .filter((p: unknown) => p && typeof (p as SpeakPhrase).text === "string")
-          .map((p: SpeakPhrase) => ({
-            text: p.text.trim(),
-            weight: Math.max(0, Number(p.weight) || 0),
-          }));
-      }
-    }
-  } catch {
-    // 损坏——回退出厂默认。
-  }
-  return DEFAULT_SPEAK_PHRASES.map((p) => ({ ...p }));
-}
-
-/** 当前默认说话模板；模块级 ref，主窗与设置窗共享。 */
-export const defaultSpeakPhrases = ref<SpeakPhrase[]>(loadDefaultPhrases());
 
 /**
  * 保存并广播默认模板变更。设置窗调用；主窗只监听。
@@ -148,19 +115,16 @@ export function saveDefaultSpeakPhrases(phrases: SpeakPhrase[]): void {
   const normalized = phrases
     .filter((p) => p.text.trim() !== "")
     .map((p) => ({ text: p.text.trim(), weight: Math.max(0, p.weight) }));
-  const fallback = normalized.length > 0 ? normalized : DEFAULT_SPEAK_PHRASES.map((p) => ({ ...p }));
+  const fallback =
+    normalized.length > 0
+      ? normalized
+      : DEFAULT_SPEAK_PHRASES.map((p) => ({ ...p }));
   defaultSpeakPhrases.value = fallback;
-  localStorage.setItem(DEFAULT_STORAGE_KEY, JSON.stringify(fallback));
-  emit(SPEAK_PHRASES_DEFAULT_CHANGED_EVENT, fallback).catch(() => {});
+  emitForCat(SPEAK_PHRASES_DEFAULT_CHANGED_EVENT, fallback);
 }
 
-/** 跨窗口同步默认模板。 */
-listen<SpeakPhrase[]>(SPEAK_PHRASES_DEFAULT_CHANGED_EVENT, (event) => {
-  if (!Array.isArray(event.payload)) return;
-  defaultSpeakPhrases.value = event.payload
-    .filter((p) => p && typeof p.text === "string")
-    .map((p) => ({
-      text: p.text.trim(),
-      weight: Math.max(0, Number(p.weight) || 0),
-    }));
+/** 跨窗口同步默认模板：只应用属于本窗口当前猫的变更（catId 过滤）。 */
+listenForCat<SpeakPhrase[]>(SPEAK_PHRASES_DEFAULT_CHANGED_EVENT, (data) => {
+  if (!Array.isArray(data)) return;
+  defaultSpeakPhrases.value = normalizePhrases(data);
 });

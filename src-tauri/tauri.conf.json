@@ -12,18 +12,16 @@
   "app": {
     "windows": [
       {
-        "label": "duoduo",
+        "label": "settings",
         "title": "duoduo",
-        "width": 620,
-        "height": 400,
-        "resizable": false,
-        "decorations": false,
-        "transparent": true,
-        "alwaysOnTop": true,
-        "skipTaskbar": true,
-        "shadow": false,
-        "center": false,
-        "visible": false
+        "url": "settings.html",
+        "width": 900,
+        "height": 600,
+        "resizable": true,
+        "decorations": true,
+        "transparent": false,
+        "visible": false,
+        "center": true
       }
     ],
     "security": {

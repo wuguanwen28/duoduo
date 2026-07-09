@@ -5,67 +5,42 @@ use std::path::{Path, PathBuf};
 
 use tauri::Manager;
 
-/// 用户选定的资源目录持久化文件（存于系统 AppData 配置目录下，单行绝对路径）。
-fn resource_path_config(app: &tauri::AppHandle) -> Option<PathBuf> {
-    app.path()
-        .app_config_dir()
-        .ok()
-        .map(|d| d.join("resource_path.txt"))
-}
-
-/// 读取持久化的用户选定资源目录；文件不存在/为空/目录已失效时返回 None。
-fn read_saved_resource_root(app: &tauri::AppHandle) -> Option<PathBuf> {
-    let cfg = resource_path_config(app)?;
-    let text = std::fs::read_to_string(&cfg).ok()?;
-    let trimmed = text.trim();
-    if trimmed.is_empty() {
-        return None;
-    }
-    let p = PathBuf::from(trimmed);
-    if p.is_dir() {
-        Some(p)
-    } else {
-        None
-    }
-}
-
-/// 把用户选定的资源目录写入 AppData 配置（下次启动仍生效）。
-fn write_saved_resource_root(app: &tauri::AppHandle, dir: &Path) -> Result<(), String> {
-    let cfg = resource_path_config(app)
-        .ok_or_else(|| "无法定位配置目录".to_string())?;
-    if let Some(parent) = cfg.parent() {
-        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
-    }
-    std::fs::write(&cfg, dir.to_string_lossy().as_bytes()).map_err(|e| e.to_string())
-}
-
-/// 外置资源根目录的定位优先级：
-/// 1) 环境变量 `DUODUO_RESOURCES`（手动覆盖，便于调试/多套素材）；
-/// 2) AppData 持久化的用户选定目录（设置页「更换目录」写入）；
-/// 3) 开发模式（debug）：项目根下的 `resources/`；
-/// 4) 发布模式：exe 同级的 `resources/`。
-pub fn resource_root(app: &tauri::AppHandle) -> PathBuf {
+/// 某只猫的资源根目录定位优先级：
+/// 1) 环境变量 `DUODUO_RESOURCES`（全局 dev 覆盖，最高优先——**一旦设置，按猫功能在该环境失效**，所有猫同资源）；
+/// 2) 该猫 `cats/<id>.json` 的 `resource_root`（设置页「更换目录」写入，需为有效目录）；
+/// 3) 仅默认猫 `default`：回退内置 `resources/`（debug=项目根，release=exe 同级）；
+/// 4) 否则 `None`——表示这只猫还没配素材，调用方据此走缺资源引导。
+pub fn resource_root(app: &tauri::AppHandle, cat_id: &str) -> Option<PathBuf> {
     if let Ok(p) = std::env::var("DUODUO_RESOURCES") {
         if !p.trim().is_empty() {
-            return PathBuf::from(p);
+            return Some(PathBuf::from(p));
         }
     }
-    if let Some(p) = read_saved_resource_root(app) {
-        return p;
+    // 该猫自己设定的资源根；目录失效则跳过。
+    let cat = crate::settings::load_cat(app, cat_id);
+    if let Some(s) = cat.resource_root.as_ref() {
+        let p = PathBuf::from(s);
+        if p.is_dir() {
+            return Some(p);
+        }
+    }
+    // 仅默认猫回退到内置 resources/；其他猫无素材返回 None。
+    if cat_id != "default" {
+        return None;
     }
     #[cfg(debug_assertions)]
     {
         // 开发模式下 CARGO_MANIFEST_DIR 指向 src-tauri，其父目录即项目根。
         if let Some(root) = Path::new(env!("CARGO_MANIFEST_DIR")).parent() {
-            return root.join("resources");
+            return Some(root.join("resources"));
         }
     }
     if let Ok(exe) = std::env::current_exe() {
         if let Some(dir) = exe.parent() {
-            return dir.join("resources");
+            return Some(dir.join("resources"));
         }
     }
-    PathBuf::from("resources")
+    Some(PathBuf::from("resources"))
 }
 
 /// 受支持的帧图片扩展名（统一按小写比较）。
@@ -114,8 +89,16 @@ pub struct ScanResult {
 /// 列出帧文件绝对路径，并把这些目录加入 asset 协议白名单，使前端能用
 /// `convertFileSrc` 直接加载磁盘上的图片。一次性返回，减少前后端往返。
 #[tauri::command]
-pub fn pet_scan_resources(app: tauri::AppHandle) -> ScanResult {
-    let root = resource_root(&app);
+pub fn pet_scan_resources(app: tauri::AppHandle, cat_id: String) -> ScanResult {
+    // 该猫没有素材目录（新增猫未配置）→ 返回引导文案，前端据此显示缺资源卡。
+    let Some(root) = resource_root(&app, &cat_id) else {
+        return ScanResult {
+            root: String::new(),
+            manifest: serde_json::Value::Null,
+            frames: HashMap::new(),
+            error: Some("尚未为该猫设置素材目录，请到资源设置选择目录".to_string()),
+        };
+    };
     let root_str = root.display().to_string();
     let manifest_path = root.join("manifest.json");
 
@@ -205,8 +188,16 @@ pub struct ManifestFile {
 /// 读取资源根目录下的 manifest.json 原文（供设置窗编辑）。不存在不报错，
 /// 返回 exists=false + 空内容，由前端给出默认模板。
 #[tauri::command]
-pub fn pet_read_manifest(app: tauri::AppHandle) -> ManifestFile {
-    let root = resource_root(&app);
+pub fn pet_read_manifest(app: tauri::AppHandle, cat_id: String) -> ManifestFile {
+    // 该猫无素材目录 → 视作无 manifest（前端回退默认模板/空状态）。
+    let Some(root) = resource_root(&app, &cat_id) else {
+        return ManifestFile {
+            root: String::new(),
+            path: String::new(),
+            content: String::new(),
+            exists: false,
+        };
+    };
     let path = root.join("manifest.json");
     let exists = path.is_file();
     let content = if exists {
@@ -223,10 +214,10 @@ pub fn pet_read_manifest(app: tauri::AppHandle) -> ManifestFile {
 }
 
 /// 把内容写回资源根目录下的 manifest.json（目录不存在则创建）。
-/// 「没有就直接创建」即由此实现。
+/// 「没有就直接创建」即由此实现。该猫无素材目录时报错（防误写到进程 cwd）。
 #[tauri::command]
-pub fn pet_write_manifest(app: tauri::AppHandle, content: String) -> Result<(), String> {
-    let root = resource_root(&app);
+pub fn pet_write_manifest(app: tauri::AppHandle, cat_id: String, content: String) -> Result<(), String> {
+    let root = resource_root(&app, &cat_id).ok_or("尚未为该猫设置素材目录")?;
     std::fs::create_dir_all(&root).map_err(|e| e.to_string())?;
     std::fs::write(root.join("manifest.json"), content).map_err(|e| e.to_string())
 }
@@ -241,10 +232,17 @@ const BLANK_MANIFEST: &str = r#"{
 }
 "#;
 
-/// 设置用户选定的资源目录：校验目录 → 写入 AppData 持久化 → 若缺 manifest.json
-/// 则创建空白模板 → 返回采用后的资源根绝对路径。
+/// 设置某只猫选定的资源目录：校验目录 → 写入该猫 cats/<id>.json 的 resource_root →
+/// 若缺 manifest.json 则创建空白模板 → 返回采用后的资源根绝对路径。
+///
+/// **resource_root 的唯一权威写者**：走 load_cat → 改字段 → save_cat（helper 不做保留），
+/// 与 pet_save_cat 命令的「保留磁盘值」配合，确保只有此入口能改资源根。
 #[tauri::command]
-pub fn pet_set_resource_root(app: tauri::AppHandle, path: String) -> Result<String, String> {
+pub fn pet_set_resource_root(
+    app: tauri::AppHandle,
+    cat_id: String,
+    path: String,
+) -> Result<String, String> {
     let dir = PathBuf::from(path.trim());
     if dir.as_os_str().is_empty() {
         return Err("目录路径为空".into());
@@ -252,7 +250,10 @@ pub fn pet_set_resource_root(app: tauri::AppHandle, path: String) -> Result<Stri
     if !dir.is_dir() {
         return Err(format!("目录不存在：{}", dir.display()));
     }
-    write_saved_resource_root(&app, &dir)?;
+    // 写入该猫的行为配置文件 cats/<id>.json 的 resource_root。
+    let mut cat = crate::settings::load_cat(&app, &cat_id);
+    cat.resource_root = Some(dir.display().to_string());
+    crate::settings::save_cat(&app, &cat_id, &cat)?;
     // 缺 manifest.json 就创建空白模板，让用户能直接进设置页配置。
     let manifest = dir.join("manifest.json");
     if !manifest.is_file() {
@@ -262,11 +263,6 @@ pub fn pet_set_resource_root(app: tauri::AppHandle, path: String) -> Result<Stri
     Ok(dir.display().to_string())
 }
 
-/// 返回当前生效的资源根目录绝对路径（设置页顶栏展示用）。
-#[tauri::command]
-pub fn pet_get_resource_root(app: tauri::AppHandle) -> String {
-    resource_root(&app).display().to_string()
-}
 
 /// 目录树节点：`label` 为目录名，`value` 为相对资源根的 POSIX 风格相对路径。
 #[derive(serde::Serialize)]
@@ -310,10 +306,12 @@ fn list_subdirs(dir: &Path, rel: &str, depth: usize) -> Vec<DirNode> {
     out
 }
 
-/// 以资源根为根，递归列出所有子目录，供设置页的目录树形下拉使用。
-/// 根目录不存在/不可读时返回空数组（不报错）。
+/// 以该猫资源根为根，递归列出所有子目录，供设置页的目录树形下拉使用。
+/// 无素材目录 / 目录不可读时返回空数组（不报错）。
 #[tauri::command]
-pub fn pet_list_dirs(app: tauri::AppHandle) -> Vec<DirNode> {
-    let root = resource_root(&app);
-    list_subdirs(&root, "", 8)
+pub fn pet_list_dirs(app: tauri::AppHandle, cat_id: String) -> Vec<DirNode> {
+    match resource_root(&app, &cat_id) {
+        Some(root) => list_subdirs(&root, "", 8),
+        None => Vec::new(),
+    }
 }

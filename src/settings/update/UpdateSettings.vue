@@ -1,11 +1,21 @@
 <template>
   <div class="update-settings">
     <!-- 顶部工具条，与设置页其他子页面保持统一 -->
-    <header class="topbar">
-      <div class="topbar__left">
-        <span class="topbar__title">关于 / 更新</span>
-      </div>
-    </header>
+    <SettingsHeader title="关于">
+      <template #actions>
+        <el-button
+          class="action-btn"
+          plain
+          type="primary"
+          @click="feedbackVisible = true"
+        >
+          <template #icon>
+            <el-icon><Promotion /></el-icon>
+          </template>
+          意见反馈
+        </el-button>
+      </template>
+    </SettingsHeader>
 
     <main class="update-settings__body">
       <!-- 品牌卡片：应用信息 + 操作按钮 -->
@@ -31,12 +41,6 @@
                 <img :src="githubIcon" class="action-btn__icon" alt="" />
               </template>
               GitHub
-            </el-button>
-            <el-button class="action-btn" @click="feedbackVisible = true">
-              <template #icon>
-                <span style="font-size: 16px">💬</span>
-              </template>
-              意见反馈
             </el-button>
             <el-button
               type="primary"
@@ -93,10 +97,16 @@
 import { ref, computed, onMounted, onUnmounted } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import { Download, RefreshRight, Close } from "@element-plus/icons-vue";
+import {
+  Download,
+  RefreshRight,
+  Close,
+  Promotion,
+} from "@element-plus/icons-vue";
 import githubIcon from "../../assets/github.svg";
 import giteeIcon from "../../assets/gitee.svg";
 import FeedbackDialog from "./FeedbackDialog.vue";
+import SettingsHeader from "../common/SettingsHeader.vue";
 
 /** 应用图标（与 BasicSettings 共用同一份默认图标资源）。 */
 const appIcon = new URL("../../assets/icon.png", import.meta.url).href;
@@ -350,30 +360,6 @@ onUnmounted(() => {
 <style scoped lang="scss">
 .update-settings {
   min-height: 100vh;
-}
-
-.topbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 0 16px;
-  height: 54px;
-  box-sizing: border-box;
-  background: #fff;
-  border-bottom: 1px solid var(--el-border-color-light);
-  position: sticky;
-  top: 0;
-  z-index: 10;
-}
-.topbar__left {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-.topbar__title {
-  font-size: 16px;
-  font-weight: 600;
 }
 
 .update-settings__body {
