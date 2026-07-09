@@ -3,7 +3,11 @@
     <!-- 顶部工具条 -->
     <SettingsHeader title="基础设置">
       <template #actions>
-        <el-button type="primary" :icon="Plus" @click="openAdd"
+        <el-button
+          v-if="!hideAddCat"
+          type="primary"
+          :icon="Plus"
+          @click="openAdd"
           >新增小猫</el-button
         >
       </template>
@@ -91,6 +95,7 @@
               >编辑</el-button
             >
             <el-popconfirm
+              v-if="!hideAddCat"
               :title="`确定删除「${cat.name || '未命名'}」吗？该猫的所有配置和头像将一并删除，不可恢复。`"
               confirm-button-text="删除"
               cancel-button-text="取消"
@@ -243,6 +248,7 @@ import { Cropper } from "vue-advanced-cropper";
 import "vue-advanced-cropper/dist/style.css";
 import { basicSettings, saveBasicSettings } from "../../pet-core/basicSettings";
 import SettingsHeader from "../common/SettingsHeader.vue";
+import { hideAddCat } from "../../pet-core/appConfig";
 import {
   avatarUrl,
   avatarAssetUrl,

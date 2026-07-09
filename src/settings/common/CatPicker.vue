@@ -19,6 +19,7 @@ import {
   listCats,
   type CatEntry,
 } from "../../pet-core/appSettings";
+import { hideAddCat } from "../../pet-core/appConfig";
 
 const emit = defineEmits<{
   /** 切猫完成后触发，携带新猫 id，供页面重载各自的按猫状态。 */
@@ -54,7 +55,9 @@ async function onPick(id: string) {
 </script>
 
 <template>
-  <el-button class="cat-picker-btn" size="small" @click="open = true">
+  <!-- 单猫模式（hideAddCat）下整体隐藏选猫器，覆盖显示设置/资源设置两个使用点。 -->
+  <template v-if="!hideAddCat">
+    <el-button class="cat-picker-btn" size="small" @click="open = true">
     <div class="cat-picker-btn__content">
       <img
         v-if="avatarUrl"
@@ -84,6 +87,7 @@ async function onPick(id: string) {
       </div>
     </div>
   </el-dialog>
+  </template>
 </template>
 
 <style scoped lang="scss">
