@@ -41,6 +41,8 @@ pub fn run() {
             pending_tab: Mutex::new(None),
             settings_size: Mutex::new(None),
             download: Mutex::new(DownloadState::default()),
+            last_check: Mutex::new(None),
+            last_checked_at: Mutex::new(None),
         })
         .invoke_handler(tauri::generate_handler![
             gaze::pet_cursor_angle,
@@ -69,6 +71,7 @@ pub fn run() {
             updater::pet_update_cancel,
             updater::pet_update_status,
             updater::pet_update_apply,
+            updater::pet_update_last_result,
             feedback::pet_submit_feedback
         ])
         .on_window_event(|window, event| {
@@ -133,6 +136,10 @@ pub fn run() {
 
             // 清理上次热更新残留的旧 exe。
             updater::cleanup_old_exe();
+
+            // 后台定时轮询检查更新：与任何窗口的开关无关，进程存活期间持续运行，
+            // 立即查一次后每 4 小时重查（见 updater::spawn_update_polling）。
+            updater::spawn_update_polling(app.handle().clone());
 
             Ok(())
         })

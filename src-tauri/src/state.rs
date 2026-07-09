@@ -1,5 +1,7 @@
 use std::sync::Mutex;
 
+use crate::updater::CheckResult;
+
 /// 下载状态快照，供设置窗口重开时恢复，也供小猫窗口判断是否要提示安装。
 #[derive(Clone, Debug, Default, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -27,6 +29,9 @@ pub struct DownloadState {
 /// window so it can be restored on reopen.
 ///
 /// `download` 持久化更新下载状态，使设置窗口关闭后仍可后台下载，重开后恢复。
+///
+/// `last_check` / `last_checked_at` 是后台轮询更新检查的共享缓存：小猫窗口和设置
+/// 窗口都只被动读它（`updater::pet_update_last_result`），不再各自发请求。
 pub struct PetState {
     pub scale: Mutex<f64>,
     pub head_offset: Mutex<(f64, f64)>,
@@ -34,4 +39,6 @@ pub struct PetState {
     pub pending_tab: Mutex<Option<String>>,
     pub settings_size: Mutex<Option<(f64, f64)>>,
     pub download: Mutex<DownloadState>,
+    pub last_check: Mutex<Option<CheckResult>>,
+    pub last_checked_at: Mutex<Option<std::time::SystemTime>>,
 }

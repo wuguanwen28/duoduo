@@ -125,6 +125,12 @@ interface CheckResult {
   notes: string;
 }
 
+/** 后端 pet_update_last_result 的返回结构（只读缓存，不发网络请求）。 */
+interface LastCheckResult {
+  result: CheckResult | null;
+  checkedAtMs: number | null;
+}
+
 const current = ref("");
 const latest = ref("");
 const notes = ref("");
@@ -186,6 +192,20 @@ async function onCheck() {
     ElMessage.error(`检查失败：${e}`);
   } finally {
     checking.value = false;
+  }
+}
+
+/** 页面打开时读一次后台轮询缓存；不发请求，切标签页/重开设置页都不会触发新检查。 */
+async function loadCachedResult() {
+  try {
+    const r = await invoke<LastCheckResult>("pet_update_last_result");
+    if (r.result) {
+      latest.value = r.result.latest;
+      notes.value = r.result.notes;
+      hasUpdate.value = r.result.hasUpdate;
+    }
+  } catch {
+    // 静默：缓存还未就绪时保持初始空状态，按钮仍可手动点「检查更新」。
   }
 }
 
@@ -285,7 +305,7 @@ onMounted(async () => {
   } catch {
     // 取本地版本理论上不会失败；万一失败留空，由 onCheck 兜底。
   }
-  await onCheck();
+  await loadCachedResult();
   await restoreDownloadState();
 
   unlisten = await listen<{

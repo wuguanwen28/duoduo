@@ -402,9 +402,11 @@ pub fn pet_app_version() -> String {
     env!("CARGO_PKG_VERSION").to_string()
 }
 
-/// 检查更新：三源拉 version.json，与当前版本比较。
-#[tauri::command]
-pub async fn pet_update_check() -> Result<CheckResult, String> {
+/// 后台轮询间隔：4 小时。
+const POLL_INTERVAL_SECS: u64 = 4 * 60 * 60;
+
+/// 实际执行一次检查（三源拉 version.json + 版本比较），不涉及缓存/事件。
+async fn run_check() -> Result<CheckResult, String> {
     let current = env!("CARGO_PKG_VERSION").to_string();
     let m = fetch_manifest().await?;
     Ok(CheckResult {
@@ -413,6 +415,78 @@ pub async fn pet_update_check() -> Result<CheckResult, String> {
         latest: m.version,
         notes: m.notes,
     })
+}
+
+/// 把检查结果写入共享缓存，供 `pet_update_last_result` 被动读取。
+fn store_check_result(app: &tauri::AppHandle, result: &CheckResult) {
+    let state = app.state::<PetState>();
+    if let Ok(mut g) = state.last_check.lock() {
+        *g = Some(result.clone());
+    }
+    if let Ok(mut g) = state.last_checked_at.lock() {
+        *g = Some(std::time::SystemTime::now());
+    };
+}
+
+/// 检查更新：三源拉 version.json，与当前版本比较；同时把结果写回共享缓存，
+/// 使被动读取方（小猫窗口 / 设置窗口的 `pet_update_last_result`）也能看到最新结果。
+#[tauri::command]
+pub async fn pet_update_check(app: tauri::AppHandle) -> Result<CheckResult, String> {
+    let result = run_check().await?;
+    store_check_result(&app, &result);
+    Ok(result)
+}
+
+/// 后台一次检查 + 广播：失败静默忽略（不打扰用户），成功则写缓存并 emit 事件。
+async fn poll_once(app: &tauri::AppHandle) {
+    match run_check().await {
+        Ok(result) => {
+            store_check_result(app, &result);
+            let _ = app.emit("update://checked", result);
+        }
+        Err(e) => {
+            println!("[duoduo updater] 后台轮询检查更新失败：{e}");
+        }
+    }
+}
+
+/// 启动后台轮询：立即查一次，此后每 `POLL_INTERVAL_SECS` 重查一次。
+/// 与任何窗口的开关无关，进程存活期间持续运行（`lib.rs` 的 `.setup()` 里调用一次）。
+pub fn spawn_update_polling(app: tauri::AppHandle) {
+    tauri::async_runtime::spawn(async move {
+        loop {
+            poll_once(&app).await;
+            tokio::time::sleep(std::time::Duration::from_secs(POLL_INTERVAL_SECS)).await;
+        }
+    });
+}
+
+/// 最近一次检查结果的只读快照：不发任何网络请求，供窗口挂载时被动读取。
+#[derive(serde::Serialize, Clone, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct LastCheckResult {
+    pub result: Option<CheckResult>,
+    /// 检查时间（毫秒时间戳）；当前前端 UI 未展示，保留供后续需要时使用。
+    pub checked_at_ms: Option<u64>,
+}
+
+/// 只读查询最近一次检查结果，不联网。缓存为空（后台第一次检查还没跑完）时
+/// 返回 `result: None`，前端据此显示"还未检查"而不是空转等待。
+#[tauri::command]
+pub fn pet_update_last_result(app: tauri::AppHandle) -> LastCheckResult {
+    let state = app.state::<PetState>();
+    let result = state.last_check.lock().ok().and_then(|g| g.clone());
+    let checked_at_ms = state
+        .last_checked_at
+        .lock()
+        .ok()
+        .and_then(|g| *g)
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_millis() as u64);
+    LastCheckResult {
+        result,
+        checked_at_ms,
+    }
 }
 
 #[cfg(test)]
