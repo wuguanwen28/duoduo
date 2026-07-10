@@ -13,7 +13,12 @@
         </transition>
       </template>
       <template #actions>
-        <el-button plain type="primary" :icon="QuestionFilled" @click="helpVisible = true">
+        <el-button
+          plain
+          type="primary"
+          :icon="QuestionFilled"
+          @click="helpVisible = true"
+        >
           使用说明
         </el-button>
         <el-button :icon="Refresh" @click="reload()">重新加载</el-button>
@@ -34,11 +39,27 @@
       >
         <div class="empty__tip">
           默认在程序同级的<code>resources/</code> 目录查找猫咪素材；<br />
-          没找到就请选择一个文件夹作为资源目录。
+          没找到就请选择一个文件夹作为资源目录，或下载默认资源包后手动解压使用。
         </div>
-        <el-button type="primary" :icon="FolderOpened" @click="changeDir">
-          选择资源目录
-        </el-button>
+        <div class="empty__btns">
+          <el-button type="primary" :icon="FolderOpened" @click="changeDir">
+            选择资源目录
+          </el-button>
+          <el-button
+            :icon="Download"
+            :loading="downloading"
+            @click="downloadDefaultResources"
+          >
+            下载默认资源包
+          </el-button>
+        </div>
+        <!-- 下载进度条：后端流式下载时实时更新百分比。 -->
+        <el-progress
+          v-if="downloadPct !== null"
+          :percentage="downloadPct"
+          :stroke-width="6"
+          class="empty__progress"
+        />
       </el-empty>
 
       <template v-else>
@@ -111,13 +132,27 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from "vue";
+import {
+  computed,
+  nextTick,
+  onMounted,
+  onUnmounted,
+  reactive,
+  ref,
+  watch,
+} from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import { changeResourceRoot } from "../../pet-core/appSettings";
 import { emitForCat, currentCatId } from "../../pet-core/catContext";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
-import { Refresh, FolderOpened, CircleCheckFilled, QuestionFilled } from "@element-plus/icons-vue";
+import {
+  Refresh,
+  FolderOpened,
+  CircleCheckFilled,
+  QuestionFilled,
+  Download,
+} from "@element-plus/icons-vue";
 import ContentHelpDialog from "../common/ContentHelpDialog.vue";
 import DirSelect, { type DirNode } from "./DirSelect.vue";
 import ActionsCard from "./ActionsCard.vue";
@@ -190,6 +225,52 @@ async function changeDir() {
     emitForCat("manifest-updated", null);
   } catch (e) {
     ElMessage.error(`切换目录失败：${e}`);
+  }
+}
+
+/** 下载默认资源包：弹目录选择器 -> 后端流式下载 zip 到该目录 -> 进度条 -> 提示保存路径。
+ *  复用热更新那套流式下载能力（后端 pet_download_resources），不解压、不设资源根，
+ *  解压与目录选择留给用户自己处理。 */
+const downloading = ref(false);
+/** 下载进度百分比（0-100）；null 表示未在下载。 */
+const downloadPct = ref<number | null>(null);
+
+async function downloadDefaultResources() {
+  if (downloading.value) return;
+  // 选解压目标目录：用户决定资源包放哪。
+  let picked: string | null = null;
+  try {
+    const p = await open({ directory: true, multiple: false });
+    if (typeof p === "string") picked = p;
+  } catch (e) {
+    ElMessage.error(`选择目录失败：${e}`);
+    return;
+  }
+  if (!picked) return;
+
+  downloading.value = true;
+  downloadPct.value = 0;
+  // 监听后端进度事件。
+  let unlisten: UnlistenFn | undefined;
+  try {
+    unlisten = await listen<{ downloaded: number; total: number }>(
+      "resources-download://progress",
+      (e) => {
+        const { downloaded, total } = e.payload;
+        downloadPct.value = total > 0 ? Math.round((downloaded / total) * 100) : 0;
+      },
+    );
+    // 后端流式下载 zip 到选定目录，返回保存后的文件路径。
+    const zipPath = await invoke<string>("pet_download_resources", {
+      destDir: picked,
+    });
+    ElMessage.success(`已下载到：${zipPath}`);
+  } catch (e) {
+    ElMessage.error(`下载失败：${e}`);
+  } finally {
+    unlisten?.();
+    downloading.value = false;
+    downloadPct.value = null;
   }
 }
 
@@ -297,7 +378,11 @@ function build(): any {
         .map((r) => {
           const o: any = { action: r.action, weight: r.weight };
           // __speak 才写 phrases（非空数组时）。
-          if (r.action === "__speak" && Array.isArray(r.phrases) && r.phrases.length > 0) {
+          if (
+            r.action === "__speak" &&
+            Array.isArray(r.phrases) &&
+            r.phrases.length > 0
+          ) {
             o.phrases = r.phrases.map((p) => ({
               text: p.text.trim(),
               weight: Math.max(0, Number(p.weight) || 0),
@@ -413,7 +498,10 @@ onMounted(async () => {
   // reactive，不在 loadAppSettings 的 hydrate 范围，须监听 cat-loaded 事件单独 reload。
   try {
     // 切猫静默重载：不闪 loading 遮罩、不弹 toast。
-    unlistenCatLoaded = await listen("cat-loaded", () => void reload({ silent: true }));
+    unlistenCatLoaded = await listen(
+      "cat-loaded",
+      () => void reload({ silent: true }),
+    );
   } catch {
     // 事件不可用时忽略——可手动点「重新加载」。
   }
@@ -459,7 +547,7 @@ onUnmounted(() => unlistenCatLoaded?.());
   padding: 40px 16px;
 }
 .empty__tip {
-  max-width: 420px;
+  max-width: 430px;
   margin: 0 auto 16px;
   color: var(--el-text-color-secondary);
   font-size: 13px;
@@ -470,6 +558,15 @@ onUnmounted(() => unlistenCatLoaded?.());
   padding: 1px 5px;
   border-radius: 4px;
   font-family: "Consolas", "Microsoft YaHei", monospace;
+}
+.empty__btns {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+}
+.empty__progress {
+  margin-top: 12px;
+  max-width: 360px;
 }
 
 .resdir {

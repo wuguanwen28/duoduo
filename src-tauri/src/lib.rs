@@ -11,6 +11,7 @@
 
 mod converter;
 mod config;
+mod downloader;
 mod feedback;
 mod gaze;
 mod geometry;
@@ -82,6 +83,7 @@ pub fn run() {
             resources::pet_list_dirs,
             converter::pet_converter_begin,
             converter::pet_converter_write,
+            downloader::pet_download_resources,
             icon::pet_save_icon,
             icon::pet_reset_icon,
             updater::pet_app_version,
