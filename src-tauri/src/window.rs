@@ -7,6 +7,7 @@
 #[cfg(target_os = "windows")]
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_CONTROL};
 
+use sha2::{Digest, Sha256};
 use tauri::{Emitter, Manager, PhysicalPosition};
 
 use crate::state::PetState;
@@ -297,4 +298,47 @@ pub fn pet_open_url(url: String) -> Result<(), String> {
             .map_err(|e| e.to_string())?;
     }
     Ok(())
+}
+
+/// 统计用的匿名设备标识：读 Windows 系统级 MachineGuid（重装系统前不变，与应用
+/// 安装位置/热更新/配置目录都无关），加固定盐做 sha256 后返回。
+/// 只返回哈希，绝不返回原始 MachineGuid——库里不落真实机器码，万一泄露也无法反推/碰撞。
+#[tauri::command]
+pub fn pet_device_id() -> String {
+    // 盐：让哈希只对本应用有意义，避免与其他读同一 MachineGuid 的数据源碰撞关联。
+    const SALT: &str = "duoduo-device-v1";
+    let raw = read_machine_guid().unwrap_or_default();
+    // 读不到（极少见）时 raw 为空，仍会算出一个稳定哈希（同机每次一致），不影响去重。
+    let mut hasher = Sha256::new();
+    hasher.update(SALT.as_bytes());
+    hasher.update(raw.trim().as_bytes());
+    format!("{:x}", hasher.finalize())
+}
+
+/// 读注册表 `HKLM\SOFTWARE\Microsoft\Cryptography\MachineGuid`（隐藏子进程窗口）。
+#[cfg(target_os = "windows")]
+fn read_machine_guid() -> Option<String> {
+    use std::os::windows::process::CommandExt;
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+    let out = std::process::Command::new("reg")
+        .args([
+            "query",
+            r"HKLM\SOFTWARE\Microsoft\Cryptography",
+            "/v",
+            "MachineGuid",
+        ])
+        .creation_flags(CREATE_NO_WINDOW)
+        .output()
+        .ok()?;
+    let text = String::from_utf8_lossy(&out.stdout);
+    // 输出形如：`    MachineGuid    REG_SZ    xxxxxxxx-....`，取最后一段。
+    text.lines()
+        .find(|l| l.contains("MachineGuid"))
+        .and_then(|l| l.split_whitespace().last())
+        .map(|s| s.to_string())
+}
+
+#[cfg(not(target_os = "windows"))]
+fn read_machine_guid() -> Option<String> {
+    None
 }

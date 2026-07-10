@@ -1,5 +1,6 @@
 // src/pet-core/appConfig.ts —— 服务端远程应用配置（启动拉取一次，暴露 reactive 开关）
 import { ref } from "vue";
+import { invoke } from "@tauri-apps/api/core";
 
 /** 服务基址：与 ContentHelpDialog / 更新源同源的线上服务。 */
 const SERVER_BASE = "https://wuguanwen.cn:10000";
@@ -7,24 +8,16 @@ const SERVER_BASE = "https://wuguanwen.cn:10000";
 /** 拉取超时（毫秒）：服务慢时不阻塞启动。 */
 const FETCH_TIMEOUT = 4000;
 
-/** 设备标识的本地存储 key。 */
-const DEVICE_ID_KEY = "duoduo_device_id";
-
 /**
- * 匿名设备标识：首次启动生成一个 uuid 存入 localStorage，之后固定不变。
- * 仅用于后台按设备去重统计访问人数，不含任何个人信息。
- * localStorage 取不到（异常/隐私模式）时退回一个临时 id，不阻断流程。
+ * 匿名设备标识：由 Rust 读系统级 MachineGuid 加盐 sha256 得到（见 pet_device_id）。
+ * 系统级唯一、重装系统前不变，与安装位置/热更新/配置目录都无关，仅用于后台按设备
+ * 去重统计访问人数。取不到时返回空串，服务端据此按无 deviceId 记录，不阻断启动。
  */
-function getDeviceId(): string {
+async function getDeviceId(): Promise<string> {
   try {
-    let id = localStorage.getItem(DEVICE_ID_KEY);
-    if (!id) {
-      id = crypto.randomUUID();
-      localStorage.setItem(DEVICE_ID_KEY, id);
-    }
-    return id;
+    return await invoke<string>("pet_device_id");
   } catch {
-    return "anonymous";
+    return "";
   }
 }
 
@@ -48,7 +41,7 @@ export async function loadAppConfig(): Promise<void> {
   const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT);
   try {
     // 带上匿名 deviceId：本接口是应用启动必调点，服务端据此记一条访问事件用于统计。
-    const url = `${SERVER_BASE}/api/app-config?deviceId=${encodeURIComponent(getDeviceId())}`;
+    const url = `${SERVER_BASE}/api/app-config?deviceId=${encodeURIComponent(await getDeviceId())}`;
     const resp = await fetch(url, {
       signal: controller.signal,
     });
