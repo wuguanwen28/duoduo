@@ -7,6 +7,27 @@ const SERVER_BASE = "https://wuguanwen.cn:10000";
 /** 拉取超时（毫秒）：服务慢时不阻塞启动。 */
 const FETCH_TIMEOUT = 4000;
 
+/** 设备标识的本地存储 key。 */
+const DEVICE_ID_KEY = "duoduo_device_id";
+
+/**
+ * 匿名设备标识：首次启动生成一个 uuid 存入 localStorage，之后固定不变。
+ * 仅用于后台按设备去重统计访问人数，不含任何个人信息。
+ * localStorage 取不到（异常/隐私模式）时退回一个临时 id，不阻断流程。
+ */
+function getDeviceId(): string {
+  try {
+    let id = localStorage.getItem(DEVICE_ID_KEY);
+    if (!id) {
+      id = crypto.randomUUID();
+      localStorage.setItem(DEVICE_ID_KEY, id);
+    }
+    return id;
+  } catch {
+    return "anonymous";
+  }
+}
+
 /**
  * 是否隐藏「新增小猫」与切换入口（单猫模式）。
  * 默认 true = 隐藏，作为离线/失败兜底：拿不到配置时保持单猫形态。
@@ -26,7 +47,9 @@ export async function loadAppConfig(): Promise<void> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT);
   try {
-    const resp = await fetch(`${SERVER_BASE}/api/app-config`, {
+    // 带上匿名 deviceId：本接口是应用启动必调点，服务端据此记一条访问事件用于统计。
+    const url = `${SERVER_BASE}/api/app-config?deviceId=${encodeURIComponent(getDeviceId())}`;
+    const resp = await fetch(url, {
       signal: controller.signal,
     });
     if (!resp.ok) return;
