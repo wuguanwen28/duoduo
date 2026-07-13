@@ -1,6 +1,6 @@
 [package]
 name = "duoduo"
-version = "0.2.6"
+version = "0.2.7"
 description = "A desktop pet"
 authors = ["you"]
 edition = "2021"
