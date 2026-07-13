@@ -27,9 +27,16 @@ async function getDeviceId(): Promise<string> {
  */
 export const hideAddCat = ref(true);
 
-/** 后端 /api/app-config 的返回结构（首期只有 hideAddCat）。 */
+/**
+ * 是否在动作库里显示「变换」高级参数（X/Y 偏移、缩放）。
+ * 默认 false = 隐藏，作为离线/失败兜底：拿不到配置时收起这些高级项，避免普通用户误改。
+ */
+export const showTransform = ref(false);
+
+/** 后端 /api/app-config 的返回结构。新增开关时在此登记字段。 */
 interface AppConfigResp {
   hideAddCat?: boolean;
+  showTransform?: boolean;
 }
 
 /**
@@ -49,6 +56,9 @@ export async function loadAppConfig(): Promise<void> {
     const cfg = (await resp.json()) as AppConfigResp;
     if (typeof cfg.hideAddCat === "boolean") {
       hideAddCat.value = cfg.hideAddCat;
+    }
+    if (typeof cfg.showTransform === "boolean") {
+      showTransform.value = cfg.showTransform;
     }
   } catch {
     // 静默：保持默认 true（隐藏），不打扰启动流程。

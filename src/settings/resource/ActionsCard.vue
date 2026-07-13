@@ -138,6 +138,8 @@ import { emit as emitEvent } from "@tauri-apps/api/event";
 import { Plus, Delete, VideoPlay } from "@element-plus/icons-vue";
 import DirSelect, { type DirNode } from "./DirSelect.vue";
 import type { ActionRow } from "./manifestTypes";
+// 「变换」高级参数是否显示：由远程应用配置控制（启动时 loadAppConfig 拉取）。
+import { showTransform } from "../../pet-core/appConfig";
 
 const props = defineProps<{
   /** 动作列表（就地增删改；父组件持有同一引用）。 */
@@ -153,8 +155,6 @@ const emit = defineEmits<{
 
 /** 展开的折叠项（默认全展开）。 */
 const openActions = ref<number[]>([]);
-
-const showTransform = ref(false);
 
 // 列表被整体替换（加载 manifest）时，重置为全部展开；就地增删不在此重置。
 watch(
