@@ -3,19 +3,22 @@
  *
  * 拖动行为固定为 Tauri 原生窗口拖动，不参与手势配置。
  */
-import { onMounted, onUnmounted, type Ref } from "vue";
-import { getCurrentWindow } from "@tauri-apps/api/window";
-import type { TriggerBinding, MouseTrigger } from "../../pet-core/triggerBindings";
-import { resolveAction, type PetActionContext } from "../../pet-core/commands";
+import { onMounted, onUnmounted, type Ref } from 'vue'
+import { getCurrentWindow } from '@tauri-apps/api/window'
+import type {
+  TriggerBinding,
+  MouseTrigger,
+} from '../../pet-core/triggerBindings'
+import { resolveAction, type PetActionContext } from '../../pet-core/commands'
 
 /** 达到该移动像素数即视为拖动。 */
-const DRAG_THRESHOLD = 5;
+const DRAG_THRESHOLD = 5
 
 /** 两次单击间隔小于该值则视为双击（毫秒）。 */
-const DOUBLE_CLICK_MS = 300;
+const DOUBLE_CLICK_MS = 300
 
 /** 按住超过该值视为长按（毫秒）。 */
-const LONG_PRESS_MS = 600;
+const LONG_PRESS_MS = 600
 
 /**
  * 在目标元素上绑定手势识别。
@@ -29,124 +32,136 @@ export function useGestures(
   bindings: Ref<TriggerBinding[]>,
   ctx: PetActionContext,
 ): void {
-  let lastClickTime = 0;
-  let pendingClickTimer: number | undefined;
+  let lastClickTime = 0
+  let pendingClickTimer: number | undefined
 
   /** 按 mouse 触发方式从绑定数组查 actionId；找不到返回空串（无操作）。 */
   function mouseAction(trigger: MouseTrigger): string {
     return (
-      bindings.value.find((b) => b.kind === "mouse" && b.trigger === trigger)?.actionId ?? ""
-    );
+      bindings.value.find((b) => b.kind === 'mouse' && b.trigger === trigger)
+        ?.actionId ?? ''
+    )
   }
 
   /** 按 mouse 触发方式取对应绑定项（用于读取说话类动作的独立短语池）。 */
   function mouseEntry(trigger: MouseTrigger): TriggerBinding | undefined {
-    return bindings.value.find((b) => b.kind === "mouse" && b.trigger === trigger);
+    return bindings.value.find(
+      (b) => b.kind === 'mouse' && b.trigger === trigger,
+    )
   }
 
   /** 按动作 id 统一分发；空 / 未知为空操作。
    *  说话类动作先把该触发器的独立短语池注入 ctx.speakPool，用完清空。 */
-  function dispatch(actionId: string, pos?: { x: number; y: number }, trigger?: MouseTrigger): void {
-    ctx.pendingMenuPos.value = pos;
-    if (trigger && (actionId === "speak" || actionId === "pokeAndSpeak")) {
-      ctx.speakPool = mouseEntry(trigger)?.phrases;
+  function dispatch(
+    actionId: string,
+    pos?: { x: number; y: number },
+    trigger?: MouseTrigger,
+  ): void {
+    ctx.pendingMenuPos.value = pos
+    if (trigger && (actionId === 'speak' || actionId === 'pokeAndSpeak')) {
+      ctx.speakPool = mouseEntry(trigger)?.phrases
     }
     try {
-      resolveAction(actionId, ctx);
+      resolveAction(actionId, ctx)
     } finally {
-      ctx.pendingMenuPos.value = undefined;
-      ctx.speakPool = undefined;
+      ctx.pendingMenuPos.value = undefined
+      ctx.speakPool = undefined
     }
   }
 
   function onMouseDown(e: MouseEvent) {
-    if (e.button !== 0) return;
+    if (e.button !== 0) return
 
-    const start = { x: e.clientX, y: e.clientY };
-    let dragging = false;
-    let longPressTimer: number | undefined;
+    const start = { x: e.clientX, y: e.clientY }
+    let dragging = false
+    let longPressTimer: number | undefined
 
     function cleanup() {
-      window.removeEventListener("mousemove", onMove);
-      window.removeEventListener("mouseup", onUp);
+      window.removeEventListener('mousemove', onMove)
+      window.removeEventListener('mouseup', onUp)
       if (longPressTimer !== undefined) {
-        window.clearTimeout(longPressTimer);
-        longPressTimer = undefined;
+        window.clearTimeout(longPressTimer)
+        longPressTimer = undefined
       }
     }
 
     function onMove(ev: MouseEvent) {
-      if (dragging) return;
+      if (dragging) return
       if (
-        Math.hypot(ev.clientX - start.x, ev.clientY - start.y) >
-        DRAG_THRESHOLD
+        Math.hypot(ev.clientX - start.x, ev.clientY - start.y) > DRAG_THRESHOLD
       ) {
-        dragging = true;
-        cleanup();
-        getCurrentWindow().startDragging().catch(() => {});
+        dragging = true
+        cleanup()
+        getCurrentWindow()
+          .startDragging()
+          .catch(() => {})
       }
     }
 
     function handleClick() {
-      const now = Date.now();
+      const now = Date.now()
       if (now - lastClickTime < DOUBLE_CLICK_MS) {
         // 双击：清掉待处理的单击定时器，执行双击动作。
-        lastClickTime = 0;
+        lastClickTime = 0
         if (pendingClickTimer !== undefined) {
-          window.clearTimeout(pendingClickTimer);
-          pendingClickTimer = undefined;
+          window.clearTimeout(pendingClickTimer)
+          pendingClickTimer = undefined
         }
-        dispatch(mouseAction("doubleClick"), start, "doubleClick");
-        return;
+        dispatch(mouseAction('doubleClick'), start, 'doubleClick')
+        return
       }
 
-      lastClickTime = now;
+      lastClickTime = now
       // 延迟执行单击动作，给双击判断留窗口。
       pendingClickTimer = window.setTimeout(() => {
-        pendingClickTimer = undefined;
+        pendingClickTimer = undefined
         if (lastClickTime === now) {
-          lastClickTime = 0;
-          dispatch(mouseAction("leftClick"), start, "leftClick");
+          lastClickTime = 0
+          dispatch(mouseAction('leftClick'), start, 'leftClick')
         }
-      }, DOUBLE_CLICK_MS);
+      }, DOUBLE_CLICK_MS)
     }
 
     function onUp(ev: MouseEvent) {
-      if (ev.button !== 0) return;
-      cleanup();
-      if (dragging) return;
-      handleClick();
+      if (ev.button !== 0) return
+      cleanup()
+      if (dragging) return
+      handleClick()
     }
 
     longPressTimer = window.setTimeout(() => {
-      dragging = true; // 标记为拖动态，阻止 mouseup 触发单击/双击
-      cleanup();
-      dispatch(mouseAction("longPress"), start, "longPress");
-    }, LONG_PRESS_MS);
+      dragging = true // 标记为拖动态，阻止 mouseup 触发单击/双击
+      cleanup()
+      dispatch(mouseAction('longPress'), start, 'longPress')
+    }, LONG_PRESS_MS)
 
-    window.addEventListener("mousemove", onMove);
-    window.addEventListener("mouseup", onUp);
+    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mouseup', onUp)
   }
 
   function onContextMenu(e: MouseEvent) {
-    e.preventDefault();
-    dispatch(mouseAction("rightClick"), { x: e.clientX, y: e.clientY }, "rightClick");
+    e.preventDefault()
+    dispatch(
+      mouseAction('rightClick'),
+      { x: e.clientX, y: e.clientY },
+      'rightClick',
+    )
   }
 
   onMounted(() => {
-    const el = elRef.value;
-    if (!el) return;
-    el.addEventListener("mousedown", onMouseDown);
-    el.addEventListener("contextmenu", onContextMenu);
-  });
+    const el = elRef.value
+    if (!el) return
+    el.addEventListener('mousedown', onMouseDown)
+    el.addEventListener('contextmenu', onContextMenu)
+  })
 
   onUnmounted(() => {
-    const el = elRef.value;
-    if (!el) return;
-    el.removeEventListener("mousedown", onMouseDown);
-    el.removeEventListener("contextmenu", onContextMenu);
+    const el = elRef.value
+    if (!el) return
+    el.removeEventListener('mousedown', onMouseDown)
+    el.removeEventListener('contextmenu', onContextMenu)
     if (pendingClickTimer !== undefined) {
-      window.clearTimeout(pendingClickTimer);
+      window.clearTimeout(pendingClickTimer)
     }
-  });
+  })
 }

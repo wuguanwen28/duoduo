@@ -25,7 +25,7 @@
             <img :src="appIcon" class="update-card__icon" alt="应用图标" />
             <div class="update-card__meta">
               <div class="update-card__name">多多</div>
-              <div class="update-card__version">版本 v{{ current || "…" }}</div>
+              <div class="update-card__version">版本 v{{ current || '…' }}</div>
             </div>
           </div>
 
@@ -94,26 +94,26 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from "vue";
-import { invoke } from "@tauri-apps/api/core";
-import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { invoke } from '@tauri-apps/api/core'
+import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import {
   Download,
   RefreshRight,
   Close,
   Promotion,
-} from "@element-plus/icons-vue";
-import githubIcon from "../../assets/github.svg";
-import giteeIcon from "../../assets/gitee.svg";
-import FeedbackDialog from "./FeedbackDialog.vue";
-import SettingsHeader from "../common/SettingsHeader.vue";
+} from '@element-plus/icons-vue'
+import githubIcon from '../../assets/github.svg'
+import giteeIcon from '../../assets/gitee.svg'
+import FeedbackDialog from './FeedbackDialog.vue'
+import SettingsHeader from '../common/SettingsHeader.vue'
 
 /** 应用图标（与 BasicSettings 共用同一份默认图标资源）。 */
-const appIcon = new URL("../../assets/icon.png", import.meta.url).href;
+const appIcon = new URL('../../assets/icon.png', import.meta.url).href
 
 /** 仓库与联系信息常量。 */
-const GITHUB_URL = "https://github.com/wuguanwen28/duoduo";
-const GITEE_URL = "https://gitee.com/wuguanwen28/duoduo";
+const GITHUB_URL = 'https://github.com/wuguanwen28/duoduo'
+const GITEE_URL = 'https://gitee.com/wuguanwen28/duoduo'
 
 /**
  * 用系统默认程序打开外部链接（浏览器 / 邮件客户端）。
@@ -121,98 +121,98 @@ const GITEE_URL = "https://gitee.com/wuguanwen28/duoduo";
  */
 async function openUrl(url: string) {
   try {
-    await invoke("pet_open_url", { url });
+    await invoke('pet_open_url', { url })
   } catch (e) {
-    ElMessage.error(`打开链接失败：${e}`);
+    ElMessage.error(`打开链接失败：${e}`)
   }
 }
 
 /** 后端 pet_update_check 的返回结构。 */
 interface CheckResult {
-  hasUpdate: boolean;
-  current: string;
-  latest: string;
-  notes: string;
+  hasUpdate: boolean
+  current: string
+  latest: string
+  notes: string
 }
 
 /** 后端 pet_update_last_result 的返回结构（只读缓存，不发网络请求）。 */
 interface LastCheckResult {
-  result: CheckResult | null;
-  checkedAtMs: number | null;
+  result: CheckResult | null
+  checkedAtMs: number | null
 }
 
-const current = ref("");
-const latest = ref("");
-const notes = ref("");
-const hasUpdate = ref(false);
-const checking = ref(false);
-const downloading = ref(false);
-const cancelling = ref(false);
-const progress = ref(0);
-const downloadedPath = ref("");
-const currentDownloadId = ref(0);
+const current = ref('')
+const latest = ref('')
+const notes = ref('')
+const hasUpdate = ref(false)
+const checking = ref(false)
+const downloading = ref(false)
+const cancelling = ref(false)
+const progress = ref(0)
+const downloadedPath = ref('')
+const currentDownloadId = ref(0)
 
 /** 反馈弹窗显隐（托盘「意见反馈」经 open-feedback 事件打开）。 */
-const feedbackVisible = ref(false);
+const feedbackVisible = ref(false)
 
 /** 主按钮文案：根据当前状态在「检查中 / 下载中 / 更新到 / 安装并重启 / 检查更新」之间切换。 */
 const primaryText = computed(() => {
-  if (downloadedPath.value) return "立即安装并重启";
-  if (downloading.value) return "下载中...";
-  if (checking.value) return "检查中...";
-  if (hasUpdate.value) return `更新到 v${latest.value}`;
-  return "检查更新";
-});
+  if (downloadedPath.value) return '立即安装并重启'
+  if (downloading.value) return '下载中...'
+  if (checking.value) return '检查中...'
+  if (hasUpdate.value) return `更新到 v${latest.value}`
+  return '检查更新'
+})
 
 /** 主按钮图标：默认显示搜索，有更新时显示下载，已下载时显示重启。 */
 const primaryIcon = computed(() => {
-  if (downloadedPath.value) return RefreshRight;
-  if (hasUpdate.value && !downloading.value && !checking.value) return Download;
-  if (!downloading.value && !checking.value) return RefreshRight;
-  return undefined;
-});
+  if (downloadedPath.value) return RefreshRight
+  if (hasUpdate.value && !downloading.value && !checking.value) return Download
+  if (!downloading.value && !checking.value) return RefreshRight
+  return undefined
+})
 
 /** 主按钮禁用：只在检查 / 下载过程中禁用；无更新时允许点击重新检查。 */
-const primaryDisabled = computed(() => checking.value || downloading.value);
+const primaryDisabled = computed(() => checking.value || downloading.value)
 
 /** 主按钮点击：根据当前状态分发检查 / 下载 / 安装。 */
 async function onPrimaryAction() {
   if (downloadedPath.value) {
-    await onApply();
+    await onApply()
   } else if (hasUpdate.value) {
-    await onDownload();
+    await onDownload()
   } else {
-    await onCheck();
+    await onCheck()
   }
 }
 
 /** 手动或自动检查更新。 */
 async function onCheck() {
-  checking.value = true;
+  checking.value = true
   try {
-    const r = await invoke<CheckResult>("pet_update_check");
-    current.value = r.current;
-    latest.value = r.latest;
-    notes.value = r.notes;
-    hasUpdate.value = r.hasUpdate;
+    const r = await invoke<CheckResult>('pet_update_check')
+    current.value = r.current
+    latest.value = r.latest
+    notes.value = r.notes
+    hasUpdate.value = r.hasUpdate
     if (!r.hasUpdate) {
-      ElMessage.success("已是最新版本");
+      ElMessage.success('已是最新版本')
     }
   } catch (e) {
-    ElMessage.error(`检查失败：${e}`);
+    ElMessage.error(`检查失败：${e}`)
   } finally {
-    checking.value = false;
+    checking.value = false
   }
 }
 
 /** 页面打开时读一次后台轮询缓存；不发请求，切标签页/重开设置页都不会触发新检查。 */
 async function loadCachedResult() {
   try {
-    const r = await invoke<LastCheckResult>("pet_update_last_result");
+    const r = await invoke<LastCheckResult>('pet_update_last_result')
     if (r.result) {
-      latest.value = r.result.latest;
-      notes.value = r.result.notes;
-      hasUpdate.value = r.result.hasUpdate;
+      latest.value = r.result.latest
+      notes.value = r.result.notes
+      hasUpdate.value = r.result.hasUpdate
     }
   } catch {
     // 静默：缓存还未就绪时保持初始空状态，按钮仍可手动点「检查更新」。
@@ -221,86 +221,86 @@ async function loadCachedResult() {
 
 /** 后端 pet_update_download 的返回结构。 */
 interface DownloadResult {
-  path: string;
-  downloadId: number;
+  path: string
+  downloadId: number
 }
 
 /** 后端 pet_update_status 的返回结构。 */
 interface DownloadState {
-  isDownloading: boolean;
-  downloadId: number;
-  progress: number;
-  downloadedPath: string;
-  latestVersion: string;
+  isDownloading: boolean
+  downloadId: number
+  progress: number
+  downloadedPath: string
+  latestVersion: string
 }
 
 /** 下载新版本（进度由 update://progress 事件驱动）。 */
 async function onDownload() {
-  downloading.value = true;
-  progress.value = 0;
-  currentDownloadId.value = 0;
+  downloading.value = true
+  progress.value = 0
+  currentDownloadId.value = 0
   try {
-    const r = await invoke<DownloadResult>("pet_update_download");
-    downloadedPath.value = r.path;
-    currentDownloadId.value = r.downloadId;
-    progress.value = 100;
-    ElMessage.success("下载完成，可安装重启");
+    const r = await invoke<DownloadResult>('pet_update_download')
+    downloadedPath.value = r.path
+    currentDownloadId.value = r.downloadId
+    progress.value = 100
+    ElMessage.success('下载完成，可安装重启')
   } catch (e) {
-    const msg = String(e);
-    if (msg.includes("取消")) {
-      ElMessage.info("下载已取消");
+    const msg = String(e)
+    if (msg.includes('取消')) {
+      ElMessage.info('下载已取消')
     } else {
-      ElMessage.error(`下载失败：${e}`);
+      ElMessage.error(`下载失败：${e}`)
     }
-    progress.value = 0;
-    currentDownloadId.value = 0;
+    progress.value = 0
+    currentDownloadId.value = 0
   } finally {
-    downloading.value = false;
+    downloading.value = false
   }
 }
 
 /** 取消正在进行的下载。 */
 async function onCancel() {
-  cancelling.value = true;
+  cancelling.value = true
   try {
-    await invoke("pet_update_cancel");
+    await invoke('pet_update_cancel')
   } catch (e) {
-    ElMessage.error(`取消失败：${e}`);
+    ElMessage.error(`取消失败：${e}`)
   } finally {
-    cancelling.value = false;
+    cancelling.value = false
   }
 }
 
 /** 安装并重启。 */
 async function onApply() {
   try {
-    await invoke("pet_update_apply");
+    await invoke('pet_update_apply')
   } catch (e) {
-    ElMessage.error(`安装失败：${e}`);
+    ElMessage.error(`安装失败：${e}`)
   }
 }
 
 /** 监听下载进度事件。 */
-let unlisten: UnlistenFn | undefined;
+let unlisten: UnlistenFn | undefined
 /** 监听下载开始事件，用于获取本次下载 id。 */
-let unlistenStart: UnlistenFn | undefined;
+let unlistenStart: UnlistenFn | undefined
 /** 监听下载完成事件，设置窗口打开时下载完毕可立即显示安装按钮。 */
-let unlistenCompleted: UnlistenFn | undefined;
+let unlistenCompleted: UnlistenFn | undefined
 /** 监听托盘「意见反馈」事件，自动打开反馈弹窗。 */
-let unlistenFeedback: UnlistenFn | undefined;
+let unlistenFeedback: UnlistenFn | undefined
 
 /** 从后端恢复之前的下载状态（支持关闭窗口后后台下载）。 */
 async function restoreDownloadState() {
   try {
-    const s = await invoke<DownloadState>("pet_update_status");
-    downloading.value = s.isDownloading;
-    progress.value = s.progress;
-    downloadedPath.value = s.downloadedPath;
-    currentDownloadId.value = s.downloadId;
+    const s = await invoke<DownloadState>('pet_update_status')
+    downloading.value = s.isDownloading
+    progress.value = s.progress
+    downloadedPath.value = s.downloadedPath
+    currentDownloadId.value = s.downloadId
     // 若后端已记住新版本号但前端尚未检查，用它补全提示。
     if (s.latestVersion && !latest.value) {
-      latest.value = s.latestVersion;
-      hasUpdate.value = true;
+      latest.value = s.latestVersion
+      hasUpdate.value = true
     }
   } catch {
     // 查询失败不影响主流程。
@@ -311,50 +311,50 @@ onMounted(async () => {
   // 版本号是编译进 exe 的常量（纯本地、零网络），先秒填出来，
   // 这样即便后面的网络检查慢或失败，「当前版本」也始终可见。
   try {
-    current.value = await invoke<string>("pet_app_version");
+    current.value = await invoke<string>('pet_app_version')
   } catch {
     // 取本地版本理论上不会失败；万一失败留空，由 onCheck 兜底。
   }
-  await loadCachedResult();
-  await restoreDownloadState();
+  await loadCachedResult()
+  await restoreDownloadState()
 
   unlisten = await listen<{
-    downloaded: number;
-    total: number;
-    downloadId: number;
-  }>("update://progress", (e) => {
+    downloaded: number
+    total: number
+    downloadId: number
+  }>('update://progress', (e) => {
     // 组件已卸载、下载已被取消，或事件来自旧任务时，忽略迟到进度事件。
-    if (!downloading.value) return;
-    if (e.payload.downloadId !== currentDownloadId.value) return;
-    const { downloaded, total } = e.payload;
-    if (total > 0) progress.value = Math.floor((downloaded / total) * 100);
-  });
+    if (!downloading.value) return
+    if (e.payload.downloadId !== currentDownloadId.value) return
+    const { downloaded, total } = e.payload
+    if (total > 0) progress.value = Math.floor((downloaded / total) * 100)
+  })
   unlistenStart = await listen<{ downloadId: number }>(
-    "update://started",
+    'update://started',
     (e) => {
-      currentDownloadId.value = e.payload.downloadId;
+      currentDownloadId.value = e.payload.downloadId
     },
-  );
+  )
   unlistenCompleted = await listen<{ path: string }>(
-    "update://completed",
+    'update://completed',
     (e) => {
-      downloading.value = false;
-      downloadedPath.value = e.payload.path;
-      progress.value = 100;
-      ElMessage.success("下载完成，可安装重启");
+      downloading.value = false
+      downloadedPath.value = e.payload.path
+      progress.value = 100
+      ElMessage.success('下载完成，可安装重启')
     },
-  );
-  unlistenFeedback = await listen("open-feedback", () => {
-    feedbackVisible.value = true;
-  });
-});
+  )
+  unlistenFeedback = await listen('open-feedback', () => {
+    feedbackVisible.value = true
+  })
+})
 onUnmounted(() => {
-  unlisten?.();
-  unlistenStart?.();
-  unlistenCompleted?.();
-  unlistenFeedback?.();
+  unlisten?.()
+  unlistenStart?.()
+  unlistenCompleted?.()
+  unlistenFeedback?.()
   // 关闭设置窗口不再取消下载，允许后台继续下载；下次打开通过 pet_update_status 恢复状态。
-});
+})
 </script>
 
 <style scoped lang="scss">

@@ -64,62 +64,59 @@
  * 菜单渲染后的实际内容尺寸（从猫爪路径外包矩形计算得出），
  * 供父组件 Pet.vue 做右键定位与贴边 clamp 使用。
  */
-export const MENU_WIDTH = 167;
-export const MENU_HEIGHT = 138;
+export const MENU_WIDTH = 167
+export const MENU_HEIGHT = 138
 </script>
 
 <script setup lang="ts">
-import { computed } from "vue";
-import {
-  PAW_SLOTS,
-  type MenuItemConfig,
-} from "../../../pet-core/menuSettings";
+import { computed } from 'vue'
+import { PAW_SLOTS, type MenuItemConfig } from '../../../pet-core/menuSettings'
 
 const props = defineProps<{
   /** 菜单项配置列表（固定 5 项，与 PAW_SLOTS 一一对应）。 */
-  items: MenuItemConfig[];
-}>();
+  items: MenuItemConfig[]
+}>()
 
-const follow = defineModel<boolean>("follow", { required: true });
-const passthrough = defineModel<boolean>("passthrough", { required: true });
+const follow = defineModel<boolean>('follow', { required: true })
+const passthrough = defineModel<boolean>('passthrough', { required: true })
 
 const emit = defineEmits<{
-  (e: "close"): void;
-  (e: "select", actionId: string): void;
-}>();
+  (e: 'close'): void
+  (e: 'select', actionId: string): void
+}>()
 
 /** 原 SVG 坐标系到 200px 画布的缩放系数。 */
-const PAW_SCALE = 200 / 1024;
+const PAW_SCALE = 200 / 1024
 
 /**
  * 猫爪所有路径（轮廓 + 5 个垫）在 1024 坐标系下的外包矩形。
  * 用此矩形裁剪 viewBox，让菜单尺寸完全贴合实际内容，不留透明内边距。
  */
-const PATH_BBOX = { x: 89.93, y: 177.24, w: 853.48, h: 704.76 };
+const PATH_BBOX = { x: 89.93, y: 177.24, w: 853.48, h: 704.76 }
 
-const VIEWBOX_X = Math.round(PATH_BBOX.x * PAW_SCALE);
-const VIEWBOX_Y = Math.round(PATH_BBOX.y * PAW_SCALE);
+const VIEWBOX_X = Math.round(PATH_BBOX.x * PAW_SCALE)
+const VIEWBOX_Y = Math.round(PATH_BBOX.y * PAW_SCALE)
 /** 与导出常量一致的内容宽度，避免两边数值漂移。 */
-const VIEWBOX_W = MENU_WIDTH;
+const VIEWBOX_W = MENU_WIDTH
 /** 与导出常量一致的内容高度。 */
-const VIEWBOX_H = MENU_HEIGHT;
+const VIEWBOX_H = MENU_HEIGHT
 
 /** 5 个爪垫逐个展开的步进延时（毫秒）。 */
-const STEP_DELAY = 60;
+const STEP_DELAY = 60
 /** 文字两行时的行高（原 1024 坐标系，约 60 缩放后≈11.7px）。 */
-const LINE_HEIGHT = 50;
+const LINE_HEIGHT = 50
 /**
  * 爪垫整体延迟出场（毫秒）：设为 0 让脚趾与装饰线条同时开始动画，
  * 整体节奏「线条慢慢长 + 4 趾 + 掌垫并行 pop-in」。
  */
-const PAD_BASE_DELAY = 0;
+const PAD_BASE_DELAY = 0
 
 /**
  * 把原 SVG（viewBox 1024×1024）整体缩放到本菜单画布。
  * 缩放系数 200/1024 ≈ 0.1953，垫的几何与文字坐标仍用原 1024 坐标系；
  * 外层 viewBox 再用 PATH_BBOX 裁剪，去掉透明边。
  */
-const PAW_TRANSFORM = `scale(${PAW_SCALE})`;
+const PAW_TRANSFORM = `scale(${PAW_SCALE})`
 
 /**
  * 装饰线条主体——老大修改后的单线版本（fill:none + stroke），
@@ -127,7 +124,7 @@ const PAW_TRANSFORM = `scale(${PAW_SCALE})`;
  * 这里调到 `m789 844`，让线条 bbox 中心落在 5 个垫的几何中心 (518, 495) 附近。
  */
 const OUTLINE_D =
-  "m789 880 1 2 1-1q8-180 113-274c34-30 46-70 36-111-9-35-34-64-59-70q-23-4-43 7l-10 6-2 1-2 2h-1l-1 1-5 2h-7l-6-2-7-5-3-6-1-6v-3l1-2 2-5v-1l1-1c10-15 18-54 15-87q-6-70-74-98c-69-27-115-4-147 72-8 18-34 15-38-3q-27-139-148-118c-89 17-119 70-94 167 5 18-16 32-31 20q-62-50-138-6l-2 1-1 1c-48 37-58 73-42 119l1 2 1 4 1 1 2 4v1l2 4 1 3 2 4 2 3 2 4 2 3 2 4 2 4 3 3 2 4 3 4 3 5 3 4 3 5 3 4 4 5 5 8 8 11 14 18q16 23 28 56l1 6q7 22 11 49l1 7 1 7 1 3 1 7 1 8v7l1 4v7l1 8v8l1 8v9l1 8v63l-1 10v10";
+  'm789 880 1 2 1-1q8-180 113-274c34-30 46-70 36-111-9-35-34-64-59-70q-23-4-43 7l-10 6-2 1-2 2h-1l-1 1-5 2h-7l-6-2-7-5-3-6-1-6v-3l1-2 2-5v-1l1-1c10-15 18-54 15-87q-6-70-74-98c-69-27-115-4-147 72-8 18-34 15-38-3q-27-139-148-118c-89 17-119 70-94 167 5 18-16 32-31 20q-62-50-138-6l-2 1-1 1c-48 37-58 73-42 119l1 2 1 4 1 1 2 4v1l2 4 1 3 2 4 2 3 2 4 2 3 2 4 2 4 3 3 2 4 3 4 3 5 3 4 3 5 3 4 4 5 5 8 8 11 14 18q16 23 28 56l1 6q7 22 11 49l1 7 1 7 1 3 1 7 1 8v7l1 4v7l1 8v8l1 8v9l1 8v63l-1 10v10'
 
 /**
  * 5 个爪垫的子路径（实心填充）+ 文字锚点（用原 1024 坐标系）。
@@ -137,50 +134,50 @@ const OUTLINE_D =
  *   - 掌垫取 bbox 中心 (≈509, 627) ——视觉上的几何中心。
  */
 const PAD_DEFS: Array<{
-  slotKey: string;
+  slotKey: string
   /** 该爪垫的填充路径（绝对坐标）。 */
-  pathD: string;
+  pathD: string
   /** 文字 x/y（原 1024 坐标系，经由父 g 的 scale 自动缩放）。 */
-  tx: number;
-  ty: number;
+  tx: number
+  ty: number
 }> = [
   {
-    slotKey: "toe-left",
+    slotKey: 'toe-left',
     pathD:
-      "M221.1942 384.9595a84.68214138 84.68214138 0 1 1 0 169.3651926 84.68214138 84.68214138 0 0 1 0-169.3651926z",
+      'M221.1942 384.9595a84.68214138 84.68214138 0 1 1 0 169.3651926 84.68214138 84.68214138 0 0 1 0-169.3651926z',
     tx: 221,
     ty: 470,
   },
   {
-    slotKey: "toe-left-center",
+    slotKey: 'toe-left-center',
     pathD:
-      "M352.3936 274.0904a84.68214138 84.68214138 0 1 1 161.07930974 52.34017607 84.68214138 84.68214138 0 0 1-161.07930974-52.34017607z",
+      'M352.3936 274.0904a84.68214138 84.68214138 0 1 1 161.07930974 52.34017607 84.68214138 84.68214138 0 0 1-161.07930974-52.34017607z',
     tx: 433,
     ty: 300,
   },
   {
-    slotKey: "toe-right-center",
+    slotKey: 'toe-right-center',
     pathD:
-      "M606.4737 316.4151a84.68214138 84.68214138 0 1 1 161.11388355 52.37384004 84.68214138 84.68214138 0 0 1-161.11388355-52.34017608z",
+      'M606.4737 316.4151a84.68214138 84.68214138 0 1 1 161.11388355 52.37384004 84.68214138 84.68214138 0 0 1-161.11388355-52.34017608z',
     tx: 687,
     ty: 343,
   },
   {
-    slotKey: "toe-right",
+    slotKey: 'toe-right',
     pathD:
-      "M803.4897 478.1595a63.55300361 63.55300361 0 1 1 63.52024949 110.03838049 63.55300361 63.55300361 0 0 1-63.55391343-110.03747065z",
+      'M803.4897 478.1595a63.55300361 63.55300361 0 1 1 63.52024949 110.03838049 63.55300361 63.55300361 0 0 1-63.55391343-110.03747065z',
     tx: 835,
     ty: 533,
   },
   {
-    slotKey: "center-pad",
+    slotKey: 'center-pad',
     pathD:
-      "M540.9909 471.5723c47.08222976 7.85189075 82.85245977 31.942547 112.26657059 63.81958577 43.18994833 46.84931156 65.38359504 99.88824222 65.21709493 158.75012778-0.06641807 20.43038317-4.724782 39.79625743-17.96836505 56.56545772-19.43138249 24.68932879-48.34690277 33.37462997-82.08637727 32.04353888-29.38135669-1.19825495-56.00044913-9.4168099-76.69741448-29.94727512-5.62279082-5.55637274-12.54391865-10.21473667-19.29763649-14.80668251a53.07168478 53.07168478 0 0 0-46.75104918-7.51980037c-8.48513709 2.49568208-17.3023646 4.858528-24.88858305 8.71805531-25.48816543 12.91058283-52.77325833 11.9780002-80.25669566 4.32536368-36.73465692-10.31481871-63.68674961-30.44586562-70.54145933-64.65117651-2.8951004-14.37541992-2.8951004-30.31302947 1.26467303-44.08795716 24.12341037-79.72535103 80.09019553-134.66038137 171.2612923-160.28138295a149.20048173 149.20048173 0 0 1 68.47794966-2.92785452z",
+      'M540.9909 471.5723c47.08222976 7.85189075 82.85245977 31.942547 112.26657059 63.81958577 43.18994833 46.84931156 65.38359504 99.88824222 65.21709493 158.75012778-0.06641807 20.43038317-4.724782 39.79625743-17.96836505 56.56545772-19.43138249 24.68932879-48.34690277 33.37462997-82.08637727 32.04353888-29.38135669-1.19825495-56.00044913-9.4168099-76.69741448-29.94727512-5.62279082-5.55637274-12.54391865-10.21473667-19.29763649-14.80668251a53.07168478 53.07168478 0 0 0-46.75104918-7.51980037c-8.48513709 2.49568208-17.3023646 4.858528-24.88858305 8.71805531-25.48816543 12.91058283-52.77325833 11.9780002-80.25669566 4.32536368-36.73465692-10.31481871-63.68674961-30.44586562-70.54145933-64.65117651-2.8951004-14.37541992-2.8951004-30.31302947 1.26467303-44.08795716 24.12341037-79.72535103 80.09019553-134.66038137 171.2612923-160.28138295a149.20048173 149.20048173 0 0 1 68.47794966-2.92785452z',
     /** 掌垫 bbox 中心 (≈509, 627)：视觉几何中心，避免文字向下/向右偏。 */
     tx: 509,
     ty: 627,
   },
-];
+]
 
 /**
  * 把标签拆成可显示的多行。
@@ -188,27 +185,27 @@ const PAD_DEFS: Array<{
  * - 4 趾：每行最多 2 字、最多 2 行（超过 4 字截断成「2字 / 1字…」）。
  */
 function splitLabel(label: string, slotKey: string): string[] {
-  const chars = [...label];
-  if (slotKey === "center-pad") {
+  const chars = [...label]
+  if (slotKey === 'center-pad') {
     // 掌垫面积大，单行容纳；超过 6 字截断加省略号。
-    return chars.length <= 6 ? [label] : [chars.slice(0, 6).join("") + "…"];
+    return chars.length <= 6 ? [label] : [chars.slice(0, 6).join('') + '…']
   }
-  if (chars.length <= 2) return [label];
+  if (chars.length <= 2) return [label]
   if (chars.length <= 4) {
-    return [chars.slice(0, 2).join(""), chars.slice(2).join("")];
+    return [chars.slice(0, 2).join(''), chars.slice(2).join('')]
   }
   // 超过 4 字：第 1 行 2 字，第 2 行 1 字 + 省略号。
-  return [chars.slice(0, 2).join(""), chars.slice(2, 3).join("") + "…"];
+  return [chars.slice(0, 2).join(''), chars.slice(2, 3).join('') + '…']
 }
 
 /** 预计算每个爪垫的填充路径 + 对应菜单项数据。 */
 const pawPads = computed(() =>
   PAW_SLOTS.map((slot, i) => {
-    const item = props.items[i];
-    const def = PAD_DEFS[i];
+    const item = props.items[i]
+    const def = PAD_DEFS[i]
     const active =
-      (item.actionId === "toggleFollow" && follow.value) ||
-      (item.actionId === "togglePassthrough" && passthrough.value);
+      (item.actionId === 'toggleFollow' && follow.value) ||
+      (item.actionId === 'togglePassthrough' && passthrough.value)
     return {
       slot,
       item,
@@ -217,14 +214,14 @@ const pawPads = computed(() =>
       ty: def.ty,
       active,
       lines: splitLabel(item.label, slot.key),
-    };
+    }
   }),
-);
+)
 
 /** 点击一个爪垫：把 actionId 抛给父组件统一分发，然后关菜单。 */
 function onPadClick(pad: { item: MenuItemConfig }) {
-  emit("select", pad.item.actionId);
-  emit("close");
+  emit('select', pad.item.actionId)
+  emit('close')
 }
 </script>
 
@@ -232,7 +229,7 @@ function onPadClick(pad: { item: MenuItemConfig }) {
 .menu {
   display: flex;
   user-select: none;
-  font-family: -apple-system, "Microsoft YaHei", "Segoe UI", sans-serif;
+  font-family: -apple-system, 'Microsoft YaHei', 'Segoe UI', sans-serif;
 }
 
 .menu__svg {

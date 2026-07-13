@@ -14,13 +14,13 @@
 /** 内置动作目录条目：菜单与触发器两处下拉的「内置」组共用。 */
 export interface BuiltinAction {
   /** PET_ACTIONS 键，同时是 actionId 的内置形式。 */
-  key: string;
+  key: string
   /** 菜单上显示的简短名。 */
-  menuLabel: string;
+  menuLabel: string
   /** 设置页下拉显示的标准功能名。 */
-  standardLabel: string;
+  standardLabel: string
   /** 是否为开关型（开 / 关有高亮，如偷看 / 穿透）。 */
-  isToggle?: boolean;
+  isToggle?: boolean
 }
 
 /**
@@ -28,21 +28,31 @@ export interface BuiltinAction {
  * 顺序即下拉顺序。
  */
 export const BUILTIN_ACTIONS: BuiltinAction[] = [
-  { key: "speak", menuLabel: "说话", standardLabel: "说话" },
-  { key: "pokeAndSpeak", menuLabel: "戳并说话", standardLabel: "戳一下并说话" },
-  { key: "toggleFollow", menuLabel: "偷看", standardLabel: "切换跟随光标", isToggle: true },
-  { key: "togglePassthrough", menuLabel: "穿透点击", standardLabel: "切换点击穿透", isToggle: true },
-  { key: "calibrate", menuLabel: "校准猫头", standardLabel: "头部校准" },
-  { key: "minimize", menuLabel: "老板来了", standardLabel: "切换所有小猫显隐" },
-  { key: "offWork", menuLabel: "下班", standardLabel: "关闭当前窗口" },
-  { key: "quit", menuLabel: "退出", standardLabel: "退出应用" },
-  { key: "openSettings", menuLabel: "设置", standardLabel: "打开设置" },
-  { key: "openMenu", menuLabel: "打开菜单", standardLabel: "打开菜单" },
-];
+  { key: 'speak', menuLabel: '说话', standardLabel: '说话' },
+  { key: 'pokeAndSpeak', menuLabel: '戳并说话', standardLabel: '戳一下并说话' },
+  {
+    key: 'toggleFollow',
+    menuLabel: '偷看',
+    standardLabel: '切换跟随光标',
+    isToggle: true,
+  },
+  {
+    key: 'togglePassthrough',
+    menuLabel: '穿透点击',
+    standardLabel: '切换点击穿透',
+    isToggle: true,
+  },
+  { key: 'calibrate', menuLabel: '校准猫头', standardLabel: '头部校准' },
+  { key: 'minimize', menuLabel: '老板来了', standardLabel: '切换所有小猫显隐' },
+  { key: 'offWork', menuLabel: '下班', standardLabel: '关闭当前窗口' },
+  { key: 'quit', menuLabel: '退出', standardLabel: '退出应用' },
+  { key: 'openSettings', menuLabel: '设置', standardLabel: '打开设置' },
+  { key: 'openMenu', menuLabel: '打开菜单', standardLabel: '打开菜单' },
+]
 
 /** 按 key 查内置目录条目。 */
 export function findBuiltin(key: string): BuiltinAction | undefined {
-  return BUILTIN_ACTIONS.find((b) => b.key === key);
+  return BUILTIN_ACTIONS.find((b) => b.key === key)
 }
 
 /**
@@ -58,39 +68,39 @@ export function findBuiltin(key: string): BuiltinAction | undefined {
  */
 export interface BuiltinTwitchAction {
   /** 写入 manifest 的标识，形如 `__speak`。 */
-  key: string;
+  key: string
   /** 设置页下拉显示名。 */
-  label: string;
+  label: string
 }
 
 export const BUILTIN_TWITCH_ACTIONS: BuiltinTwitchAction[] = [
-  { key: "__speak", label: "💬 说话" },
-];
+  { key: '__speak', label: '💬 说话' },
+]
 
 // ── 猫爪菜单槽位（结构常量） ────────────────────────────────────
 
 /** 猫爪菜单的 5 个固定槽位：4 趾 + 1 掌垫。 */
 export const PAW_SLOTS = [
-  { key: "toe-left", label: "左趾", position: 0 },
-  { key: "toe-left-center", label: "左中趾", position: 1 },
-  { key: "toe-right-center", label: "右中趾", position: 2 },
-  { key: "toe-right", label: "右趾", position: 3 },
-  { key: "center-pad", label: "掌垫", position: 4 },
-] as const;
+  { key: 'toe-left', label: '左趾', position: 0 },
+  { key: 'toe-left-center', label: '左中趾', position: 1 },
+  { key: 'toe-right-center', label: '右中趾', position: 2 },
+  { key: 'toe-right', label: '右趾', position: 3 },
+  { key: 'center-pad', label: '掌垫', position: 4 },
+] as const
 
-export type PawSlotKey = (typeof PAW_SLOTS)[number]["key"];
+export type PawSlotKey = (typeof PAW_SLOTS)[number]['key']
 
 /** 用 actionId 拼唯一菜单项 id。 */
 export function menuItemId(actionId: string): string {
-  return actionId || "none";
+  return actionId || 'none'
 }
 
 // ── 鼠标手势标签 ───────────────────────────────────────────────
 
 /** 鼠标手势触发方式的中文标签，供设置页只读显示。 */
 export const MOUSE_TRIGGER_LABELS: Record<string, string> = {
-  leftClick: "左键单击",
-  doubleClick: "左键双击",
-  rightClick: "右键",
-  longPress: "长按",
-};
+  leftClick: '左键单击',
+  doubleClick: '左键双击',
+  rightClick: '右键',
+  longPress: '长按',
+}

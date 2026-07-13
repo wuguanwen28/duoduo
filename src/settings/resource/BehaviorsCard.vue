@@ -255,71 +255,71 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, computed } from "vue";
-import { Plus, Delete, ChatLineRound } from "@element-plus/icons-vue";
-import { BUILTIN_TWITCH_ACTIONS } from "../../pet-core/commands";
+import { ref, watch, computed } from 'vue'
+import { Plus, Delete, ChatLineRound } from '@element-plus/icons-vue'
+import { BUILTIN_TWITCH_ACTIONS } from '../../pet-core/commands'
 import {
   defaultSpeakPhrases,
   type SpeakPhrase,
-} from "../../pet-core/speakPhrases";
-import PhraseConfigDialog from "../display/PhraseConfigDialog.vue";
-import type { ActionOption, BehaviorRow, RandomRow } from "./manifestTypes";
+} from '../../pet-core/speakPhrases'
+import PhraseConfigDialog from '../display/PhraseConfigDialog.vue'
+import type { ActionOption, BehaviorRow, RandomRow } from './manifestTypes'
 
 const props = defineProps<{
   /** 行为列表（就地增删改；父组件持有同一引用）。 */
-  behaviors: BehaviorRow[];
+  behaviors: BehaviorRow[]
   /** 动作下拉选项（来自父组件，由动作库派生）。 */
-  actionOptions: ActionOption[];
-}>();
+  actionOptions: ActionOption[]
+}>()
 
 /** 默认/兜底行为 key（与父组件双向绑定）。 */
-const defaultBehavior = defineModel<string>("defaultBehavior", {
+const defaultBehavior = defineModel<string>('defaultBehavior', {
   required: true,
-});
+})
 
 /** 时间单位选项（值＝换算成毫秒的因子）。 */
 const TIME_UNITS = [
-  { label: "秒", value: 1000 },
-  { label: "分", value: 60000 },
-  { label: "时", value: 3600000 },
-];
+  { label: '秒', value: 1000 },
+  { label: '分', value: 60000 },
+  { label: '时', value: 3600000 },
+]
 
 /** 展开的折叠项（默认全展开）。 */
-const openBehaviors = ref<number[]>([]);
+const openBehaviors = ref<number[]>([])
 
 /** 说话内容弹窗：当前编辑的 random 行（RandomRow 引用）。 */
-const phraseDialogVisible = ref(false);
-const phraseRow = ref<RandomRow | null>(null);
+const phraseDialogVisible = ref(false)
+const phraseRow = ref<RandomRow | null>(null)
 
 /** 弹窗 phrases 双向绑定代理：读写指向当前 random 行的 phrases。
  *  首次打开若该行无 phrases，用默认模板拷贝初始化，避免空池说话。 */
 const phraseDialogTarget = computed<SpeakPhrase[]>({
   get: () => {
-    const row = phraseRow.value;
+    const row = phraseRow.value
     if (row && !Array.isArray(row.phrases)) {
-      row.phrases = defaultSpeakPhrases.value.map((p) => ({ ...p }));
+      row.phrases = defaultSpeakPhrases.value.map((p) => ({ ...p }))
     }
-    return row?.phrases ?? [];
+    return row?.phrases ?? []
   },
   set: (v) => {
-    if (phraseRow.value) phraseRow.value.phrases = v;
+    if (phraseRow.value) phraseRow.value.phrases = v
   },
-});
+})
 
 /** 打开说话内容弹窗，记录当前编辑的 random 行。 */
 function openPhraseDialog(r: RandomRow) {
-  phraseRow.value = r;
-  phraseDialogVisible.value = true;
+  phraseRow.value = r
+  phraseDialogVisible.value = true
 }
 
 // 列表被整体替换（加载 manifest）时，重置为全部展开；就地增删不在此重置。
 watch(
   () => props.behaviors,
   () => {
-    openBehaviors.value = props.behaviors.map((_, i) => i);
+    openBehaviors.value = props.behaviors.map((_, i) => i)
   },
   { immediate: true },
-);
+)
 
 /**
  * 设置默认行为（行为标题里的「默认」开关）。开启某行为即把它设为默认，
@@ -327,7 +327,7 @@ watch(
  * 关闭操作被忽略——必须始终保留一个默认行为。
  */
 function setDefaultBehavior(b: BehaviorRow, on: boolean) {
-  if (on && b.key) defaultBehavior.value = b.key;
+  if (on && b.key) defaultBehavior.value = b.key
 }
 
 /**
@@ -335,21 +335,21 @@ function setDefaultBehavior(b: BehaviorRow, on: boolean) {
  * 形如 behavior1、behavior2…，自增直到不重复。
  */
 function genBehaviorKey(): string {
-  const used = new Set(props.behaviors.map((b) => b.key));
-  let i = 1;
-  let k = `behavior${i}`;
-  while (used.has(k)) k = `behavior${++i}`;
-  return k;
+  const used = new Set(props.behaviors.map((b) => b.key))
+  let i = 1
+  let k = `behavior${i}`
+  while (used.has(k)) k = `behavior${++i}`
+  return k
 }
 
 function addBehavior() {
-  const key = genBehaviorKey();
+  const key = genBehaviorKey()
   props.behaviors.push({
     key,
-    label: "",
-    base: "",
-    enter: "",
-    exit: "",
+    label: '',
+    base: '',
+    enter: '',
+    exit: '',
     weight: 1,
     interruptible: false,
     durationVal: [15, 40],
@@ -357,20 +357,20 @@ function addBehavior() {
     delayVal: [3, 8],
     delayUnit: 1000,
     random: [],
-  });
-  openBehaviors.value.push(props.behaviors.length - 1);
+  })
+  openBehaviors.value.push(props.behaviors.length - 1)
   // 当前没有有效默认行为时（如这是第一个），把新行为设为默认，保证始终有默认。
   if (!props.behaviors.some((b) => b.key === defaultBehavior.value)) {
-    defaultBehavior.value = key;
+    defaultBehavior.value = key
   }
 }
 
 function removeBehavior(i: number) {
-  const removed = props.behaviors[i];
-  props.behaviors.splice(i, 1);
+  const removed = props.behaviors[i]
+  props.behaviors.splice(i, 1)
   // 删掉的若是默认行为，自动把默认落到第一个剩余行为，保证始终有默认。
   if (removed && removed.key === defaultBehavior.value) {
-    defaultBehavior.value = props.behaviors[0]?.key ?? "";
+    defaultBehavior.value = props.behaviors[0]?.key ?? ''
   }
 }
 </script>

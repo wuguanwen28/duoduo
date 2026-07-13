@@ -9,14 +9,19 @@
  * 行为的随机插播动作；需要手动触发某个动作时，由 useCatBrain.trigger 直接按
  * 动作名在当前行为里播一次。
  */
-import { getModel, type Behavior, type TwitchItem, type BehaviorLoop } from "./resources";
+import {
+  getModel,
+  type Behavior,
+  type TwitchItem,
+  type BehaviorLoop,
+} from './resources'
 
-export type { Behavior, TwitchItem, BehaviorLoop };
+export type { Behavior, TwitchItem, BehaviorLoop }
 
 /** 取行为库（行为名 → 行为）。数据来自已加载的外置资源。 */
 export function getBehaviors(): Record<string, Behavior> {
-  return getModel().behaviors;
+  return getModel().behaviors
 }
 
 /** 取默认/兜底行为名（启动、follow 回落、触发动作的归属都用它）。 */
-export { getDefaultBehavior } from "./resources";
+export { getDefaultBehavior } from './resources'

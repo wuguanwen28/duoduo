@@ -17,9 +17,9 @@
 </template>
 
 <script setup lang="ts">
-import MenuConfigCard from "./MenuConfigCard.vue";
+import MenuConfigCard from './MenuConfigCard.vue'
 
-const visible = defineModel<boolean>("visible", { required: true });
+const visible = defineModel<boolean>('visible', { required: true })
 </script>
 
 <style scoped>

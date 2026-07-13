@@ -15,89 +15,89 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from "vue";
+import { computed, ref, watch } from 'vue'
 
 const CLOUD_MAP = {
   // 宽红云（1558×1024）
   cloud1: {
-    url: new URL("../../../assets/cloud1.png", import.meta.url).href,
+    url: new URL('../../../assets/cloud1.png', import.meta.url).href,
     ratio: 3 / 2,
     maxW: 200,
     offsetX: 0.03,
     offsetY: 0,
-    padding: "0 max(10%, 20px)",
-    color: "#fff",
+    padding: '0 max(10%, 20px)',
+    color: '#fff',
   },
   // 蓝方云（564 / 400）：尾巴已居中（见 cloud2.svg），下方留白。浅蓝→深字。
   cloud2: {
-    url: new URL("../../../assets/cloud2.png", import.meta.url).href,
+    url: new URL('../../../assets/cloud2.png', import.meta.url).href,
     ratio: 564 / 400,
     maxW: 200,
     offsetX: 0.03,
     offsetY: 0,
-    padding: "8% max(15%, 20px) 0%",
-    color: "#fff",
+    padding: '8% max(15%, 20px) 0%',
+    color: '#fff',
   },
   // 思考云（712 / 400）：右下三个由大到小圆点尾，内容放左上主云区。白底→深字。
   cloud3: {
-    url: new URL("../../../assets/cloud3.png", import.meta.url).href,
+    url: new URL('../../../assets/cloud3.png', import.meta.url).href,
     ratio: 712 / 400,
     maxW: 200,
     offsetX: 0,
     offsetY: -0.1,
-    padding: "24% max(10%, 20px) 0%",
-    color: "#333",
+    padding: '24% max(10%, 20px) 0%',
+    color: '#333',
   },
-} as const;
+} as const
 
 /** 可用的云朵种类。 */
-type CloudKey = keyof typeof CLOUD_MAP;
+type CloudKey = keyof typeof CLOUD_MAP
 
 const props = withDefaults(
   defineProps<{
     /** 气泡文字（无插槽时显示）。 */
-    text?: string;
+    text?: string
     /**
      * 是否显示。不传时由 text 是否非空决定（用于简单文本气泡）；
      * 用插槽时由父组件显式传 :show 控制显隐。
      */
-    show?: boolean;
+    show?: boolean
     /** 用哪张云：指定 cloud1/2/3，或 "random" 每次显示随机。 */
-    variant?: CloudKey | "random";
+    variant?: CloudKey | 'random'
   }>(),
   {
-    text: "",
+    text: '',
     show: undefined,
-    variant: "random",
+    variant: 'random',
   },
-);
+)
 
 /** 是否显示：显式 show 优先；否则看 text 是否非空。 */
 const visible = computed(() =>
   props.show !== undefined ? props.show : !!props.text,
-);
+)
 
-const CLOUD_KEYS = Object.keys(CLOUD_MAP) as CloudKey[];
+const CLOUD_KEYS = Object.keys(CLOUD_MAP) as CloudKey[]
 
 /** 当前实际使用的云（random 时每次显示重新随机）。 */
 const current = ref<CloudKey>(
-  props.variant === "random" ? "cloud1" : props.variant,
-);
+  props.variant === 'random' ? 'cloud1' : props.variant,
+)
 
 /** 每次从「隐藏」变为「显示」时，按 variant 决定用哪张云。 */
 watch(
   visible,
   (val, old) => {
     if (val && !old) {
-      const random = CLOUD_KEYS[Math.floor(Math.random() * CLOUD_KEYS.length)];
-      current.value = props.variant === "random" ? random : props.variant;
+      const random = CLOUD_KEYS[Math.floor(Math.random() * CLOUD_KEYS.length)]
+      current.value = props.variant === 'random' ? random : props.variant
     }
   },
   { immediate: true },
-);
+)
 
 /** 当前云的配置。 */
-const conf = computed(() => CLOUD_MAP[current.value]);
+const conf = computed(() => CLOUD_MAP[current.value])
 
 /** 外层只负责定位、尺寸、文字色，云朵图交给伪元素层。 */
 const bubbleStyle = computed(() => ({
@@ -105,16 +105,16 @@ const bubbleStyle = computed(() => ({
   maxWidth: `${conf.value.maxW}px`,
   aspectRatio: conf.value.ratio,
   color: conf.value.color,
-}));
+}))
 
 /** 云朵层：只画 PNG，并在这一层加 drop-shadow，阴影才会沿透明轮廓走。 */
 const cloudStyle = computed(() => ({
   backgroundImage: `url(${conf.value.url})`,
-}));
+}))
 
 const contentStyle = computed(() => ({
   padding: conf.value.padding,
-}));
+}))
 </script>
 
 <style scoped lang="scss">

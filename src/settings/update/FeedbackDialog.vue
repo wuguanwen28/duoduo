@@ -70,94 +70,94 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch } from "vue";
-import { invoke } from "@tauri-apps/api/core";
-import { Plus } from "@element-plus/icons-vue";
-import { compressImage } from "./compressImage";
-import type { UploadFile, UploadUserFile } from "element-plus";
+import { ref, watch } from 'vue'
+import { invoke } from '@tauri-apps/api/core'
+import { Plus } from '@element-plus/icons-vue'
+import { compressImage } from './compressImage'
+import type { UploadFile, UploadUserFile } from 'element-plus'
 
 /** v-model 控制弹窗显隐 */
-const visible = defineModel<boolean>({ default: false });
+const visible = defineModel<boolean>({ default: false })
 
-const form = ref({ type: "feature", content: "", contact: "" });
+const form = ref({ type: 'feature', content: '', contact: '' })
 /** el-upload 文件列表（驱动照片墙显示） */
-const fileList = ref<UploadUserFile[]>([]);
+const fileList = ref<UploadUserFile[]>([])
 /** uid → 压缩后字节与 mime，提交时按 fileList 顺序取出 */
-const compressed = new Map<number, { bytes: Uint8Array; mime: string }>();
+const compressed = new Map<number, { bytes: Uint8Array; mime: string }>()
 /** uid → 预览 objectURL，卸载/删除时回收 */
-const previewUrls = new Map<number, string>();
+const previewUrls = new Map<number, string>()
 
-const compressing = ref(false);
-const submitting = ref(false);
+const compressing = ref(false)
+const submitting = ref(false)
 
 /** 重置表单 */
 function reset() {
-  form.value = { type: "feature", content: "", contact: "" };
-  for (const [, url] of previewUrls) URL.revokeObjectURL(url);
-  previewUrls.clear();
-  compressed.clear();
-  fileList.value = [];
+  form.value = { type: 'feature', content: '', contact: '' }
+  for (const [, url] of previewUrls) URL.revokeObjectURL(url)
+  previewUrls.clear()
+  compressed.clear()
+  fileList.value = []
 }
 
 /** 弹窗关闭时清理 */
 watch(visible, (v) => {
-  if (!v) reset();
-});
+  if (!v) reset()
+})
 
 /** 选图回调：压缩并把预览写回 file.url */
 async function onChange(file: UploadFile) {
-  if (!file.raw) return;
-  compressing.value = true;
+  if (!file.raw) return
+  compressing.value = true
   try {
-    const { bytes, mime } = await compressImage(file.raw);
+    const { bytes, mime } = await compressImage(file.raw)
     if (file.uid != null) {
-      compressed.set(file.uid, { bytes, mime });
+      compressed.set(file.uid, { bytes, mime })
       const url = URL.createObjectURL(
         new Blob([bytes.buffer as ArrayBuffer], { type: mime }),
-      );
-      previewUrls.set(file.uid, url);
-      file.url = url;
+      )
+      previewUrls.set(file.uid, url)
+      file.url = url
     }
     // 确保该文件已在 fileList 中（el-upload 选择后会自动加入，这里幂等处理）
     if (!fileList.value.some((f) => f.uid === file.uid)) {
-      fileList.value.push(file);
+      fileList.value.push(file)
     }
   } catch (err) {
     // 压缩失败：从列表移除该文件
-    fileList.value = fileList.value.filter((f) => f.uid !== file.uid);
-    ElMessage.warning(`${file.name}：${err}`);
+    fileList.value = fileList.value.filter((f) => f.uid !== file.uid)
+    ElMessage.warning(`${file.name}：${err}`)
   } finally {
-    compressing.value = false;
+    compressing.value = false
   }
 }
 
 /** 删除某张：回收预览 URL 与压缩数据 */
 function onRemove(file: UploadFile) {
-  const url = previewUrls.get(file.uid);
-  if (url) URL.revokeObjectURL(url);
-  previewUrls.delete(file.uid);
-  compressed.delete(file.uid);
-  fileList.value = fileList.value.filter((f) => f.uid !== file.uid);
+  const url = previewUrls.get(file.uid)
+  if (url) URL.revokeObjectURL(url)
+  previewUrls.delete(file.uid)
+  compressed.delete(file.uid)
+  fileList.value = fileList.value.filter((f) => f.uid !== file.uid)
 }
 
 /** 超出上限提示 */
 function onExceed() {
-  ElMessage.warning("最多 3 张图片");
+  ElMessage.warning('最多 3 张图片')
 }
 
 /** 提交 */
 async function onSubmit() {
   if (!form.value.content.trim()) {
-    ElMessage.warning("请填写正文");
-    return;
+    ElMessage.warning('请填写正文')
+    return
   }
   // 取出按当前顺序的压缩数据
   const items = fileList.value
     .map((f) => (f.uid != null ? compressed.get(f.uid) : undefined))
-    .filter((v): v is { bytes: Uint8Array; mime: string } => !!v);
-  submitting.value = true;
+    .filter((v): v is { bytes: Uint8Array; mime: string } => !!v)
+  submitting.value = true
   try {
-    await invoke("pet_submit_feedback", {
+    await invoke('pet_submit_feedback', {
       payload: {
         type: form.value.type,
         content: form.value.content,
@@ -165,13 +165,13 @@ async function onSubmit() {
         images: items.map((it) => Array.from(it.bytes)),
         mime: items.map((it) => it.mime),
       },
-    });
-    ElMessage.success("已提交，感谢反馈");
-    visible.value = false;
+    })
+    ElMessage.success('已提交，感谢反馈')
+    visible.value = false
   } catch (e) {
-    ElMessage.error(`提交失败：${e}`);
+    ElMessage.error(`提交失败：${e}`)
   } finally {
-    submitting.value = false;
+    submitting.value = false
   }
 }
 </script>

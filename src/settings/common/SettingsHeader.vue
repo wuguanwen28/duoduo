@@ -11,8 +11,8 @@
  */
 defineProps<{
   /** 左侧标题文字 */
-  title: string;
-}>();
+  title: string
+}>()
 </script>
 
 <template>

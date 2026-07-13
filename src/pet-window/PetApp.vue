@@ -12,56 +12,56 @@
 </template>
 
 <script lang="ts" setup>
-import { onMounted, ref } from "vue";
-import { getCurrentWindow } from "@tauri-apps/api/window";
-import Pet from "./components/Pet/Pet.vue";
-import MissingResources from "./components/MissingResources/MissingResources.vue";
-import { loadResources, getResourceRoot } from "../pet-core/resources";
-import { loadAppSettings } from "../pet-core/appSettings";
-import { listenForCat } from "../pet-core/catContext";
+import { onMounted, ref } from 'vue'
+import { getCurrentWindow } from '@tauri-apps/api/window'
+import Pet from './components/Pet/Pet.vue'
+import MissingResources from './components/MissingResources/MissingResources.vue'
+import { loadResources, getResourceRoot } from '../pet-core/resources'
+import { loadAppSettings } from '../pet-core/appSettings'
+import { listenForCat } from '../pet-core/catContext'
 
 /** 启动状态：加载中 / 就绪 / 失败。 */
-const status = ref<"loading" | "ready" | "error">("loading");
+const status = ref<'loading' | 'ready' | 'error'>('loading')
 /** 失败时的错误说明（来自后端或解析）。 */
-const errorMsg = ref("");
+const errorMsg = ref('')
 /** 资源根目录绝对路径（引导卡片里告诉用户该往哪放素材）。 */
-const root = ref("");
+const root = ref('')
 /** 自增以强制重挂 <Pet>，让 useCatBrain/useGaze 用新模型重建（热重载用）。 */
-const petKey = ref(0);
+const petKey = ref(0)
 
 /** 加载外置资源；成功挂载/重挂宠物，失败转引导态。 */
 async function boot() {
   // 首次（尚未就绪）显示加载态；热重载时保持当前画面，加载完再平滑重挂。
-  if (status.value !== "ready") status.value = "loading";
-  const r = await loadResources();
-  root.value = getResourceRoot();
+  if (status.value !== 'ready') status.value = 'loading'
+  const r = await loadResources()
+  root.value = getResourceRoot()
   if (r.ok) {
-    petKey.value++;
-    status.value = "ready";
+    petKey.value++
+    status.value = 'ready'
   } else {
-    errorMsg.value = r.error ?? "未知错误";
-    status.value = "error";
+    errorMsg.value = r.error ?? '未知错误'
+    status.value = 'error'
   }
 }
 
 onMounted(async () => {
   // 从窗口 label 解析猫 id（cat-<id> → <id>）；无前缀时回退 default。
-  const label = getCurrentWindow().label;
-  const catId = label.startsWith("cat-") ? label.slice(4) : "default";
+  const label = getCurrentWindow().label
+  const catId = label.startsWith('cat-') ? label.slice(4) : 'default'
   // 配置加载失败不阻断启动：仍用默认值 boot，至少能显示猫 + 拖动。
   try {
-    await loadAppSettings(catId);
+    await loadAppSettings(catId)
   } catch (e) {
-    console.error("loadAppSettings 失败，用默认值启动", e);
+    console.error('loadAppSettings 失败，用默认值启动', e)
   }
-  await boot();
+  await boot()
   // 设置窗保存 manifest 后按猫广播 manifest-updated；只有**本猫**的变更才热重载，
   // 避免编辑 A 的素材把 B 的窗口也重挂。listenForCat 已按 currentCatId 过滤。
   // （宠物窗生命周期=进程窗口，不注销监听可接受。）
-  listenForCat("manifest-updated", () => {
-    void boot();
-  });
-});
+  listenForCat('manifest-updated', () => {
+    void boot()
+  })
+})
 </script>
 
 <style>

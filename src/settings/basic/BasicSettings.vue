@@ -28,7 +28,7 @@
               <Sunny v-if="shownIds.has(cat.id)" />
               <Moon v-else />
             </el-icon>
-            <span>{{ shownIds.has(cat.id) ? "上班中" : "下班了" }}</span>
+            <span>{{ shownIds.has(cat.id) ? '上班中' : '下班了' }}</span>
           </button>
           <div class="cat-card__head">
             <div class="cat-card__avatar-wrap">
@@ -37,11 +37,11 @@
                 v-if="cat.gender !== 'unknown'"
                 class="cat-card__gender"
                 :class="`cat-card__gender--${cat.gender}`"
-                >{{ cat.gender === "boy" ? "♂" : "♀" }}</span
+                >{{ cat.gender === 'boy' ? '♂' : '♀' }}</span
               >
             </div>
             <div class="cat-card__meta">
-              <span class="cat-card__name">{{ cat.name || "未命名" }}</span>
+              <span class="cat-card__name">{{ cat.name || '未命名' }}</span>
               <div class="cat-card__sub">
                 <el-tooltip
                   :content="
@@ -59,7 +59,7 @@
                       { 'cat-card__vis--clickable': shownIds.has(cat.id) },
                     ]"
                     @click.stop="onToggleVisible(cat.id)"
-                    >{{ visibleIds.has(cat.id) ? "在线" : "隐身" }}</span
+                    >{{ visibleIds.has(cat.id) ? '在线' : '隐身' }}</span
                   >
                 </el-tooltip>
                 <span v-if="catAge(cat.birthday)" class="cat-card__age">{{
@@ -239,16 +239,16 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, reactive, ref } from "vue";
-import { Plus, Edit, Delete, Sunny, Moon } from "@element-plus/icons-vue";
-import type { UploadFile } from "element-plus";
-import { invoke } from "@tauri-apps/api/core";
-import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import { Cropper } from "vue-advanced-cropper";
-import "vue-advanced-cropper/dist/style.css";
-import { basicSettings, saveBasicSettings } from "../../pet-core/basicSettings";
-import SettingsHeader from "../common/SettingsHeader.vue";
-import { hideAddCat } from "../../pet-core/appConfig";
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
+import { Plus, Edit, Delete, Sunny, Moon } from '@element-plus/icons-vue'
+import type { UploadFile } from 'element-plus'
+import { invoke } from '@tauri-apps/api/core'
+import { listen, type UnlistenFn } from '@tauri-apps/api/event'
+import { Cropper } from 'vue-advanced-cropper'
+import 'vue-advanced-cropper/dist/style.css'
+import { basicSettings, saveBasicSettings } from '../../pet-core/basicSettings'
+import SettingsHeader from '../common/SettingsHeader.vue'
+import { hideAddCat } from '../../pet-core/appConfig'
 import {
   avatarUrl,
   avatarAssetUrl,
@@ -262,26 +262,26 @@ import {
   deleteCat,
   setAutoShowCats,
   type CatEntry,
-} from "../../pet-core/appSettings";
+} from '../../pet-core/appSettings'
 
 /** 默认头像：项目内置 icon.png。 */
-const defaultAvatar = new URL("../../assets/icon.png", import.meta.url).href;
+const defaultAvatar = new URL('../../assets/icon.png', import.meta.url).href
 
 // ── 猫卡片列表 ─────────────────────────────────────────────────
 /** 卡片视图模型：身份档案已由 listCats 一次拉齐（含性别/标签/描述/生日/头像）。 */
-type CatCard = CatEntry;
-const cats = ref<CatCard[]>([]);
+type CatCard = CatEntry
+const cats = ref<CatCard[]>([])
 /** 当前「上班中」（宠物窗存在）的猫 id 集合，用于右上角上班/下班徽章。 */
-const shownIds = ref<Set<string>>(new Set());
+const shownIds = ref<Set<string>>(new Set())
 /** 当前「显示中」（可见未最小化）的猫 id 集合，用于名字下方的显示/隐藏标记。 */
-const visibleIds = ref<Set<string>>(new Set());
+const visibleIds = ref<Set<string>>(new Set())
 
 async function refreshCats() {
   // 身份档案全在全局元数据里，listCats 一次读齐，无需再逐猫打开 cat 文件。
-  const cards = await listCats();
+  const cards = await listCats()
   // 后端 cats 存在 HashMap 里、遍历顺序不稳定；这里按创建时间倒序（最新在前）。
-  cards.sort((a, b) => catCreatedAt(b.id) - catCreatedAt(a.id));
-  cats.value = cards;
+  cards.sort((a, b) => catCreatedAt(b.id) - catCreatedAt(a.id))
+  cats.value = cards
 }
 
 /**
@@ -290,20 +290,20 @@ async function refreshCats() {
  * 初始猫 default 无时间戳，返回 0 视为最早，恒排最后。
  */
 function catCreatedAt(id: string): number {
-  if (!id.startsWith("c")) return 0;
-  const ts = parseInt(id.slice(1), 36);
-  return Number.isNaN(ts) ? 0 : ts;
+  if (!id.startsWith('c')) return 0
+  const ts = parseInt(id.slice(1), 36)
+  return Number.isNaN(ts) ? 0 : ts
 }
 
 /** 刷新「正在显示」状态（轻量，仅查窗口，不重载全部猫）。 */
 async function refreshShown() {
   try {
     const [shown, visible] = await Promise.all([
-      invoke<string[]>("pet_list_shown_cats"),
-      invoke<string[]>("pet_list_visible_cats"),
-    ]);
-    shownIds.value = new Set(shown);
-    visibleIds.value = new Set(visible);
+      invoke<string[]>('pet_list_shown_cats'),
+      invoke<string[]>('pet_list_visible_cats'),
+    ])
+    shownIds.value = new Set(shown)
+    visibleIds.value = new Set(visible)
   } catch {
     // 查询失败时保持原状即可，不影响卡片其余展示。
   }
@@ -311,50 +311,50 @@ async function refreshShown() {
 
 /** 「在线/隐身」标签点击：仅对上班中（窗口存在）的猫切换单只显隐；下班的猫忽略。 */
 async function onToggleVisible(id: string) {
-  if (!shownIds.value.has(id)) return;
-  await invoke("pet_toggle_cat_visible", { catId: id }).catch(() => {});
+  if (!shownIds.value.has(id)) return
+  await invoke('pet_toggle_cat_visible', { catId: id }).catch(() => {})
   // 后端会广播 cat-windows-changed，refreshShown 随之更新；此处不必手动刷新。
 }
 
 /** 上班/下班徽章点击：切换该猫宠物窗显隐（显示中→关窗下班，隐藏→开窗上班）。 */
 async function onToggleWork(id: string) {
   if (shownIds.value.has(id)) {
-    await invoke("pet_close_cat_window", { catId: id }).catch(() => {});
+    await invoke('pet_close_cat_window', { catId: id }).catch(() => {})
   } else {
-    await invoke("pet_show_cat_window", { catId: id }).catch(() => {});
+    await invoke('pet_show_cat_window', { catId: id }).catch(() => {})
   }
-  await refreshShown();
+  await refreshShown()
 }
 
 /** 启动时自动上班的猫 id 列表（卡片勾选）；旧配置空时回退 default 显示。 */
-const autoShowCats = computed(() => globalSettings.value?.autoShowCats ?? []);
+const autoShowCats = computed(() => globalSettings.value?.autoShowCats ?? [])
 
 /** 勾选/取消「启动时打开」：更新 autoShowCats 并写盘。 */
 async function onToggleAutoShow(catId: string, checked: boolean) {
-  const cur = autoShowCats.value;
-  const next = checked ? [...cur, catId] : cur.filter((id) => id !== catId);
-  await setAutoShowCats(next);
+  const cur = autoShowCats.value
+  const next = checked ? [...cur, catId] : cur.filter((id) => id !== catId)
+  await setAutoShowCats(next)
 }
 
 /** 「cat-windows-changed」监听句柄，卸载时注销。 */
-let unlistenWins: UnlistenFn | undefined;
+let unlistenWins: UnlistenFn | undefined
 
 onMounted(async () => {
-  refreshCats();
-  refreshShown();
+  refreshCats()
+  refreshShown()
   // 从宠物窗返回设置页会触发 focus，借此同步「正在显示」状态。
-  window.addEventListener("focus", refreshShown);
+  window.addEventListener('focus', refreshShown)
   // 宠物窗显隐变化（上班 / 下班 / 老板来了）时后端广播，实时刷新卡片状态。
-  unlistenWins = await listen("cat-windows-changed", () => refreshShown());
-});
+  unlistenWins = await listen('cat-windows-changed', () => refreshShown())
+})
 onBeforeUnmount(() => {
-  window.removeEventListener("focus", refreshShown);
-  unlistenWins?.();
-});
+  window.removeEventListener('focus', refreshShown)
+  unlistenWins?.()
+})
 
 function avatarSrc(cat: CatEntry): string {
   // 自定义头像经 avatarAssetUrl 统一附加破缓存令牌；无头像回落打包默认图。
-  return cat.avatarUrl ? avatarAssetUrl(cat.avatarUrl) : defaultAvatar;
+  return cat.avatarUrl ? avatarAssetUrl(cat.avatarUrl) : defaultAvatar
 }
 
 /**
@@ -363,108 +363,108 @@ function avatarSrc(cat: CatEntry): string {
  * 生日为空/非法/未来时间时返回空串（卡片不展示）。
  */
 function catAge(birthday: string): string {
-  if (!birthday) return "";
-  const born = new Date(birthday.replace(" ", "T"));
-  if (Number.isNaN(born.getTime())) return "";
-  const now = new Date();
-  if (born.getTime() > now.getTime()) return "";
+  if (!birthday) return ''
+  const born = new Date(birthday.replace(' ', 'T'))
+  if (Number.isNaN(born.getTime())) return ''
+  const now = new Date()
+  if (born.getTime() > now.getTime()) return ''
   // 满周岁数：先按年份差估算，若还没到今年生日则减一。
-  let years = now.getFullYear() - born.getFullYear();
-  const anniversary = new Date(born);
-  anniversary.setFullYear(born.getFullYear() + years);
+  let years = now.getFullYear() - born.getFullYear()
+  const anniversary = new Date(born)
+  anniversary.setFullYear(born.getFullYear() + years)
   if (anniversary.getTime() > now.getTime()) {
-    years -= 1;
-    anniversary.setFullYear(born.getFullYear() + years);
+    years -= 1
+    anniversary.setFullYear(born.getFullYear() + years)
   }
-  const dayMs = 86400000;
-  const days = Math.floor((now.getTime() - anniversary.getTime()) / dayMs);
-  return years > 0 ? `${years}岁${days}天` : `${days}天`;
+  const dayMs = 86400000
+  const days = Math.floor((now.getTime() - anniversary.getTime()) / dayMs)
+  return years > 0 ? `${years}岁${days}天` : `${days}天`
 }
 
 /** 出生日期选择器：禁选未来日期（生日不能晚于今天）。 */
 function disableFutureDate(date: Date): boolean {
-  return date.getTime() > Date.now();
+  return date.getTime() > Date.now()
 }
 
 async function onDeleteCat(id: string) {
-  await deleteCat(id);
-  await refreshCats();
-  await refreshShown();
+  await deleteCat(id)
+  await refreshCats()
+  await refreshShown()
 }
 
 // ── 新增 / 编辑弹窗 ───────────────────────────────────────────
-const dialogOpen = ref(false);
+const dialogOpen = ref(false)
 /** 正在编辑的猫 id；null 表示新增。 */
-const editingId = ref<string | null>(null);
-const saving = ref(false);
+const editingId = ref<string | null>(null)
+const saving = ref(false)
 
 const form = reactive({
-  name: "",
-  description: "",
-  birthday: "",
-  gender: "unknown" as "boy" | "girl" | "unknown",
+  name: '',
+  description: '',
+  birthday: '',
+  gender: 'unknown' as 'boy' | 'girl' | 'unknown',
   tags: [] as string[],
-});
+})
 /** 新裁剪的头像 base64；null 表示未换头像。 */
-const pendingAvatar = ref<string | null>(null);
+const pendingAvatar = ref<string | null>(null)
 /** 待添加的标签文本。 */
-const newTag = ref("");
+const newTag = ref('')
 
 const previewAvatar = computed(
   () =>
     pendingAvatar.value ||
-    (editingId.value ? avatarUrl.value : "") ||
+    (editingId.value ? avatarUrl.value : '') ||
     defaultAvatar,
-);
+)
 
 function openAdd() {
-  editingId.value = null;
-  form.name = "";
-  form.description = "";
-  form.birthday = "";
-  form.gender = "unknown";
-  form.tags = [];
-  pendingAvatar.value = null;
-  newTag.value = "";
-  dialogOpen.value = true;
+  editingId.value = null
+  form.name = ''
+  form.description = ''
+  form.birthday = ''
+  form.gender = 'unknown'
+  form.tags = []
+  pendingAvatar.value = null
+  newTag.value = ''
+  dialogOpen.value = true
 }
 
 async function openEdit(id: string) {
-  editingId.value = id;
-  await switchCat(id);
-  form.name = basicSettings.value.name;
-  form.description = basicSettings.value.description;
-  form.birthday = basicSettings.value.birthday;
-  form.gender = basicSettings.value.gender;
-  form.tags = [...basicSettings.value.tags];
-  pendingAvatar.value = null;
-  newTag.value = "";
-  dialogOpen.value = true;
+  editingId.value = id
+  await switchCat(id)
+  form.name = basicSettings.value.name
+  form.description = basicSettings.value.description
+  form.birthday = basicSettings.value.birthday
+  form.gender = basicSettings.value.gender
+  form.tags = [...basicSettings.value.tags]
+  pendingAvatar.value = null
+  newTag.value = ''
+  dialogOpen.value = true
 }
 
 function addTag() {
-  const t = newTag.value.trim();
+  const t = newTag.value.trim()
   if (t && !form.tags.includes(t)) {
-    form.tags.push(t);
+    form.tags.push(t)
   }
-  newTag.value = "";
+  newTag.value = ''
 }
 
 function removeTag(t: string) {
-  form.tags = form.tags.filter((x) => x !== t);
+  form.tags = form.tags.filter((x) => x !== t)
 }
 
 /** 标签配色板：浅底 + 深字 + 描边，风格柔和。 */
 const TAG_PALETTE = [
-  { bg: "#eaf3ff", fg: "#2f6fed", bd: "#c3ddff" },
-  { bg: "#e9f8ef", fg: "#1f9d55", bd: "#bfe8d0" },
-  { bg: "#fff3e6", fg: "#e8820c", bd: "#ffdcb3" },
-  { bg: "#fdecef", fg: "#e14b6a", bd: "#f9c7d1" },
-  { bg: "#f0ecfd", fg: "#7c53e0", bd: "#d8cbf7" },
-  { bg: "#e7f6f8", fg: "#1197a6", bd: "#bde7ec" },
-  { bg: "#fef6e0", fg: "#c99400", bd: "#f5e2a8" },
-  { bg: "#fbeaf6", fg: "#c74bb0", bd: "#f3c7e6" },
-];
+  { bg: '#eaf3ff', fg: '#2f6fed', bd: '#c3ddff' },
+  { bg: '#e9f8ef', fg: '#1f9d55', bd: '#bfe8d0' },
+  { bg: '#fff3e6', fg: '#e8820c', bd: '#ffdcb3' },
+  { bg: '#fdecef', fg: '#e14b6a', bd: '#f9c7d1' },
+  { bg: '#f0ecfd', fg: '#7c53e0', bd: '#d8cbf7' },
+  { bg: '#e7f6f8', fg: '#1197a6', bd: '#bde7ec' },
+  { bg: '#fef6e0', fg: '#c99400', bd: '#f5e2a8' },
+  { bg: '#fbeaf6', fg: '#c74bb0', bd: '#f3c7e6' },
+]
 
 /**
  * 标签文本 → 稳定配色。
@@ -472,34 +472,34 @@ const TAG_PALETTE = [
  * 视觉上呈「随机彩色」，无需持久化颜色字段。
  */
 function tagStyle(text: string) {
-  let h = 0;
+  let h = 0
   for (let i = 0; i < text.length; i++) {
-    h = (h * 31 + text.charCodeAt(i)) >>> 0;
+    h = (h * 31 + text.charCodeAt(i)) >>> 0
   }
-  const c = TAG_PALETTE[h % TAG_PALETTE.length];
+  const c = TAG_PALETTE[h % TAG_PALETTE.length]
   // 用 Element Plus 自身的 CSS 变量上色，文字/背景/描边/关闭图标统一生效。
   return {
-    "--el-tag-bg-color": c.bg,
-    "--el-tag-text-color": c.fg,
-    "--el-tag-border-color": c.bd,
-  };
+    '--el-tag-bg-color': c.bg,
+    '--el-tag-text-color': c.fg,
+    '--el-tag-border-color': c.bd,
+  }
 }
 
 async function onSave() {
   // 名字必填：为空则提示并阻断保存（不再回落到「多多」）。
-  const name = form.name.trim();
+  const name = form.name.trim()
   if (!name) {
-    ElMessage.warning("请给小猫起个名字");
-    return;
+    ElMessage.warning('请给小猫起个名字')
+    return
   }
-  saving.value = true;
+  saving.value = true
   try {
-    let id = editingId.value;
+    let id = editingId.value
     if (!id) {
-      id = await addCat();
-      editingId.value = id;
+      id = await addCat()
+      editingId.value = id
     } else if (currentCatId.value !== id) {
-      await switchCat(id);
+      await switchCat(id)
     }
     basicSettings.value = {
       ...basicSettings.value,
@@ -508,67 +508,67 @@ async function onSave() {
       birthday: form.birthday,
       gender: form.gender,
       tags: [...form.tags],
-    };
-    saveBasicSettings();
+    }
+    saveBasicSettings()
     // 立即落盘并把身份档案写回全局 cats[id]：saveBasicSettings 只是广播 + 防抖写盘（300ms），
     // 若不等它完成，紧接着的 refreshCats 会读到 addCat 写入的空身份 → 卡片显示「未命名」。
-    await saveNow();
+    await saveNow()
     if (pendingAvatar.value) {
-      await saveAvatar(pendingAvatar.value);
-      pendingAvatar.value = null;
+      await saveAvatar(pendingAvatar.value)
+      pendingAvatar.value = null
     }
-    await refreshCats();
-    dialogOpen.value = false;
+    await refreshCats()
+    dialogOpen.value = false
   } finally {
-    saving.value = false;
+    saving.value = false
   }
 }
 
 // ── 头像裁剪 ───────────────────────────────────────────────────
-const showCropper = ref(false);
-const cropperSrc = ref("");
-const cropperRef = ref<InstanceType<typeof Cropper> | null>(null);
+const showCropper = ref(false)
+const cropperSrc = ref('')
+const cropperRef = ref<InstanceType<typeof Cropper> | null>(null)
 
 function onAvatarChange(uploadFile: UploadFile) {
-  const file = uploadFile.raw;
-  if (!file) return;
-  const reader = new FileReader();
+  const file = uploadFile.raw
+  if (!file) return
+  const reader = new FileReader()
   reader.onload = () => {
-    cropperSrc.value = reader.result as string;
-    showCropper.value = true;
-  };
-  reader.readAsDataURL(file);
+    cropperSrc.value = reader.result as string
+    showCropper.value = true
+  }
+  reader.readAsDataURL(file)
 }
 
 function defaultSize({
   imageSize,
 }: {
-  imageSize: { width: number; height: number };
+  imageSize: { width: number; height: number }
 }) {
   return {
     width: Math.min(imageSize.width, imageSize.height) * 1,
     height: Math.min(imageSize.width, imageSize.height) * 1,
-  };
+  }
 }
 
 function cancelCrop() {
-  showCropper.value = false;
-  cropperSrc.value = "";
+  showCropper.value = false
+  cropperSrc.value = ''
 }
 
 function confirmCrop() {
-  if (!cropperRef.value) return;
-  const { canvas } = cropperRef.value.getResult();
-  if (!canvas) return;
-  const target = document.createElement("canvas");
-  const size = 256;
-  target.width = size;
-  target.height = size;
-  const ctx = target.getContext("2d")!;
-  ctx.drawImage(canvas, 0, 0, size, size);
-  pendingAvatar.value = target.toDataURL("image/png");
-  showCropper.value = false;
-  cropperSrc.value = "";
+  if (!cropperRef.value) return
+  const { canvas } = cropperRef.value.getResult()
+  if (!canvas) return
+  const target = document.createElement('canvas')
+  const size = 256
+  target.width = size
+  target.height = size
+  const ctx = target.getContext('2d')!
+  ctx.drawImage(canvas, 0, 0, size, size)
+  pendingAvatar.value = target.toDataURL('image/png')
+  showCropper.value = false
+  cropperSrc.value = ''
 }
 </script>
 

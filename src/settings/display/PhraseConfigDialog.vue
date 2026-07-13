@@ -90,33 +90,33 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, computed } from "vue";
-import { Delete, Plus, DocumentCopy, Edit } from "@element-plus/icons-vue";
+import { ref, watch, computed } from 'vue'
+import { Delete, Plus, DocumentCopy, Edit } from '@element-plus/icons-vue'
 import {
   defaultSpeakPhrases,
   saveDefaultSpeakPhrases,
   type SpeakPhrase,
-} from "../../pet-core/speakPhrases";
+} from '../../pet-core/speakPhrases'
 
 const props = withDefaults(
   defineProps<{
     /** 是否为「编辑默认模板」态：true 时 confirm 写默认模板，且不显示默认操作栏。 */
-    isDefault?: boolean;
+    isDefault?: boolean
     /** 弹窗标题。 */
-    title?: string;
+    title?: string
   }>(),
-  { isDefault: false, title: "🗨️ 设置说话内容" },
-);
+  { isDefault: false, title: '🗨️ 设置说话内容' },
+)
 
-const visible = defineModel<boolean>("visible", { required: true });
+const visible = defineModel<boolean>('visible', { required: true })
 /** 当前编辑的短语池（双向绑定，父组件持有并落盘到对应入口）。 */
-const phrasesModel = defineModel<SpeakPhrase[]>("phrases", { required: true });
+const phrasesModel = defineModel<SpeakPhrase[]>('phrases', { required: true })
 
 /** 弹窗内部草稿，关闭时回滚。 */
-const draft = ref<SpeakPhrase[]>([]);
+const draft = ref<SpeakPhrase[]>([])
 
 /** 默认模板编辑弹窗显隐。 */
-const defaultDialogVisible = ref(false);
+const defaultDialogVisible = ref(false)
 
 /**
  * 默认模板的双向绑定：
@@ -127,46 +127,49 @@ const defaultDialogVisible = ref(false);
 const defaultModel = computed<SpeakPhrase[]>({
   get: () => defaultSpeakPhrases.value,
   set: (v) => saveDefaultSpeakPhrases(v),
-});
+})
 
 function resetDraft() {
-  draft.value = (phrasesModel.value ?? []).map((p) => ({ ...p }));
+  draft.value = (phrasesModel.value ?? []).map((p) => ({ ...p }))
 }
 
 function add() {
-  draft.value.push({ text: "", weight: 5 });
+  draft.value.push({ text: '', weight: 5 })
 }
 
 function remove(index: number) {
-  draft.value.splice(index, 1);
+  draft.value.splice(index, 1)
 }
 
 /** 清空当前草稿（仅清空编辑中的草稿，保存后才落盘）。 */
 function clear() {
-  draft.value = [];
+  draft.value = []
 }
 
 /** 一键写入默认：把默认模板深拷贝进当前草稿（覆盖），保存后生效。 */
 function writeDefault() {
-  draft.value = defaultSpeakPhrases.value.map((p) => ({ ...p }));
+  draft.value = defaultSpeakPhrases.value.map((p) => ({ ...p }))
 }
 
 function confirm() {
   const valid = draft.value
-    .map((p) => ({ text: p.text.trim(), weight: Math.max(0, Number(p.weight) || 0) }))
-    .filter((p) => p.text !== "");
-  const result = valid.length > 0 ? valid : [{ text: "喵~", weight: 1 }];
+    .map((p) => ({
+      text: p.text.trim(),
+      weight: Math.max(0, Number(p.weight) || 0),
+    }))
+    .filter((p) => p.text !== '')
+  const result = valid.length > 0 ? valid : [{ text: '喵~', weight: 1 }]
   if (props.isDefault) {
-    saveDefaultSpeakPhrases(result);
+    saveDefaultSpeakPhrases(result)
   } else {
-    phrasesModel.value = result;
+    phrasesModel.value = result
   }
-  visible.value = false;
+  visible.value = false
 }
 
 watch(visible, (val) => {
-  if (val) resetDraft();
-});
+  if (val) resetDraft()
+})
 </script>
 
 <style scoped>

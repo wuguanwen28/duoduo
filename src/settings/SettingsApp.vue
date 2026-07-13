@@ -32,49 +32,49 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref } from "vue";
+import { onMounted, onUnmounted, ref } from 'vue'
 // @ts-ignore
-import zhCn from "element-plus/dist/locale/zh-cn.mjs";
-import BasicSettings from "./basic/BasicSettings.vue";
-import ResourceSettings from "./resource/ResourceSettings.vue";
-import VideoToWebp from "./tools/VideoToWebp.vue";
-import DisplaySettings from "./display/DisplaySettings.vue";
-import UpdateSettings from "./update/UpdateSettings.vue";
-import { invoke } from "@tauri-apps/api/core";
-import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import zhCn from 'element-plus/dist/locale/zh-cn.mjs'
+import BasicSettings from './basic/BasicSettings.vue'
+import ResourceSettings from './resource/ResourceSettings.vue'
+import VideoToWebp from './tools/VideoToWebp.vue'
+import DisplaySettings from './display/DisplaySettings.vue'
+import UpdateSettings from './update/UpdateSettings.vue'
+import { invoke } from '@tauri-apps/api/core'
+import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 
 interface NavItem {
-  key: string;
-  label: string;
-  icon: string;
+  key: string
+  label: string
+  icon: string
 }
 
 const navItems: NavItem[] = [
-  { key: "basic", label: "基础设置", icon: "🐱" },
-  { key: "resources", label: "资源设置", icon: "📂" },
-  { key: "display", label: "显示与交互", icon: "🖥️" },
-  { key: "tools", label: "视频转图片", icon: "🎞️" },
-  { key: "update", label: "关于", icon: "ℹ️" },
-];
+  { key: 'basic', label: '基础设置', icon: '🐱' },
+  { key: 'resources', label: '资源设置', icon: '📂' },
+  { key: 'display', label: '显示与交互', icon: '🖥️' },
+  { key: 'tools', label: '视频转图片', icon: '🎞️' },
+  { key: 'update', label: '关于', icon: 'ℹ️' },
+]
 
-const activeKey = ref("basic");
+const activeKey = ref('basic')
 
 /** 监听导航事件：窗口已打开时，主窗发送的导航指令。 */
-let unlistenNav: UnlistenFn | undefined;
+let unlistenNav: UnlistenFn | undefined
 onMounted(async () => {
   // 获取并消费打开时指定的初始标签页（如有）。
-  const initialTab = await invoke<string | null>("pet_consume_pending_tab");
+  const initialTab = await invoke<string | null>('pet_consume_pending_tab')
   if (initialTab) {
-    activeKey.value = initialTab;
+    activeKey.value = initialTab
   }
   // 监听后续的导航事件（窗口已打开时）。
-  unlistenNav = await listen<string>("navigate-to", (event) => {
-    activeKey.value = event.payload;
-  });
-});
+  unlistenNav = await listen<string>('navigate-to', (event) => {
+    activeKey.value = event.payload
+  })
+})
 onUnmounted(() => {
-  unlistenNav?.();
-});
+  unlistenNav?.()
+})
 </script>
 
 <style>
@@ -88,7 +88,7 @@ body,
   height: 100%;
   background: #f5f6f8;
   color: #1c1c1e;
-  font-family: -apple-system, "Microsoft YaHei", "Segoe UI", sans-serif;
+  font-family: -apple-system, 'Microsoft YaHei', 'Segoe UI', sans-serif;
   font-size: 14px;
 }
 

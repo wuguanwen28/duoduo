@@ -5,21 +5,21 @@
  * 拿到 manifest 文本再解析。供 DisplaySettings 与 MenuConfigCard 的下拉「动作」/
  * 「行为」组复用。
  */
-import { invoke } from "@tauri-apps/api/core";
-import { currentCatId } from "./catContext";
+import { invoke } from '@tauri-apps/api/core'
+import { currentCatId } from './catContext'
 
 /** manifest 解析出的单条动作 / 行为条目。 */
 export interface ManifestNameItem {
   /** manifest 键名（英文标识，也是 actionId / behaviorId 的取值）。 */
-  key: string;
+  key: string
   /** 界面显示名；manifest 未配置 name 时回退到 key。 */
-  label: string;
+  label: string
 }
 
 /** manifest 解析出的动作 / 行为集合。 */
 export interface ManifestNames {
-  actions: ManifestNameItem[];
-  behaviors: ManifestNameItem[];
+  actions: ManifestNameItem[]
+  behaviors: ManifestNameItem[]
 }
 
 /**
@@ -29,26 +29,29 @@ export interface ManifestNames {
 export async function loadManifestNames(): Promise<ManifestNames> {
   try {
     const r = await invoke<{ content: string; exists: boolean }>(
-      "pet_read_manifest",
+      'pet_read_manifest',
       { catId: currentCatId.value },
-    );
-    if (!r.exists || !r.content.trim()) return { actions: [], behaviors: [] };
+    )
+    if (!r.exists || !r.content.trim()) return { actions: [], behaviors: [] }
     const m = JSON.parse(r.content) as {
-      actions?: Record<string, { name?: string }>;
-      behaviors?: Record<string, { name?: string }>;
-    };
-    const toItems = (map?: Record<string, { name?: string }>): ManifestNameItem[] =>
+      actions?: Record<string, { name?: string }>
+      behaviors?: Record<string, { name?: string }>
+    }
+    const toItems = (
+      map?: Record<string, { name?: string }>,
+    ): ManifestNameItem[] =>
       map
         ? Object.entries(map).map(([key, def]) => ({
             key,
-            label: typeof def?.name === "string" && def.name.trim() ? def.name : key,
+            label:
+              typeof def?.name === 'string' && def.name.trim() ? def.name : key,
           }))
-        : [];
+        : []
     return {
       actions: toItems(m.actions),
       behaviors: toItems(m.behaviors),
-    };
+    }
   } catch {
-    return { actions: [], behaviors: [] };
+    return { actions: [], behaviors: [] }
   }
 }

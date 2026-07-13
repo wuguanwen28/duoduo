@@ -177,7 +177,7 @@
                       :icon="Pointer"
                       @click="pickInto(i)"
                     >
-                      {{ picking && pickTarget === i ? "取色中…" : "吸管取色" }}
+                      {{ picking && pickTarget === i ? '取色中…' : '吸管取色' }}
                     </el-button>
                     <el-button :icon="MagicStick" @click="autoDetect(i)"
                       >自动识别</el-button
@@ -401,7 +401,7 @@
             :disabled="running || !outputDir"
             @click="start"
           >
-            {{ running ? "转换中…" : "开始转换" }}
+            {{ running ? '转换中…' : '开始转换' }}
           </el-button>
           <el-button v-if="running" type="danger" plain @click="cancel"
             >停止</el-button
@@ -439,9 +439,9 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onUnmounted, reactive, ref } from "vue";
-import { invoke, convertFileSrc } from "@tauri-apps/api/core";
-import { open } from "@tauri-apps/plugin-dialog";
+import { computed, nextTick, onUnmounted, reactive, ref } from 'vue'
+import { invoke, convertFileSrc } from '@tauri-apps/api/core'
+import { open } from '@tauri-apps/plugin-dialog'
 import {
   VideoCamera,
   VideoPlay,
@@ -452,27 +452,27 @@ import {
   QuestionFilled,
   Refresh,
   FolderOpened,
-} from "@element-plus/icons-vue";
+} from '@element-plus/icons-vue'
 import {
   processFrame,
   autoDetectKeyColors,
   edgeRoughness,
   type KeyColor,
   type KeyRegion,
-} from "./chromaKey";
-import { getCachedClip, setCachedClip } from "./frameCache";
-import ContentHelpDialog from "../common/ContentHelpDialog.vue";
-import SettingsHeader from "../common/SettingsHeader.vue";
+} from './chromaKey'
+import { getCachedClip, setCachedClip } from './frameCache'
+import ContentHelpDialog from '../common/ContentHelpDialog.vue'
+import SettingsHeader from '../common/SettingsHeader.vue'
 
 /** requestVideoFrameCallback 元数据。 */
 interface VideoFrameMeta {
-  mediaTime: number;
+  mediaTime: number
 }
 type RVFCVideo = HTMLVideoElement & {
   requestVideoFrameCallback: (
     cb: (now: number, meta: VideoFrameMeta) => void,
-  ) => number;
-};
+  ) => number
+}
 
 /**
  * 一条抠色记录：颜色 + 容差；scoped=true 时再限定矩形（百分比）+ 帧段（start/end 为帧号），且只对本条生效。
@@ -480,111 +480,111 @@ type RVFCVideo = HTMLVideoElement & {
  */
 interface KeyRecord {
   /** 单个背景色（hex）。记录列表本身就是颜色列表。 */
-  color: string;
-  tolerance: number;
-  scoped: boolean;
-  x: number;
-  y: number;
-  w: number;
-  h: number;
-  start: number;
-  end: number;
+  color: string
+  tolerance: number
+  scoped: boolean
+  x: number
+  y: number
+  w: number
+  h: number
+  start: number
+  end: number
 }
 
 /** 加载时一次性缓存的所有帧（位图）及各帧时间戳（秒）。 */
-let frames: ImageBitmap[] = [];
-let times: number[] = [];
-const FRAME_CAP = 1500;
+let frames: ImageBitmap[] = []
+let times: number[] = []
+const FRAME_CAP = 1500
 
-const videoEl = ref<HTMLVideoElement | null>(null);
-const origCanvas = ref<HTMLCanvasElement | null>(null);
-const resultCanvas = ref<HTMLCanvasElement | null>(null);
-const stageEl = ref<HTMLElement | null>(null);
+const videoEl = ref<HTMLVideoElement | null>(null)
+const origCanvas = ref<HTMLCanvasElement | null>(null)
+const resultCanvas = ref<HTMLCanvasElement | null>(null)
+const stageEl = ref<HTMLElement | null>(null)
 
 /** 输出目录（绝对路径）。用户自选，默认 <视频所在目录>/<视频名>_帧图片。 */
-const outputDir = ref("");
-const videoPath = ref("");
+const outputDir = ref('')
+const videoPath = ref('')
 const videoUrl = computed(() =>
-  videoPath.value ? convertFileSrc(videoPath.value) : "",
-);
-const quality = ref(90);
-const erode = ref(2);
+  videoPath.value ? convertFileSrc(videoPath.value) : '',
+)
+const quality = ref(90)
+const erode = ref(2)
 /** 剔除坏帧：导出时跳过抠图边缘异常粗糙的帧（多为 H.264 关键帧的块噪声帧）。 */
-const dropBadFrames = ref(true);
+const dropBadFrames = ref(true)
 /** 抠图使用说明弹框。 */
-const helpVisible = ref(false);
+const helpVisible = ref(false)
 
-const decoding = ref(false);
-const decodePercent = ref(0);
-const ready = ref(false);
-const duration = ref(0);
-const totalFrames = ref(0);
-const frameIndex = ref(0);
-const fpsGuess = ref(0);
-let videoW = 0;
-let videoH = 0;
-const dispW = ref(300);
+const decoding = ref(false)
+const decodePercent = ref(0)
+const ready = ref(false)
+const duration = ref(0)
+const totalFrames = ref(0)
+const frameIndex = ref(0)
+const fpsGuess = ref(0)
+let videoW = 0
+let videoH = 0
+const dispW = ref(300)
 
 /** 抠图设置：区域记录列表。 */
-const records = ref<KeyRecord[]>([]);
+const records = ref<KeyRecord[]>([])
 /** 吸管模式 + 取色目标记录下标（-1=无）。 */
-const picking = ref(false);
-const pickTarget = ref(-1);
+const picking = ref(false)
+const pickTarget = ref(-1)
 
 /** 吸管放大镜 canvas + 屏幕位置。 */
-const pickPreview = ref<HTMLCanvasElement | null>(null);
-const pickPreviewPos = reactive({ x: 0, y: 0 });
+const pickPreview = ref<HTMLCanvasElement | null>(null)
+const pickPreviewPos = reactive({ x: 0, y: 0 })
 /** 吸管时的精确像素坐标（video 空间），鼠标/键盘共用。 */
-const pickCursor = reactive({ x: 0, y: 0 });
+const pickCursor = reactive({ x: 0, y: 0 })
 
 // 右侧结果画布缩放/平移
-const resultZoom = ref(1);
-const resultPanX = ref(0);
-const resultPanY = ref(0);
+const resultZoom = ref(1)
+const resultPanX = ref(0)
+const resultPanY = ref(0)
 const dispH = computed(() =>
   videoW ? Math.round((videoH / videoW) * dispW.value) : 0,
-);
+)
 const resultCanvasStyle = computed(() => ({
   transform: `translate(${resultPanX.value}px, ${resultPanY.value}px) scale(${resultZoom.value})`,
-  transformOrigin: "0 0",
-}));
+  transformOrigin: '0 0',
+}))
 
-const running = ref(false);
-const done = ref(false);
-const percent = ref(0);
-const savedCount = ref(0);
-let cancelled = false;
+const running = ref(false)
+const done = ref(false)
+const percent = ref(0)
+const savedCount = ref(0)
+let cancelled = false
 
-let lastOriginal: Uint8ClampedArray | null = null;
-const curTime = computed(() => times[frameIndex.value] ?? 0);
+let lastOriginal: Uint8ClampedArray | null = null
+const curTime = computed(() => times[frameIndex.value] ?? 0)
 
 onUnmounted(() => {
-  if (debounceTimer !== undefined) window.clearTimeout(debounceTimer);
-  freeFrames();
-});
+  if (debounceTimer !== undefined) window.clearTimeout(debounceTimer)
+  freeFrames()
+})
 /** 只清本地引用，不 close 位图——位图归 frameCache 所有，淘汰时才释放。 */
 function freeFrames() {
-  frames = [];
-  times = [];
+  frames = []
+  times = []
 }
 
 /** hex ↔ rgb。 */
 function hexToRgb(hex: string): [number, number, number] {
-  const m = /^#?([0-9a-f]{6})$/i.exec(hex.trim());
-  if (!m) return [0, 177, 64];
-  const n = parseInt(m[1], 16);
-  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+  const m = /^#?([0-9a-f]{6})$/i.exec(hex.trim())
+  if (!m) return [0, 177, 64]
+  const n = parseInt(m[1], 16)
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255]
 }
 function rgbToHex(r: number, g: number, b: number): string {
-  return "#" + [r, g, b].map((v) => v.toString(16).padStart(2, "0")).join("");
+  return '#' + [r, g, b].map((v) => v.toString(16).padStart(2, '0')).join('')
 }
 function fmtTime(t: number): string {
-  return isFinite(t) ? `${t.toFixed(2)}s` : "0.00s";
+  return isFinite(t) ? `${t.toFixed(2)}s` : '0.00s'
 }
 
 /** 某条记录在第 `frame` 帧是否生效（全局恒生效；限定区只在其帧段内）。 */
 function activeAt(r: KeyRecord, frame: number): boolean {
-  return !r.scoped || (frame >= r.start && frame <= r.end);
+  return !r.scoped || (frame >= r.start && frame <= r.end)
 }
 
 /** 第 `frame` 帧生效的抠色区域（喂给算法）。 */
@@ -592,15 +592,15 @@ function activeRegions(frame: number): KeyRegion[] {
   return records.value
     .filter((r) => r.color && activeAt(r, frame))
     .map((r) => {
-      const [cr, cg, cb] = hexToRgb(r.color);
+      const [cr, cg, cb] = hexToRgb(r.color)
       return {
         rect: r.scoped
           ? { x1: r.x, y1: r.y, x2: r.x + r.w, y2: r.y + r.h }
           : { x1: 0, y1: 0, x2: 100, y2: 100 },
         keys: [{ r: cr, g: cg, b: cb } as KeyColor],
         tolerance: r.tolerance,
-      };
-    });
+      }
+    })
 }
 
 /** 选择源视频并解码全部帧。 */
@@ -610,19 +610,19 @@ async function pickVideo() {
       multiple: false,
       filters: [
         {
-          name: "视频",
-          extensions: ["mp4", "mov", "webm", "mkv", "avi", "m4v"],
+          name: '视频',
+          extensions: ['mp4', 'mov', 'webm', 'mkv', 'avi', 'm4v'],
         },
       ],
-    });
-    if (typeof picked !== "string") return;
-    videoPath.value = picked;
+    })
+    if (typeof picked !== 'string') return
+    videoPath.value = picked
     // 默认输出目录：<视频所在目录>/<视频名去扩展>_帧图片。用户已手选过则不覆盖。
-    if (!outputDir.value) outputDir.value = defaultOutputDir(picked);
-    await loadAndDecode();
+    if (!outputDir.value) outputDir.value = defaultOutputDir(picked)
+    await loadAndDecode()
   } catch (e) {
-    decoding.value = false;
-    ElMessage.error(`处理视频失败：${e}`);
+    decoding.value = false
+    ElMessage.error(`处理视频失败：${e}`)
   }
 }
 
@@ -631,68 +631,71 @@ async function pickVideo() {
  * 取不到父目录时回退空串（让用户手动选）。
  */
 function defaultOutputDir(videoFile: string): string {
-  const slash = Math.max(videoFile.lastIndexOf("/"), videoFile.lastIndexOf("\\"));
-  const dir = slash >= 0 ? videoFile.slice(0, slash) : "";
-  const file = slash >= 0 ? videoFile.slice(slash + 1) : videoFile;
-  const dot = file.lastIndexOf(".");
-  const name = dot > 0 ? file.slice(0, dot) : file;
-  if (!dir) return "";
-  return `${dir}/${name}_帧图片`;
+  const slash = Math.max(
+    videoFile.lastIndexOf('/'),
+    videoFile.lastIndexOf('\\'),
+  )
+  const dir = slash >= 0 ? videoFile.slice(0, slash) : ''
+  const file = slash >= 0 ? videoFile.slice(slash + 1) : videoFile
+  const dot = file.lastIndexOf('.')
+  const name = dot > 0 ? file.slice(0, dot) : file
+  if (!dir) return ''
+  return `${dir}/${name}_帧图片`
 }
 
 /** 弹系统目录选择器选输出目录；取消则保持原值不变。 */
 async function pickOutputDir() {
   try {
-    const p = await open({ directory: true, multiple: false });
-    if (typeof p === "string") outputDir.value = p;
+    const p = await open({ directory: true, multiple: false })
+    if (typeof p === 'string') outputDir.value = p
   } catch (e) {
-    ElMessage.error(`选择目录失败：${e}`);
+    ElMessage.error(`选择目录失败：${e}`)
   }
 }
 
 /** 加载视频 → 逐帧解码缓存 → 就绪后建一条全局记录（自动识别背景色）并渲染。 */
 async function loadAndDecode() {
-  ready.value = false;
-  done.value = false;
-  freeFrames();
+  ready.value = false
+  done.value = false
+  freeFrames()
 
-  const key = videoPath.value;
-  const cached = getCachedClip(key);
+  const key = videoPath.value
+  const cached = getCachedClip(key)
   if (cached) {
     // 命中缓存（开发期改代码/重挂后复用），跳过整段解码。
-    frames = cached.frames;
-    times = cached.times;
-    videoW = cached.videoW;
-    videoH = cached.videoH;
-    duration.value = cached.duration;
+    frames = cached.frames
+    times = cached.times
+    videoW = cached.videoW
+    videoH = cached.videoH
+    duration.value = cached.duration
   } else {
-    const video = videoEl.value as RVFCVideo;
+    const video = videoEl.value as RVFCVideo
     await new Promise<void>((resolve, reject) => {
       const ok = () => {
-        cleanup();
-        resolve();
-      };
+        cleanup()
+        resolve()
+      }
       const err = () => {
-        cleanup();
-        reject(new Error("视频加载失败"));
-      };
+        cleanup()
+        reject(new Error('视频加载失败'))
+      }
       const cleanup = () => {
-        video.removeEventListener("loadedmetadata", ok);
-        video.removeEventListener("error", err);
-      };
-      video.addEventListener("loadedmetadata", ok);
-      video.addEventListener("error", err);
-      video.src = videoUrl.value;
-      video.load();
-    });
-    videoW = video.videoWidth;
-    videoH = video.videoHeight;
-    duration.value = video.duration || 0;
+        video.removeEventListener('loadedmetadata', ok)
+        video.removeEventListener('error', err)
+      }
+      video.addEventListener('loadedmetadata', ok)
+      video.addEventListener('error', err)
+      video.src = videoUrl.value
+      video.load()
+    })
+    videoW = video.videoWidth
+    videoH = video.videoHeight
+    duration.value = video.duration || 0
 
-    decoding.value = true;
-    decodePercent.value = 0;
-    await decodeAllFrames(video);
-    decoding.value = false;
+    decoding.value = true
+    decodePercent.value = 0
+    await decodeAllFrames(video)
+    decoding.value = false
 
     // 存入缓存（缓存持有这些位图；组件不再 close）。
     if (frames.length > 0) {
@@ -702,35 +705,35 @@ async function loadAndDecode() {
         videoW,
         videoH,
         duration: duration.value,
-      });
+      })
     }
   }
-  dispW.value = Math.min(300, videoW);
+  dispW.value = Math.min(300, videoW)
 
-  totalFrames.value = frames.length;
+  totalFrames.value = frames.length
   fpsGuess.value =
-    duration.value > 0 ? Math.round(frames.length / duration.value) : 0;
+    duration.value > 0 ? Math.round(frames.length / duration.value) : 0
   if (frames.length === 0) {
-    ElMessage.error("没有解码到任何帧");
-    return;
+    ElMessage.error('没有解码到任何帧')
+    return
   }
 
-  ready.value = true;
-  frameIndex.value = 0;
-  await nextTick();
-  const oc = origCanvas.value!;
-  const rc = resultCanvas.value!;
-  oc.width = rc.width = videoW;
-  oc.height = rc.height = videoH;
-  drawFrame(0);
+  ready.value = true
+  frameIndex.value = 0
+  await nextTick()
+  const oc = origCanvas.value!
+  const rc = resultCanvas.value!
+  oc.width = rc.width = videoW
+  oc.height = rc.height = videoH
+  drawFrame(0)
   // 初始化：自动识别背景色，每个识别到的颜色 = 一条全局记录。
   const colors = lastOriginal
     ? autoDetectKeyColors(lastOriginal, videoW, videoH).map((c) =>
         rgbToHex(c.r, c.g, c.b),
       )
-    : ["#00b140"];
-  records.value = colors.map((color) => newRecord(color, false));
-  renderResult();
+    : ['#00b140']
+  records.value = colors.map((color) => newRecord(color, false))
+  renderResult()
 }
 
 /** 造一条记录（默认值集中在此）。 */
@@ -745,26 +748,26 @@ function newRecord(color: string, scoped: boolean): KeyRecord {
     h: 20,
     start: 0,
     end: Math.max(0, totalFrames.value - 1),
-  };
+  }
 }
 
 /** 用 rVFC 暂停/续播逐帧推进，把每帧抓成 ImageBitmap 缓存。 */
 function decodeAllFrames(video: RVFCVideo): Promise<void> {
   return new Promise((resolve) => {
-    let stopped = false;
+    let stopped = false
     const stop = () => {
-      if (stopped) return;
-      stopped = true;
-      video.pause();
-      resolve();
-    };
-    video.addEventListener("ended", stop, { once: true });
+      if (stopped) return
+      stopped = true
+      video.pause()
+      resolve()
+    }
+    video.addEventListener('ended', stop, { once: true })
     const onFrame = async (_now: number, meta: VideoFrameMeta) => {
-      if (stopped) return;
-      video.pause();
+      if (stopped) return
+      video.pause()
       try {
-        frames.push(await createImageBitmap(video));
-        times.push(meta.mediaTime);
+        frames.push(await createImageBitmap(video))
+        times.push(meta.mediaTime)
       } catch {
         /* 跳过坏帧 */
       }
@@ -772,236 +775,246 @@ function decodeAllFrames(video: RVFCVideo): Promise<void> {
         decodePercent.value = Math.min(
           99,
           Math.round((meta.mediaTime / duration.value) * 100),
-        );
+        )
       }
       if (frames.length >= FRAME_CAP) {
-        stop();
-        return;
+        stop()
+        return
       }
-      video.requestVideoFrameCallback(onFrame);
-      video.play().catch(() => {});
-    };
-    video.currentTime = 0;
-    video.requestVideoFrameCallback(onFrame);
-    video.play().catch(() => {});
-  });
+      video.requestVideoFrameCallback(onFrame)
+      video.play().catch(() => {})
+    }
+    video.currentTime = 0
+    video.requestVideoFrameCallback(onFrame)
+    video.play().catch(() => {})
+  })
 }
 
 /** 把缓存的第 i 帧画到左侧 canvas 并缓存原始像素。瞬时、不节流。 */
 function drawFrame(i: number) {
-  const oc = origCanvas.value;
-  const bmp = frames[i];
-  if (!oc || !bmp) return;
-  const octx = oc.getContext("2d", { willReadFrequently: true })!;
-  octx.drawImage(bmp, 0, 0, videoW, videoH);
-  lastOriginal = octx.getImageData(0, 0, videoW, videoH).data.slice();
+  const oc = origCanvas.value
+  const bmp = frames[i]
+  if (!oc || !bmp) return
+  const octx = oc.getContext('2d', { willReadFrequently: true })!
+  octx.drawImage(bmp, 0, 0, videoW, videoH)
+  lastOriginal = octx.getImageData(0, 0, videoW, videoH).data.slice()
 }
 
 /** 把当前设置下的抠图结果渲染到右侧 canvas。 */
 function renderResult() {
-  if (!lastOriginal) return;
-  const rc = resultCanvas.value;
-  if (!rc) return;
-  const rctx = rc.getContext("2d")!;
+  if (!lastOriginal) return
+  const rc = resultCanvas.value
+  if (!rc) return
+  const rctx = rc.getContext('2d')!
   const work = new ImageData(
     new Uint8ClampedArray(lastOriginal),
     videoW,
     videoH,
-  );
+  )
   processFrame(
     work.data,
     videoW,
     videoH,
     activeRegions(frameIndex.value),
     erode.value,
-  );
-  rctx.putImageData(work, 0, 0);
+  )
+  rctx.putImageData(work, 0, 0)
 }
 
 // 右侧结果防抖：停手超过 300ms 才重算。
-let debounceTimer: number | undefined;
+let debounceTimer: number | undefined
 function scheduleResult() {
-  if (debounceTimer !== undefined) window.clearTimeout(debounceTimer);
+  if (debounceTimer !== undefined) window.clearTimeout(debounceTimer)
   debounceTimer = window.setTimeout(() => {
-    debounceTimer = undefined;
-    renderResult();
-  }, 300);
+    debounceTimer = undefined
+    renderResult()
+  }, 300)
 }
 
 /** 滑动时间轴：左侧瞬时画缓存帧，右侧防抖出结果。 */
 function onScrub() {
-  drawFrame(frameIndex.value);
-  scheduleResult();
+  drawFrame(frameIndex.value)
+  scheduleResult()
 }
 
 // ── 吸管 / 自动识别（按记录，单色） ──────────────────────────────
 /** 开启吸管并把取色目标指向某条记录（再点一次关闭）。 */
 function pickInto(i: number) {
   if (picking.value && pickTarget.value === i) {
-    stopPicking();
+    stopPicking()
   } else {
-    picking.value = true;
-    pickTarget.value = i;
+    picking.value = true
+    pickTarget.value = i
     // 默认把光标放在画面中心，方便键盘直接微调。
-    pickCursor.x = Math.floor(videoW / 2);
-    pickCursor.y = Math.floor(videoH / 2);
-    drawPickPreview();
-    updatePickPreviewPos();
-    document.addEventListener("keydown", onPickKey);
+    pickCursor.x = Math.floor(videoW / 2)
+    pickCursor.y = Math.floor(videoH / 2)
+    drawPickPreview()
+    updatePickPreviewPos()
+    document.addEventListener('keydown', onPickKey)
   }
 }
 
 /** 退出吸管模式，清理监听器。 */
 function stopPicking() {
-  picking.value = false;
-  pickTarget.value = -1;
-  pickPreviewPos.x = -9999;
-  pickPreviewPos.y = -9999;
-  document.removeEventListener("keydown", onPickKey);
+  picking.value = false
+  pickTarget.value = -1
+  pickPreviewPos.x = -9999
+  pickPreviewPos.y = -9999
+  document.removeEventListener('keydown', onPickKey)
 }
 
 /** 把当前 pickCursor 映射到 stage 内的屏幕坐标，更新放大镜位置（自动避边）。 */
 function updatePickPreviewPos() {
-  if (!pickPreview.value || !origCanvas.value || !stageEl.value) return;
-  const oc = origCanvas.value;
-  const rect = oc.getBoundingClientRect();
-  const stageRect = stageEl.value.getBoundingClientRect();
-  const localX = pickCursor.x * (rect.width / videoW);
-  const localY = pickCursor.y * (rect.height / videoH);
-  let nx = localX + 16;
-  let ny = localY + 16;
+  if (!pickPreview.value || !origCanvas.value || !stageEl.value) return
+  const oc = origCanvas.value
+  const rect = oc.getBoundingClientRect()
+  const stageRect = stageEl.value.getBoundingClientRect()
+  const localX = pickCursor.x * (rect.width / videoW)
+  const localY = pickCursor.y * (rect.height / videoH)
+  let nx = localX + 16
+  let ny = localY + 16
   if (nx + pickPreview.value.width > stageRect.width)
-    nx = localX - pickPreview.value.width - 8;
+    nx = localX - pickPreview.value.width - 8
   if (ny + pickPreview.value.height > stageRect.height)
-    ny = localY - pickPreview.value.height - 8;
-  pickPreviewPos.x = nx;
-  pickPreviewPos.y = ny;
+    ny = localY - pickPreview.value.height - 8
+  pickPreviewPos.x = nx
+  pickPreviewPos.y = ny
 }
 
 /** 键盘控制吸管光标：方向键 1px 微调，Enter/Space 确认，Esc 取消。 */
 function onPickKey(e: KeyboardEvent) {
-  if (!picking.value) return;
-  const keys = ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Enter", " ", "Escape"];
-  if (!keys.includes(e.key)) return;
-  e.preventDefault();
+  if (!picking.value) return
+  const keys = [
+    'ArrowUp',
+    'ArrowDown',
+    'ArrowLeft',
+    'ArrowRight',
+    'Enter',
+    ' ',
+    'Escape',
+  ]
+  if (!keys.includes(e.key)) return
+  e.preventDefault()
 
-  if (e.key === "Escape") {
-    stopPicking();
-    return;
+  if (e.key === 'Escape') {
+    stopPicking()
+    return
   }
-  if (e.key === "Enter" || e.key === " ") {
-    confirmPick();
-    return;
+  if (e.key === 'Enter' || e.key === ' ') {
+    confirmPick()
+    return
   }
 
   // 方向键：每次移动 1 像素（Shift 时加速到 5 像素）。
-  const step = e.shiftKey ? 5 : 1;
+  const step = e.shiftKey ? 5 : 1
   switch (e.key) {
-    case "ArrowUp":
-      pickCursor.y = Math.max(0, pickCursor.y - step);
-      break;
-    case "ArrowDown":
-      pickCursor.y = Math.min(videoH - 1, pickCursor.y + step);
-      break;
-    case "ArrowLeft":
-      pickCursor.x = Math.max(0, pickCursor.x - step);
-      break;
-    case "ArrowRight":
-      pickCursor.x = Math.min(videoW - 1, pickCursor.x + step);
-      break;
+    case 'ArrowUp':
+      pickCursor.y = Math.max(0, pickCursor.y - step)
+      break
+    case 'ArrowDown':
+      pickCursor.y = Math.min(videoH - 1, pickCursor.y + step)
+      break
+    case 'ArrowLeft':
+      pickCursor.x = Math.max(0, pickCursor.x - step)
+      break
+    case 'ArrowRight':
+      pickCursor.x = Math.min(videoW - 1, pickCursor.x + step)
+      break
   }
-  drawPickPreview();
-  updatePickPreviewPos();
+  drawPickPreview()
+  updatePickPreviewPos()
 }
 
 /** 根据当前 pickCursor 绘制放大镜预览。 */
 function drawPickPreview() {
-  if (!picking.value || !lastOriginal || !pickPreview.value) return;
-  const grid = 7;
-  const half = Math.floor(grid / 2);
-  const scale = 15;
-  const preview = pickPreview.value;
-  preview.width = grid * scale;
-  preview.height = grid * scale;
-  const pctx = preview.getContext("2d")!;
+  if (!picking.value || !lastOriginal || !pickPreview.value) return
+  const grid = 7
+  const half = Math.floor(grid / 2)
+  const scale = 15
+  const preview = pickPreview.value
+  preview.width = grid * scale
+  preview.height = grid * scale
+  const pctx = preview.getContext('2d')!
 
   for (let dy = -half; dy <= half; dy++) {
     for (let dx = -half; dx <= half; dx++) {
-      const px = pickCursor.x + dx;
-      const py = pickCursor.y + dy;
-      let r = 0, g = 0, b = 0;
+      const px = pickCursor.x + dx
+      const py = pickCursor.y + dy
+      let r = 0,
+        g = 0,
+        b = 0
       if (px >= 0 && px < videoW && py >= 0 && py < videoH) {
-        const idx = (py * videoW + px) * 4;
-        r = lastOriginal[idx];
-        g = lastOriginal[idx + 1];
-        b = lastOriginal[idx + 2];
+        const idx = (py * videoW + px) * 4
+        r = lastOriginal[idx]
+        g = lastOriginal[idx + 1]
+        b = lastOriginal[idx + 2]
       }
-      pctx.fillStyle = `rgb(${r},${g},${b})`;
-      pctx.fillRect((dx + half) * scale, (dy + half) * scale, scale, scale);
+      pctx.fillStyle = `rgb(${r},${g},${b})`
+      pctx.fillRect((dx + half) * scale, (dy + half) * scale, scale, scale)
     }
   }
 
   // 中心十字准星：一条最细的蓝线。
-  const cxP = half * scale + scale / 2;
-  const cyP = half * scale + scale / 2;
-  pctx.strokeStyle = "#ff00ff";
-  pctx.lineWidth = 0.5;
-  pctx.beginPath();
-  pctx.moveTo(cxP, 0);
-  pctx.lineTo(cxP, preview.height);
-  pctx.moveTo(0, cyP);
-  pctx.lineTo(preview.width, cyP);
-  pctx.stroke();
+  const cxP = half * scale + scale / 2
+  const cyP = half * scale + scale / 2
+  pctx.strokeStyle = '#ff00ff'
+  pctx.lineWidth = 0.5
+  pctx.beginPath()
+  pctx.moveTo(cxP, 0)
+  pctx.lineTo(cxP, preview.height)
+  pctx.moveTo(0, cyP)
+  pctx.lineTo(preview.width, cyP)
+  pctx.stroke()
 }
 
 /**
  * 鼠标在左侧原始画面上移动时，更新 pickCursor 并显示放大镜预览。
  */
 function onCanvasMove(e: MouseEvent) {
-  if (!picking.value || !lastOriginal || !pickPreview.value) return;
-  const oc = origCanvas.value!;
-  const rect = oc.getBoundingClientRect();
-  pickCursor.x = Math.floor(((e.clientX - rect.left) / rect.width) * videoW);
-  pickCursor.y = Math.floor(((e.clientY - rect.top) / rect.height) * videoH);
+  if (!picking.value || !lastOriginal || !pickPreview.value) return
+  const oc = origCanvas.value!
+  const rect = oc.getBoundingClientRect()
+  pickCursor.x = Math.floor(((e.clientX - rect.left) / rect.width) * videoW)
+  pickCursor.y = Math.floor(((e.clientY - rect.top) / rect.height) * videoH)
 
-  drawPickPreview();
-  updatePickPreviewPos();
+  drawPickPreview()
+  updatePickPreviewPos()
 }
 
 /** 鼠标离开原始画面时隐藏放大镜。 */
 function onCanvasLeave() {
-  pickPreviewPos.x = -9999;
-  pickPreviewPos.y = -9999;
+  pickPreviewPos.x = -9999
+  pickPreviewPos.y = -9999
 }
 
 /** 确认取色（键盘 Enter/Space 或鼠标点击）。 */
 function confirmPick() {
-  if (!picking.value || pickTarget.value < 0 || !lastOriginal) return;
-  const i = (pickCursor.y * videoW + pickCursor.x) * 4;
-  const r = records.value[pickTarget.value];
+  if (!picking.value || pickTarget.value < 0 || !lastOriginal) return
+  const i = (pickCursor.y * videoW + pickCursor.x) * 4
+  const r = records.value[pickTarget.value]
   if (r)
     r.color = rgbToHex(
       lastOriginal[i],
       lastOriginal[i + 1],
       lastOriginal[i + 2],
-    );
-  stopPicking();
-  renderResult();
+    )
+  stopPicking()
+  renderResult()
 }
 
 /** 点左侧原始画面取色——onCanvasMove 已把 pickCursor 同步到鼠标位置，直接确认即可。 */
 function onCanvasClick() {
-  if (!picking.value || pickTarget.value < 0 || !lastOriginal) return;
-  confirmPick();
+  if (!picking.value || pickTarget.value < 0 || !lastOriginal) return
+  confirmPick()
 }
 /** 自动识别：把该记录的颜色设为画面主背景色（四角第一个）。 */
 function autoDetect(i: number) {
-  if (!lastOriginal) return;
-  const r = records.value[i];
-  const det = autoDetectKeyColors(lastOriginal, videoW, videoH)[0];
+  if (!lastOriginal) return
+  const r = records.value[i]
+  const det = autoDetectKeyColors(lastOriginal, videoW, videoH)[0]
   if (r && det) {
-    r.color = rgbToHex(det.r, det.g, det.b);
-    renderResult();
+    r.color = rgbToHex(det.r, det.g, det.b)
+    renderResult()
   }
 }
 
@@ -1010,107 +1023,107 @@ function addRecord() {
   // 新增一条全局颜色记录（默认取画面主背景色，便于直接微调）；可在「高级」里改成限定区域。
   const det = lastOriginal
     ? autoDetectKeyColors(lastOriginal, videoW, videoH)[0]
-    : null;
+    : null
   records.value.push(
-    newRecord(det ? rgbToHex(det.r, det.g, det.b) : "#00b140", false),
-  );
-  scheduleResult();
+    newRecord(det ? rgbToHex(det.r, det.g, det.b) : '#00b140', false),
+  )
+  scheduleResult()
 }
 function removeRecord(i: number) {
-  records.value.splice(i, 1);
+  records.value.splice(i, 1)
   if (pickTarget.value === i) {
-    stopPicking();
+    stopPicking()
   } else if (pickTarget.value > i) {
-    pickTarget.value--;
+    pickTarget.value--
   }
-  scheduleResult();
+  scheduleResult()
 }
 /**
  * 设置某条记录的「限定区域 / 时间」开关。
  * 折叠面板的开合即视作此开关，open=true 表示该条记录限定到自身的矩形 + 时间段。
  */
 function setScoped(i: number, scoped: boolean) {
-  records.value[i].scoped = scoped;
-  scheduleResult();
+  records.value[i].scoped = scoped
+  scheduleResult()
 }
 
 // ── 区域框拖动 ──────────────────────────────────────────────────
 function boxStyle(r: KeyRecord) {
   return {
-    left: r.x + "%",
-    top: r.y + "%",
-    width: r.w + "%",
-    height: r.h + "%",
-  };
+    left: r.x + '%',
+    top: r.y + '%',
+    width: r.w + '%',
+    height: r.h + '%',
+  }
 }
-function startDrag(e: MouseEvent, r: KeyRecord, mode: "move" | "resize") {
-  if (picking.value) return;
-  const rect = stageEl.value!.getBoundingClientRect();
-  const sx = e.clientX;
-  const sy = e.clientY;
-  const o = { x: r.x, y: r.y, w: r.w, h: r.h };
-  const round1 = (v: number) => Math.round(v * 100) / 100; // 区域百分比保留 1 位小数
+function startDrag(e: MouseEvent, r: KeyRecord, mode: 'move' | 'resize') {
+  if (picking.value) return
+  const rect = stageEl.value!.getBoundingClientRect()
+  const sx = e.clientX
+  const sy = e.clientY
+  const o = { x: r.x, y: r.y, w: r.w, h: r.h }
+  const round1 = (v: number) => Math.round(v * 100) / 100 // 区域百分比保留 1 位小数
   const onMove = (ev: MouseEvent) => {
-    const dx = ((ev.clientX - sx) / rect.width) * 100;
-    const dy = ((ev.clientY - sy) / rect.height) * 100;
-    if (mode === "move") {
-      r.x = round1(Math.max(0, Math.min(100 - r.w, o.x + dx)));
-      r.y = round1(Math.max(0, Math.min(100 - r.h, o.y + dy)));
+    const dx = ((ev.clientX - sx) / rect.width) * 100
+    const dy = ((ev.clientY - sy) / rect.height) * 100
+    if (mode === 'move') {
+      r.x = round1(Math.max(0, Math.min(100 - r.w, o.x + dx)))
+      r.y = round1(Math.max(0, Math.min(100 - r.h, o.y + dy)))
     } else {
-      r.w = round1(Math.max(2, Math.min(100 - r.x, o.w + dx)));
-      r.h = round1(Math.max(2, Math.min(100 - r.y, o.h + dy)));
+      r.w = round1(Math.max(2, Math.min(100 - r.x, o.w + dx)))
+      r.h = round1(Math.max(2, Math.min(100 - r.y, o.h + dy)))
     }
-    scheduleResult();
-  };
+    scheduleResult()
+  }
   const onUp = () => {
-    document.removeEventListener("mousemove", onMove);
-    document.removeEventListener("mouseup", onUp);
-  };
-  document.addEventListener("mousemove", onMove);
-  document.addEventListener("mouseup", onUp);
+    document.removeEventListener('mousemove', onMove)
+    document.removeEventListener('mouseup', onUp)
+  }
+  document.addEventListener('mousemove', onMove)
+  document.addEventListener('mouseup', onUp)
 }
 
 function cancel() {
-  cancelled = true;
+  cancelled = true
 }
 
 // ── 右侧结果缩放 / 平移 ─────────────────────────────────────────
 /** 重置右侧结果画布的缩放与平移到初始状态。 */
 function resetResultView() {
-  resultZoom.value = 1;
-  resultPanX.value = 0;
-  resultPanY.value = 0;
+  resultZoom.value = 1
+  resultPanX.value = 0
+  resultPanY.value = 0
 }
 
 function onResultWheel(e: WheelEvent) {
-  const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-  const mx = e.clientX - rect.left;
-  const my = e.clientY - rect.top;
-  const oldZoom = resultZoom.value;
+  const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
+  const mx = e.clientX - rect.left
+  const my = e.clientY - rect.top
+  const oldZoom = resultZoom.value
   const newZoom = Math.max(
     0.1,
     Math.min(10, oldZoom * (e.deltaY > 0 ? 0.9 : 1.1)),
-  );
-  resultPanX.value = mx - (mx - resultPanX.value) * (newZoom / oldZoom);
-  resultPanY.value = my - (my - resultPanY.value) * (newZoom / oldZoom);
-  resultZoom.value = newZoom;
+  )
+  resultPanX.value = mx - (mx - resultPanX.value) * (newZoom / oldZoom)
+  resultPanY.value = my - (my - resultPanY.value) * (newZoom / oldZoom)
+  resultZoom.value = newZoom
 }
 function onResultDragStart(e: MouseEvent) {
-  if (e.button !== 0) return;
-  const startX = e.clientX;
-  const startY = e.clientY;
-  const startPanX = resultPanX.value;
-  const startPanY = resultPanY.value;
+  if (e.button !== 0) return
+  const startX = e.clientX
+  const startY = e.clientY
+  const startPanX = resultPanX.value
+  const startPanY = resultPanY.value
   const onMove = (ev: MouseEvent) => {
-    resultPanX.value = startPanX + (ev.clientX - startX);
-    resultPanY.value = startPanY + (ev.clientY - startY);
-  };
+    resultPanX.value = startPanX + (ev.clientX - startX)
+    resultPanY.value = startPanY + (ev.clientY - startY)
+  }
   const onUp = () => {
-    document.removeEventListener("mousemove", onMove);
-    document.removeEventListener("mouseup", onUp);
-  };
-  document.addEventListener("mousemove", onMove);
-  document.addEventListener("mouseup", onUp);
+    document.removeEventListener('mousemove', onMove)
+    document.removeEventListener('mouseup', onUp)
+  }
+  document.addEventListener('mousemove', onMove)
+  document.addEventListener('mouseup', onUp)
 }
 
 /** canvas → WebP 字节。 */
@@ -1119,98 +1132,98 @@ function encodeWebp(canvas: HTMLCanvasElement, q: number): Promise<Uint8Array> {
     canvas.toBlob(
       (blob) => {
         if (!blob) {
-          reject(new Error("WebP 编码失败"));
-          return;
+          reject(new Error('WebP 编码失败'))
+          return
         }
-        blob.arrayBuffer().then((buf) => resolve(new Uint8Array(buf)));
+        blob.arrayBuffer().then((buf) => resolve(new Uint8Array(buf)))
       },
-      "image/webp",
+      'image/webp',
       q,
-    );
-  });
+    )
+  })
 }
 
 /** 主流程：遍历缓存帧 → 抠图 → 编码 → 落盘。 */
 async function start() {
-  const rc = resultCanvas.value;
-  if (!rc || !outputDir.value || frames.length === 0) return;
+  const rc = resultCanvas.value
+  if (!rc || !outputDir.value || frames.length === 0) return
 
-  running.value = true;
-  done.value = false;
-  cancelled = false;
-  percent.value = 0;
-  savedCount.value = 0;
+  running.value = true
+  done.value = false
+  cancelled = false
+  percent.value = 0
+  savedCount.value = 0
 
-  let dir = "";
+  let dir = ''
   try {
-    dir = await invoke<string>("pet_converter_begin", {
+    dir = await invoke<string>('pet_converter_begin', {
       dir: outputDir.value,
       clear: true,
-    });
+    })
   } catch (e) {
-    running.value = false;
-    ElMessage.error(`准备失败：${e}`);
-    return;
+    running.value = false
+    ElMessage.error(`准备失败：${e}`)
+    return
   }
 
-  const ctx = rc.getContext("2d", { willReadFrequently: true })!;
-  const q = quality.value / 100;
-  const er = erode.value;
+  const ctx = rc.getContext('2d', { willReadFrequently: true })!
+  const q = quality.value / 100
+  const er = erode.value
 
   // 剔除坏帧：用最近若干个已保留帧的边缘锯齿度中位数做基准，明显偏高的判为坏帧跳过。
-  const recent: number[] = [];
+  const recent: number[] = []
   const median = (a: number[]) => {
-    const s = [...a].sort((x, y) => x - y);
-    return s[s.length >> 1];
-  };
-  let out = 0; // 已写出的帧数（连续编号）
-  let dropped = 0;
+    const s = [...a].sort((x, y) => x - y)
+    return s[s.length >> 1]
+  }
+  let out = 0 // 已写出的帧数（连续编号）
+  let dropped = 0
 
   try {
     for (let i = 0; i < frames.length; i++) {
-      if (cancelled) break;
-      ctx.drawImage(frames[i], 0, 0, videoW, videoH);
-      const img = ctx.getImageData(0, 0, videoW, videoH);
-      processFrame(img.data, videoW, videoH, activeRegions(i), er);
+      if (cancelled) break
+      ctx.drawImage(frames[i], 0, 0, videoW, videoH)
+      const img = ctx.getImageData(0, 0, videoW, videoH)
+      processFrame(img.data, videoW, videoH, activeRegions(i), er)
 
       // 坏帧判定：边缘锯齿度远高于近期基准 → 跳过（基准至少要有几帧才生效）。
       if (dropBadFrames.value) {
-        const rough = edgeRoughness(img.data);
+        const rough = edgeRoughness(img.data)
         if (recent.length >= 5 && rough > median(recent) * 1.35) {
-          dropped++;
-          percent.value = Math.round(((i + 1) / frames.length) * 100);
-          continue;
+          dropped++
+          percent.value = Math.round(((i + 1) / frames.length) * 100)
+          continue
         }
-        recent.push(rough);
-        if (recent.length > 15) recent.shift();
+        recent.push(rough)
+        if (recent.length > 15) recent.shift()
       }
 
-      ctx.putImageData(img, 0, 0);
-      const bytes = await encodeWebp(rc, q);
-      const name = `frame_${String(out).padStart(6, "0")}.webp`;
-      await invoke("pet_converter_write", {
+      ctx.putImageData(img, 0, 0)
+      const bytes = await encodeWebp(rc, q)
+      const name = `frame_${String(out).padStart(6, '0')}.webp`
+      await invoke('pet_converter_write', {
         dir,
         name,
         data: Array.from(bytes),
-      });
-      out++;
-      savedCount.value = out;
-      percent.value = Math.round(((i + 1) / frames.length) * 100);
+      })
+      out++
+      savedCount.value = out
+      percent.value = Math.round(((i + 1) / frames.length) * 100)
     }
   } catch (e) {
-    running.value = false;
-    ElMessage.error(`转换失败：${e}`);
-    renderResult();
-    return;
+    running.value = false
+    ElMessage.error(`转换失败：${e}`)
+    renderResult()
+    return
   }
 
-  running.value = false;
-  renderResult();
-  if (cancelled) ElMessage.info(`已停止，已写入 ${savedCount.value} 帧`);
+  running.value = false
+  renderResult()
+  if (cancelled) ElMessage.info(`已停止，已写入 ${savedCount.value} 帧`)
   else {
-    done.value = true;
-    const extra = dropped > 0 ? `（剔除 ${dropped} 帧坏帧）` : "";
-    ElMessage.success(`完成：${savedCount.value} 帧已写入 ${dir}${extra}`);
+    done.value = true
+    const extra = dropped > 0 ? `（剔除 ${dropped} 帧坏帧）` : ''
+    ElMessage.success(`完成：${savedCount.value} 帧已写入 ${dir}${extra}`)
   }
 }
 </script>

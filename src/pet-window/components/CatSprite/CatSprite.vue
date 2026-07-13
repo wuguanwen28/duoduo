@@ -9,7 +9,7 @@
  * 尺寸由父级的包裹元素处理（这样右键菜单的触发元素和
  * 拖拽处理器就能集中在 Pet.vue 中同一个有尺寸的元素上）。
  */
-defineProps<{ src: string }>();
+defineProps<{ src: string }>()
 </script>
 
 <style scoped>

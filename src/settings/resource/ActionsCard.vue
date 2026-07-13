@@ -133,78 +133,78 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch } from "vue";
-import { emit as emitEvent } from "@tauri-apps/api/event";
-import { Plus, Delete, VideoPlay } from "@element-plus/icons-vue";
-import DirSelect, { type DirNode } from "./DirSelect.vue";
-import type { ActionRow } from "./manifestTypes";
+import { ref, watch } from 'vue'
+import { emit as emitEvent } from '@tauri-apps/api/event'
+import { Plus, Delete, VideoPlay } from '@element-plus/icons-vue'
+import DirSelect, { type DirNode } from './DirSelect.vue'
+import type { ActionRow } from './manifestTypes'
 // 「变换」高级参数是否显示：由远程应用配置控制（启动时 loadAppConfig 拉取）。
-import { showTransform } from "../../pet-core/appConfig";
+import { showTransform } from '../../pet-core/appConfig'
 
 const props = defineProps<{
   /** 动作列表（就地增删改；父组件持有同一引用）。 */
-  actions: ActionRow[];
+  actions: ActionRow[]
   /** 资源根下的子目录树，供「图片目录」树形下拉用。 */
-  dirTree: DirNode[];
-}>();
+  dirTree: DirNode[]
+}>()
 
 const emit = defineEmits<{
   /** 子下拉展开时请求父组件刷新目录树。 */
-  (e: "refresh-dirs"): void;
-}>();
+  (e: 'refresh-dirs'): void
+}>()
 
 /** 展开的折叠项（默认全展开）。 */
-const openActions = ref<number[]>([]);
+const openActions = ref<number[]>([])
 
 // 列表被整体替换（加载 manifest）时，重置为全部展开；就地增删不在此重置。
 watch(
   () => props.actions,
   () => {
-    openActions.value = props.actions.map((_, i) => i);
+    openActions.value = props.actions.map((_, i) => i)
   },
   { immediate: true },
-);
+)
 
 /**
  * 生成一个不与现有动作冲突的唯一 key（用户不可见，仅供引用使用）。
  * 形如 action1、action2…，自增直到不重复。
  */
 function genActionKey(): string {
-  const used = new Set(props.actions.map((a) => a.key));
-  let i = 1;
-  let k = `action${i}`;
-  while (used.has(k)) k = `action${++i}`;
-  return k;
+  const used = new Set(props.actions.map((a) => a.key))
+  let i = 1
+  let k = `action${i}`
+  while (used.has(k)) k = `action${++i}`
+  return k
 }
 
 function addAction() {
   // 新动作插到第一位；已展开项下标整体后移，并默认展开新项。
   props.actions.unshift({
     key: genActionKey(),
-    name: "",
-    dir: "",
+    name: '',
+    dir: '',
     fps: 24,
     yoyo: false,
     reverse: false,
     offsetX: 0,
     offsetY: 0,
     scale: 1,
-  });
-  openActions.value = [0, ...openActions.value.map((i) => i + 1)];
+  })
+  openActions.value = [0, ...openActions.value.map((i) => i + 1)]
 }
 
 function removeAction(i: number) {
-  props.actions.splice(i, 1);
+  props.actions.splice(i, 1)
 }
 
 /** 测试播放：广播 pet-play-action（用 key 播放），提示用名称展示。 */
 async function testPlay(key: string, label: string) {
-  if (!key) return;
+  if (!key) return
   try {
-    await emitEvent("pet-play-action", key);
-    ElMessage.success(`已通知主窗播放「${label}」`);
+    await emitEvent('pet-play-action', key)
+    ElMessage.success(`已通知主窗播放「${label}」`)
   } catch (e) {
-    ElMessage.error(`测试播放失败：${e}`);
+    ElMessage.error(`测试播放失败：${e}`)
   }
 }
 </script>

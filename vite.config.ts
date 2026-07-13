@@ -1,12 +1,12 @@
-import { defineConfig } from "vite";
-import { fileURLToPath, URL } from "node:url";
-import vue from "@vitejs/plugin-vue";
-import AutoImport from "unplugin-auto-import/vite";
-import Components from "unplugin-vue-components/vite";
-import { ElementPlusResolver } from "unplugin-vue-components/resolvers";
+import { defineConfig } from 'vite'
+import { fileURLToPath, URL } from 'node:url'
+import vue from '@vitejs/plugin-vue'
+import AutoImport from 'unplugin-auto-import/vite'
+import Components from 'unplugin-vue-components/vite'
+import { ElementPlusResolver } from 'unplugin-vue-components/resolvers'
 
 // @ts-expect-error process is a nodejs global
-const host = process.env.TAURI_DEV_HOST;
+const host = process.env.TAURI_DEV_HOST
 
 // https://vitejs.dev/config/
 export default defineConfig(async () => ({
@@ -14,11 +14,11 @@ export default defineConfig(async () => ({
     vue(),
     AutoImport({
       resolvers: [ElementPlusResolver()],
-      dts: "src/types/auto-imports.d.ts",
+      dts: 'src/types/auto-imports.d.ts',
     }),
     Components({
       resolvers: [ElementPlusResolver()],
-      dts: "src/types/components.d.ts",
+      dts: 'src/types/components.d.ts',
     }),
   ],
 
@@ -26,8 +26,8 @@ export default defineConfig(async () => ({
   build: {
     rollupOptions: {
       input: {
-        main: fileURLToPath(new URL("./index.html", import.meta.url)),
-        settings: fileURLToPath(new URL("./settings.html", import.meta.url)),
+        main: fileURLToPath(new URL('./index.html', import.meta.url)),
+        settings: fileURLToPath(new URL('./settings.html', import.meta.url)),
       },
     },
   },
@@ -40,13 +40,13 @@ export default defineConfig(async () => ({
     host: host || false,
     hmr: host
       ? {
-          protocol: "ws",
+          protocol: 'ws',
           host,
           port: 1421,
         }
       : undefined,
     watch: {
-      ignored: ["**/src-tauri/**", "**/server/**"],
+      ignored: ['**/src-tauri/**', '**/server/**'],
     },
   },
-}));
+}))

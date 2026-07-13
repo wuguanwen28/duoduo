@@ -140,66 +140,66 @@ import {
   reactive,
   ref,
   watch,
-} from "vue";
-import { invoke } from "@tauri-apps/api/core";
-import { changeResourceRoot } from "../../pet-core/appSettings";
-import { emitForCat, currentCatId } from "../../pet-core/catContext";
-import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import { open } from "@tauri-apps/plugin-dialog";
+} from 'vue'
+import { invoke } from '@tauri-apps/api/core'
+import { changeResourceRoot } from '../../pet-core/appSettings'
+import { emitForCat, currentCatId } from '../../pet-core/catContext'
+import { listen, type UnlistenFn } from '@tauri-apps/api/event'
+import { open } from '@tauri-apps/plugin-dialog'
 import {
   Refresh,
   FolderOpened,
   CircleCheckFilled,
   QuestionFilled,
   Download,
-} from "@element-plus/icons-vue";
-import ContentHelpDialog from "../common/ContentHelpDialog.vue";
-import DirSelect, { type DirNode } from "./DirSelect.vue";
-import ActionsCard from "./ActionsCard.vue";
-import BehaviorsCard from "./BehaviorsCard.vue";
-import type { ActionRow, BehaviorRow } from "./manifestTypes";
-import CatPicker from "../common/CatPicker.vue";
-import SettingsHeader from "../common/SettingsHeader.vue";
+} from '@element-plus/icons-vue'
+import ContentHelpDialog from '../common/ContentHelpDialog.vue'
+import DirSelect, { type DirNode } from './DirSelect.vue'
+import ActionsCard from './ActionsCard.vue'
+import BehaviorsCard from './BehaviorsCard.vue'
+import type { ActionRow, BehaviorRow } from './manifestTypes'
+import CatPicker from '../common/CatPicker.vue'
+import SettingsHeader from '../common/SettingsHeader.vue'
 
-const root = ref("");
+const root = ref('')
 /** 资源根下是否已存在 manifest.json；为 false 时整页显示空状态。 */
-const hasManifest = ref(false);
+const hasManifest = ref(false)
 /** 资源根下的子目录树，供动作/跟随的目录树形下拉使用。 */
-const dirTree = ref<DirNode[]>([]);
+const dirTree = ref<DirNode[]>([])
 /** 读取 manifest 期间显示加载遮罩。 */
-const loading = ref(false);
+const loading = ref(false)
 /** 使用说明弹窗显隐。 */
-const helpVisible = ref(false);
+const helpVisible = ref(false)
 
-const follow = reactive({ dir: "follow", clockwise: true, startAngle: 0 });
-const actions = ref<ActionRow[]>([]);
-const behaviors = ref<BehaviorRow[]>([]);
+const follow = reactive({ dir: 'follow', clockwise: true, startAngle: 0 })
+const actions = ref<ActionRow[]>([])
+const behaviors = ref<BehaviorRow[]>([])
 /** 默认/兜底行为 key。 */
-const defaultBehavior = ref("");
+const defaultBehavior = ref('')
 
 /** 所有动作的 {key,label}，供行为库下拉引用（值用 key，显示用名称；未命名用「动作N」序号）。 */
 const actionOptions = computed(() =>
   actions.value
     .map((a, idx) => ({ key: a.key, label: a.name || `动作${idx + 1}` }))
     .filter((o) => o.key),
-);
+)
 
 /** 由毫秒区间推断最合适的单位：能整除 min/max 两端的最大单位。 */
 function inferUnit(a: number, b: number): number {
   for (const u of [3600000, 60000, 1000]) {
-    if (a % u === 0 && b % u === 0) return u;
+    if (a % u === 0 && b % u === 0) return u
   }
-  return 1000;
+  return 1000
 }
 
 /** 拉取当前猫资源根下的子目录树（失败时置空，不阻塞）。 */
 async function loadDirTree() {
   try {
-    dirTree.value = await invoke<DirNode[]>("pet_list_dirs", {
+    dirTree.value = await invoke<DirNode[]>('pet_list_dirs', {
       catId: currentCatId.value,
-    });
+    })
   } catch {
-    dirTree.value = [];
+    dirTree.value = []
   }
 }
 
@@ -208,116 +208,117 @@ async function loadDirTree() {
  * resourceRoot，缺 manifest.json 时自动创建空白模板）→ 重新加载本页 + 通知**本猫**主窗热重载。
  */
 async function changeDir() {
-  let picked: string | null = null;
+  let picked: string | null = null
   try {
-    const p = await open({ directory: true, multiple: false });
-    if (typeof p === "string") picked = p;
+    const p = await open({ directory: true, multiple: false })
+    if (typeof p === 'string') picked = p
   } catch (e) {
-    ElMessage.error(`选择目录失败：${e}`);
-    return;
+    ElMessage.error(`选择目录失败：${e}`)
+    return
   }
-  if (!picked) return;
+  if (!picked) return
   try {
-    await changeResourceRoot(picked);
-    ElMessage.success("已切换资源目录");
-    await reload();
+    await changeResourceRoot(picked)
+    ElMessage.success('已切换资源目录')
+    await reload()
     // 通知本猫主窗用新资源根重新扫描并重挂宠物（按猫广播，不影响其他猫窗）。
-    emitForCat("manifest-updated", null);
+    emitForCat('manifest-updated', null)
   } catch (e) {
-    ElMessage.error(`切换目录失败：${e}`);
+    ElMessage.error(`切换目录失败：${e}`)
   }
 }
 
 /** 下载默认资源包：弹目录选择器 -> 后端流式下载 zip 到该目录 -> 进度条 -> 提示保存路径。
  *  复用热更新那套流式下载能力（后端 pet_download_resources），不解压、不设资源根，
  *  解压与目录选择留给用户自己处理。 */
-const downloading = ref(false);
+const downloading = ref(false)
 /** 下载进度百分比（0-100）；null 表示未在下载。 */
-const downloadPct = ref<number | null>(null);
+const downloadPct = ref<number | null>(null)
 
 async function downloadDefaultResources() {
-  if (downloading.value) return;
+  if (downloading.value) return
   // 选解压目标目录：用户决定资源包放哪。
-  let picked: string | null = null;
+  let picked: string | null = null
   try {
-    const p = await open({ directory: true, multiple: false });
-    if (typeof p === "string") picked = p;
+    const p = await open({ directory: true, multiple: false })
+    if (typeof p === 'string') picked = p
   } catch (e) {
-    ElMessage.error(`选择目录失败：${e}`);
-    return;
+    ElMessage.error(`选择目录失败：${e}`)
+    return
   }
-  if (!picked) return;
+  if (!picked) return
 
-  downloading.value = true;
-  downloadPct.value = 0;
+  downloading.value = true
+  downloadPct.value = 0
   // 监听后端进度事件。
-  let unlisten: UnlistenFn | undefined;
+  let unlisten: UnlistenFn | undefined
   try {
     unlisten = await listen<{ downloaded: number; total: number }>(
-      "resources-download://progress",
+      'resources-download://progress',
       (e) => {
-        const { downloaded, total } = e.payload;
-        downloadPct.value = total > 0 ? Math.round((downloaded / total) * 100) : 0;
+        const { downloaded, total } = e.payload
+        downloadPct.value =
+          total > 0 ? Math.round((downloaded / total) * 100) : 0
       },
-    );
+    )
     // 后端流式下载 zip 到选定目录，返回保存后的文件路径。
-    const zipPath = await invoke<string>("pet_download_resources", {
+    const zipPath = await invoke<string>('pet_download_resources', {
       destDir: picked,
-    });
-    ElMessage.success(`已下载到：${zipPath}`);
+    })
+    ElMessage.success(`已下载到：${zipPath}`)
   } catch (e) {
-    ElMessage.error(`下载失败：${e}`);
+    ElMessage.error(`下载失败：${e}`)
   } finally {
-    unlisten?.();
-    downloading.value = false;
-    downloadPct.value = null;
+    unlisten?.()
+    downloading.value = false
+    downloadPct.value = null
   }
 }
 
 /** 从 manifest 文本解析填充各编辑区。 */
 function parseInto(content: string) {
-  let m: any = {};
+  let m: any = {}
   if (content.trim()) {
     try {
-      m = JSON.parse(content);
+      m = JSON.parse(content)
     } catch (e) {
-      ElMessage.error(`manifest.json 解析失败，已按空白处理：${e}`);
-      m = {};
+      ElMessage.error(`manifest.json 解析失败，已按空白处理：${e}`)
+      m = {}
     }
   }
-  const f = m.follow ?? {};
-  follow.dir = f.dir ?? "follow";
-  follow.clockwise = f.clockwise !== false;
-  follow.startAngle = typeof f.startAngle === "number" ? f.startAngle : 0;
+  const f = m.follow ?? {}
+  follow.dir = f.dir ?? 'follow'
+  follow.clockwise = f.clockwise !== false
+  follow.startAngle = typeof f.startAngle === 'number' ? f.startAngle : 0
 
   actions.value = Object.entries<any>(m.actions ?? {}).map(([key, d]) => ({
     key,
-    name: d?.name ?? "",
-    dir: d?.dir ?? "",
-    fps: typeof d?.fps === "number" ? d.fps : 24,
+    name: d?.name ?? '',
+    dir: d?.dir ?? '',
+    fps: typeof d?.fps === 'number' ? d.fps : 24,
     yoyo: !!d?.yoyo,
     reverse: !!d?.reverse,
-    offsetX: typeof d?.offsetX === "number" ? d.offsetX : 0,
-    offsetY: typeof d?.offsetY === "number" ? d.offsetY : 0,
-    scale: typeof d?.scale === "number" ? d.scale : 1,
-  }));
+    offsetX: typeof d?.offsetX === 'number' ? d.offsetX : 0,
+    offsetY: typeof d?.offsetY === 'number' ? d.offsetY : 0,
+    scale: typeof d?.scale === 'number' ? d.scale : 1,
+  }))
 
   behaviors.value = Object.entries<any>(m.behaviors ?? {}).map(([name, b]) => {
     const durMs: [number, number] = Array.isArray(b?.duration)
       ? [b.duration[0], b.duration[1]]
-      : [15000, 40000];
+      : [15000, 40000]
     const dlyMs: [number, number] = Array.isArray(b?.delay)
       ? [b.delay[0], b.delay[1]]
-      : [3000, 8000];
-    const du = inferUnit(durMs[0], durMs[1]);
-    const ld = inferUnit(dlyMs[0], dlyMs[1]);
+      : [3000, 8000]
+    const du = inferUnit(durMs[0], durMs[1])
+    const ld = inferUnit(dlyMs[0], dlyMs[1])
     return {
       key: name,
-      label: typeof b?.name === "string" ? b.name : "",
-      base: b?.base ?? "",
-      enter: b?.enter ?? "",
-      exit: b?.exit ?? "",
-      weight: typeof b?.weight === "number" ? b.weight : 1,
+      label: typeof b?.name === 'string' ? b.name : '',
+      base: b?.base ?? '',
+      enter: b?.enter ?? '',
+      exit: b?.exit ?? '',
+      weight: typeof b?.weight === 'number' ? b.weight : 1,
       interruptible: !!b?.interruptible,
       durationVal: [durMs[0] / du, durMs[1] / du] as [number, number],
       durationUnit: du,
@@ -325,13 +326,13 @@ function parseInto(content: string) {
       delayUnit: ld,
       random: Array.isArray(b?.random)
         ? b.random.map((r: any) => ({
-            action: r?.action ?? "",
-            weight: typeof r?.weight === "number" ? r.weight : 1,
+            action: r?.action ?? '',
+            weight: typeof r?.weight === 'number' ? r.weight : 1,
             // __speak 的独立短语池原样带出。
             phrases:
-              Array.isArray(r?.phrases) && r?.action === "__speak"
+              Array.isArray(r?.phrases) && r?.action === '__speak'
                 ? r.phrases
-                    .filter((p: any) => p && typeof p.text === "string")
+                    .filter((p: any) => p && typeof p.text === 'string')
                     .map((p: any) => ({
                       text: String(p.text).trim(),
                       weight: Math.max(0, Number(p.weight) || 0),
@@ -339,33 +340,33 @@ function parseInto(content: string) {
                 : undefined,
           }))
         : [],
-    };
-  });
+    }
+  })
 
   // 默认行为：取 manifest.defaultBehavior，无效则回退到第一个行为。
-  const dft = typeof m.defaultBehavior === "string" ? m.defaultBehavior : "";
+  const dft = typeof m.defaultBehavior === 'string' ? m.defaultBehavior : ''
   defaultBehavior.value = behaviors.value.some((b) => b.key === dft)
     ? dft
-    : (behaviors.value[0]?.key ?? "");
+    : (behaviors.value[0]?.key ?? '')
 }
 
 /** 把各编辑区组装回 manifest 对象（省略默认值，保持简洁）。 */
 function build(): any {
-  const acts: Record<string, any> = {};
+  const acts: Record<string, any> = {}
   for (const a of actions.value) {
-    if (!a.key) continue;
-    const o: any = { dir: a.dir, fps: a.fps };
-    if (a.name) o.name = a.name;
-    if (a.yoyo) o.yoyo = true;
-    if (a.reverse) o.reverse = true;
-    if (a.offsetX !== 0) o.offsetX = a.offsetX;
-    if (a.offsetY !== 0) o.offsetY = a.offsetY;
-    if (a.scale !== 1) o.scale = a.scale;
-    acts[a.key] = o;
+    if (!a.key) continue
+    const o: any = { dir: a.dir, fps: a.fps }
+    if (a.name) o.name = a.name
+    if (a.yoyo) o.yoyo = true
+    if (a.reverse) o.reverse = true
+    if (a.offsetX !== 0) o.offsetX = a.offsetX
+    if (a.offsetY !== 0) o.offsetY = a.offsetY
+    if (a.scale !== 1) o.scale = a.scale
+    acts[a.key] = o
   }
-  const behs: Record<string, any> = {};
+  const behs: Record<string, any> = {}
   for (const b of behaviors.value) {
-    if (!b.key) continue;
+    if (!b.key) continue
     const o: any = {
       weight: b.weight,
       duration: [
@@ -376,27 +377,27 @@ function build(): any {
       random: b.random
         .filter((r) => r.action)
         .map((r) => {
-          const o: any = { action: r.action, weight: r.weight };
+          const o: any = { action: r.action, weight: r.weight }
           // __speak 才写 phrases（非空数组时）。
           if (
-            r.action === "__speak" &&
+            r.action === '__speak' &&
             Array.isArray(r.phrases) &&
             r.phrases.length > 0
           ) {
             o.phrases = r.phrases.map((p) => ({
               text: p.text.trim(),
               weight: Math.max(0, Number(p.weight) || 0),
-            }));
+            }))
           }
-          return o;
+          return o
         }),
       delay: [b.delayVal[0] * b.delayUnit, b.delayVal[1] * b.delayUnit],
-    };
-    if (b.label) o.name = b.label;
-    if (b.interruptible) o.interruptible = true;
-    if (b.enter) o.enter = b.enter;
-    if (b.exit) o.exit = b.exit;
-    behs[b.key] = o;
+    }
+    if (b.label) o.name = b.label
+    if (b.interruptible) o.interruptible = true
+    if (b.enter) o.enter = b.enter
+    if (b.exit) o.exit = b.exit
+    behs[b.key] = o
   }
   return {
     version: 1,
@@ -408,7 +409,7 @@ function build(): any {
     },
     actions: acts,
     behaviors: behs,
-  };
+  }
 }
 
 /**
@@ -418,65 +419,65 @@ function build(): any {
  *   首次进页面 / 手动「重新加载」用非静默，给明确的读取反馈。
  */
 async function reload(opts: { silent?: boolean } = {}) {
-  const silent = opts.silent ?? false;
+  const silent = opts.silent ?? false
   // 加载期间抑制自动保存：parseInto 写入响应式状态会触发监听，不应回存。
-  suppressSave = true;
-  if (!silent) loading.value = true;
+  suppressSave = true
+  if (!silent) loading.value = true
   try {
     const r = await invoke<{ root: string; content: string; exists: boolean }>(
-      "pet_read_manifest",
+      'pet_read_manifest',
       { catId: currentCatId.value },
-    );
-    root.value = r.root;
-    hasManifest.value = r.exists;
-    parseInto(r.content);
-    await loadDirTree();
+    )
+    root.value = r.root
+    hasManifest.value = r.exists
+    parseInto(r.content)
+    await loadDirTree()
     if (silent) {
       // 切猫静默：不弹 toast，仅在缺 manifest 时靠空状态引导，无需打扰。
     } else if (r.exists) {
-      ElMessage.success("已加载 manifest.json");
+      ElMessage.success('已加载 manifest.json')
     } else {
       // 不再静默载入模板，而是由上层的空状态引导用户选择资源目录。
-      ElMessage.warning("未找到 manifest.json，请选择资源目录");
+      ElMessage.warning('未找到 manifest.json，请选择资源目录')
     }
   } catch (e) {
-    if (!silent) ElMessage.error(`读取失败：${e}`);
+    if (!silent) ElMessage.error(`读取失败：${e}`)
   } finally {
-    if (!silent) loading.value = false;
+    if (!silent) loading.value = false
     // 等本次状态变更引发的监听跑完，再恢复自动保存，避免"加载即保存"。
-    await nextTick();
-    suppressSave = false;
+    await nextTick()
+    suppressSave = false
   }
 }
 
 /** 自动保存的防抖计时器与抑制标志（加载期间不回存）。 */
-let saveTimer: number | undefined;
-let suppressSave = false;
+let saveTimer: number | undefined
+let suppressSave = false
 /** 「已自动保存」提示的显示状态与其 3 秒自动消失计时器。 */
-const savedShown = ref(false);
-let savedTimer: number | undefined;
+const savedShown = ref(false)
+let savedTimer: number | undefined
 
 /** 弹出「已自动保存」指示，3 秒后自动淡出。 */
 function flashSaved() {
-  savedShown.value = true;
-  if (savedTimer !== undefined) window.clearTimeout(savedTimer);
-  savedTimer = window.setTimeout(() => (savedShown.value = false), 3000);
+  savedShown.value = true
+  if (savedTimer !== undefined) window.clearTimeout(savedTimer)
+  savedTimer = window.setTimeout(() => (savedShown.value = false), 3000)
 }
 
 /** 静默写回 manifest 并通知主窗热重载（成功只闪一个「已自动保存」指示）。 */
 async function save() {
   try {
-    const json = JSON.stringify(build(), null, 2);
-    await invoke("pet_write_manifest", {
+    const json = JSON.stringify(build(), null, 2)
+    await invoke('pet_write_manifest', {
       catId: currentCatId.value,
       content: json,
-    });
+    })
     // 按猫广播，只有本猫主窗热重载，改动即时生效且不影响其他猫。
-    emitForCat("manifest-updated", null);
-    flashSaved();
+    emitForCat('manifest-updated', null)
+    flashSaved()
   } catch (e) {
     // 失败仍提示，避免静默丢改动。
-    ElMessage.error(`保存失败：${e}`);
+    ElMessage.error(`保存失败：${e}`)
   }
 }
 
@@ -484,29 +485,29 @@ async function save() {
 watch(
   [follow, actions, behaviors, defaultBehavior],
   () => {
-    if (suppressSave || !hasManifest.value) return;
-    if (saveTimer !== undefined) window.clearTimeout(saveTimer);
-    saveTimer = window.setTimeout(() => void save(), 600);
+    if (suppressSave || !hasManifest.value) return
+    if (saveTimer !== undefined) window.clearTimeout(saveTimer)
+    saveTimer = window.setTimeout(() => void save(), 600)
   },
   { deep: true },
-);
+)
 
-let unlistenCatLoaded: UnlistenFn | undefined;
+let unlistenCatLoaded: UnlistenFn | undefined
 onMounted(async () => {
-  await reload();
+  await reload()
   // 切猫后重载该猫资源（CatPicker / 打开设置页激活 / 增删猫）；manifest 是本地
   // reactive，不在 loadAppSettings 的 hydrate 范围，须监听 cat-loaded 事件单独 reload。
   try {
     // 切猫静默重载：不闪 loading 遮罩、不弹 toast。
     unlistenCatLoaded = await listen(
-      "cat-loaded",
+      'cat-loaded',
       () => void reload({ silent: true }),
-    );
+    )
   } catch {
     // 事件不可用时忽略——可手动点「重新加载」。
   }
-});
-onUnmounted(() => unlistenCatLoaded?.());
+})
+onUnmounted(() => unlistenCatLoaded?.())
 </script>
 
 <style scoped>
@@ -557,7 +558,7 @@ onUnmounted(() => unlistenCatLoaded?.());
   background: rgba(0, 0, 0, 0.06);
   padding: 1px 5px;
   border-radius: 4px;
-  font-family: "Consolas", "Microsoft YaHei", monospace;
+  font-family: 'Consolas', 'Microsoft YaHei', monospace;
 }
 .empty__btns {
   display: flex;

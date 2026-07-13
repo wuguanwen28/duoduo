@@ -2,11 +2,16 @@
   <div class="menu-config">
     <p class="menu-config__tip">
       为猫爪菜单的 5 个爪垫分别选择功能，并可自定义显示名称。4 个趾建议 4 字以内
-      （每行 2 字、最多 2 行），掌垫可放 6 字（单行）。右键小猫即可看到猫爪造型菜单。
+      （每行 2 字、最多 2 行），掌垫可放 6
+      字（单行）。右键小猫即可看到猫爪造型菜单。
     </p>
 
     <div class="menu-config__slots">
-      <div v-for="(slot, i) in PAW_SLOTS" :key="slot.key" class="menu-config__slot">
+      <div
+        v-for="(slot, i) in PAW_SLOTS"
+        :key="slot.key"
+        class="menu-config__slot"
+      >
         <span class="menu-config__slot-icon">🐾</span>
         <span class="menu-config__slot-label">{{ slot.label }}</span>
         <el-select
@@ -75,33 +80,36 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
-import { ChatLineRound } from "@element-plus/icons-vue";
+import { computed, onMounted, ref } from 'vue'
+import { ChatLineRound } from '@element-plus/icons-vue'
 import {
   menuSettings,
   PAW_SLOTS,
   menuItemId,
   saveAndBroadcast,
-} from "../../pet-core/menuSettings";
-import { BUILTIN_ACTIONS, findBuiltin } from "../../pet-core/commands";
-import { defaultSpeakPhrases, type SpeakPhrase } from "../../pet-core/speakPhrases";
+} from '../../pet-core/menuSettings'
+import { BUILTIN_ACTIONS, findBuiltin } from '../../pet-core/commands'
+import {
+  defaultSpeakPhrases,
+  type SpeakPhrase,
+} from '../../pet-core/speakPhrases'
 import {
   loadManifestNames,
   type ManifestNameItem,
-} from "../../pet-core/manifestCatalog";
-import PhraseConfigDialog from "./PhraseConfigDialog.vue";
+} from '../../pet-core/manifestCatalog'
+import PhraseConfigDialog from './PhraseConfigDialog.vue'
 
 /** manifest 动作 / 行为条目（设置窗异步读取）。 */
-const actionItems = ref<ManifestNameItem[]>([]);
-const behaviorItems = ref<ManifestNameItem[]>([]);
+const actionItems = ref<ManifestNameItem[]>([])
+const behaviorItems = ref<ManifestNameItem[]>([])
 
 /** 内置组：过滤掉「打开菜单」（在菜单里点没意义）。 */
 const builtinOpts = computed(() =>
-  BUILTIN_ACTIONS.filter((b) => b.key !== "openMenu").map((b) => ({
+  BUILTIN_ACTIONS.filter((b) => b.key !== 'openMenu').map((b) => ({
     id: b.key,
     label: b.standardLabel,
   })),
-);
+)
 
 /** 动作组：manifest 动作 + 随机动作。 */
 const actionOpts = computed(() => [
@@ -109,8 +117,8 @@ const actionOpts = computed(() => [
     id: `action:${item.key}`,
     label: item.label,
   })),
-  { id: "randomAction", label: "随机动作" },
-]);
+  { id: 'randomAction', label: '随机动作' },
+])
 
 /** 行为组：manifest 行为 + 随机行为。 */
 const behaviorOpts = computed(() => [
@@ -118,92 +126,92 @@ const behaviorOpts = computed(() => [
     id: `behavior:${item.key}`,
     label: item.label,
   })),
-  { id: "randomBehavior", label: "随机行为" },
-]);
+  { id: 'randomBehavior', label: '随机行为' },
+])
 
 /** 替换第 i 个槽位的菜单项（按选中 actionId 构造）。 */
 function onSlotChange(index: number, actionId: string) {
-  const next = [...menuSettings.value];
+  const next = [...menuSettings.value]
   next[index] = {
     id: menuItemId(actionId),
     actionId,
     label: labelFor(actionId),
-  };
-  menuSettings.value = next;
-  saveAndBroadcast();
+  }
+  menuSettings.value = next
+  saveAndBroadcast()
 }
 
 /** 修改第 i 个槽位的显示名称（只改 label，不动 actionId）。 */
 function onLabelChange(index: number, label: string) {
-  const cur = menuSettings.value[index];
-  if (!cur) return;
-  const next = [...menuSettings.value];
-  next[index] = { ...cur, label };
-  menuSettings.value = next;
-  saveAndBroadcast();
+  const cur = menuSettings.value[index]
+  if (!cur) return
+  const next = [...menuSettings.value]
+  next[index] = { ...cur, label }
+  menuSettings.value = next
+  saveAndBroadcast()
 }
 
 /** 由 actionId 推导默认显示名（首次选中时填入，用户可改）。 */
 function labelFor(id: string): string {
-  const b = findBuiltin(id);
-  if (b) return b.menuLabel;
-  if (id.startsWith("action:")) {
-    const key = id.slice("action:".length);
-    return actionItems.value.find((item) => item.key === key)?.label ?? key;
+  const b = findBuiltin(id)
+  if (b) return b.menuLabel
+  if (id.startsWith('action:')) {
+    const key = id.slice('action:'.length)
+    return actionItems.value.find((item) => item.key === key)?.label ?? key
   }
-  if (id.startsWith("behavior:")) {
-    const key = id.slice("behavior:".length);
-    return behaviorItems.value.find((item) => item.key === key)?.label ?? key;
+  if (id.startsWith('behavior:')) {
+    const key = id.slice('behavior:'.length)
+    return behaviorItems.value.find((item) => item.key === key)?.label ?? key
   }
-  if (id === "randomAction") return "随机动作";
-  if (id === "randomBehavior") return "随机行为";
-  return "";
+  if (id === 'randomAction') return '随机动作'
+  if (id === 'randomBehavior') return '随机行为'
+  return ''
 }
 
 /** 判断动作是否为说话类动作（需要配置短语）。 */
 function isPhraseAction(actionId: string | undefined): boolean {
-  return actionId === "speak" || actionId === "pokeAndSpeak";
+  return actionId === 'speak' || actionId === 'pokeAndSpeak'
 }
 
 /** 说话内容弹窗：当前编辑的菜单项槽位序号。 */
-const phraseDialogVisible = ref(false);
-const phraseSlot = ref<number>(-1);
+const phraseDialogVisible = ref(false)
+const phraseSlot = ref<number>(-1)
 
 /** 弹窗 phrases 双向绑定代理：读写指向当前菜单项的 phrases。
  *  首次打开若无 phrases，用默认模板拷贝初始化。写入时持久化并广播。 */
 const phraseDialogTarget = computed<SpeakPhrase[]>({
   get: () => {
-    const i = phraseSlot.value;
-    const item = menuSettings.value[i];
+    const i = phraseSlot.value
+    const item = menuSettings.value[i]
     if (item && !Array.isArray(item.phrases)) {
-      item.phrases = defaultSpeakPhrases.value.map((p) => ({ ...p }));
-      saveAndBroadcast();
+      item.phrases = defaultSpeakPhrases.value.map((p) => ({ ...p }))
+      saveAndBroadcast()
     }
-    return item?.phrases ?? [];
+    return item?.phrases ?? []
   },
   set: (v) => {
-    const i = phraseSlot.value;
-    const item = menuSettings.value[i];
-    if (!item) return;
-    item.phrases = v;
-    saveAndBroadcast();
+    const i = phraseSlot.value
+    const item = menuSettings.value[i]
+    if (!item) return
+    item.phrases = v
+    saveAndBroadcast()
   },
-});
+})
 
 /** 打开说话内容弹窗，记录当前槽位序号。 */
 function openPhraseDialog(i: number) {
-  phraseSlot.value = i;
-  phraseDialogVisible.value = true;
+  phraseSlot.value = i
+  phraseDialogVisible.value = true
 }
 
 /** 读取 manifest 动作 / 行为条目，供下拉「动作」/「行为」组使用。 */
 async function loadCatalog() {
-  const names = await loadManifestNames();
-  actionItems.value = names.actions;
-  behaviorItems.value = names.behaviors;
+  const names = await loadManifestNames()
+  actionItems.value = names.actions
+  behaviorItems.value = names.behaviors
 }
 
-onMounted(loadCatalog);
+onMounted(loadCatalog)
 </script>
 
 <style scoped>

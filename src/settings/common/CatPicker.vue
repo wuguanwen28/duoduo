@@ -8,8 +8,8 @@
  *
  * 当前猫、头像、名字都从 appSettings 全局单例直接读取，故无需页面透传 props。
  */
-import { ref, computed, watch } from "vue";
-import { ArrowDown, Check } from "@element-plus/icons-vue";
+import { ref, computed, watch } from 'vue'
+import { ArrowDown, Check } from '@element-plus/icons-vue'
 import {
   currentCatId,
   globalSettings,
@@ -18,39 +18,39 @@ import {
   switchCat,
   listCats,
   type CatEntry,
-} from "../../pet-core/appSettings";
-import { hideAddCat } from "../../pet-core/appConfig";
+} from '../../pet-core/appSettings'
+import { hideAddCat } from '../../pet-core/appConfig'
 
 const emit = defineEmits<{
   /** 切猫完成后触发，携带新猫 id，供页面重载各自的按猫状态。 */
-  change: [string];
-}>();
+  change: [string]
+}>()
 
 /** 弹窗显隐。 */
-const open = ref(false);
+const open = ref(false)
 /** 当前猫名字；未命名/无配置时回退空串（按钮内以「选择小猫」兜底）。 */
 const currentCatName = computed(
-  () => globalSettings.value?.cats[currentCatId.value]?.name ?? "",
-);
+  () => globalSettings.value?.cats[currentCatId.value]?.name ?? '',
+)
 
 // ── 弹窗内的猫列表 ──
-const cats = ref<CatEntry[]>([]);
+const cats = ref<CatEntry[]>([])
 // 打开时刷新猫列表。
 watch(open, async (v) => {
-  if (v) cats.value = await listCats();
-});
+  if (v) cats.value = await listCats()
+})
 
 /** 默认头像：项目内置 icon.png。 */
-const defaultAvatar = new URL("../../assets/icon.png", import.meta.url).href;
+const defaultAvatar = new URL('../../assets/icon.png', import.meta.url).href
 function avatarSrc(cat: CatEntry): string {
   // 经 avatarAssetUrl 统一附加破缓存令牌，与卡片/编辑预览一致。
-  return cat.avatarUrl ? avatarAssetUrl(cat.avatarUrl) : defaultAvatar;
+  return cat.avatarUrl ? avatarAssetUrl(cat.avatarUrl) : defaultAvatar
 }
 
 async function onPick(id: string) {
-  open.value = false;
-  await switchCat(id);
-  emit("change", id);
+  open.value = false
+  await switchCat(id)
+  emit('change', id)
 }
 </script>
 
@@ -58,35 +58,35 @@ async function onPick(id: string) {
   <!-- 单猫模式（hideAddCat）下整体隐藏选猫器，覆盖显示设置/资源设置两个使用点。 -->
   <template v-if="!hideAddCat">
     <el-button class="cat-picker-btn" size="small" @click="open = true">
-    <div class="cat-picker-btn__content">
-      <img
-        v-if="avatarUrl"
-        :src="avatarUrl"
-        class="cat-picker-btn__avatar"
-        alt=""
-      />
-      <span>{{ currentCatName || "选择小猫" }}</span>
-      <el-icon><ArrowDown /></el-icon>
-    </div>
-  </el-button>
-
-  <el-dialog v-model="open" title="选择小猫" width="360px">
-    <div class="cat-picker">
-      <div
-        v-for="cat in cats"
-        :key="cat.id"
-        class="cat-picker__item"
-        :class="{ 'cat-picker__item--active': cat.id === currentCatId }"
-        @click="onPick(cat.id)"
-      >
-        <img class="cat-picker__avatar" :src="avatarSrc(cat)" alt="" />
-        <span class="cat-picker__name">{{ cat.name || "未命名" }}</span>
-        <el-icon v-if="cat.id === currentCatId" class="cat-picker__check"
-          ><Check
-        /></el-icon>
+      <div class="cat-picker-btn__content">
+        <img
+          v-if="avatarUrl"
+          :src="avatarUrl"
+          class="cat-picker-btn__avatar"
+          alt=""
+        />
+        <span>{{ currentCatName || '选择小猫' }}</span>
+        <el-icon><ArrowDown /></el-icon>
       </div>
-    </div>
-  </el-dialog>
+    </el-button>
+
+    <el-dialog v-model="open" title="选择小猫" width="360px">
+      <div class="cat-picker">
+        <div
+          v-for="cat in cats"
+          :key="cat.id"
+          class="cat-picker__item"
+          :class="{ 'cat-picker__item--active': cat.id === currentCatId }"
+          @click="onPick(cat.id)"
+        >
+          <img class="cat-picker__avatar" :src="avatarSrc(cat)" alt="" />
+          <span class="cat-picker__name">{{ cat.name || '未命名' }}</span>
+          <el-icon v-if="cat.id === currentCatId" class="cat-picker__check"
+            ><Check
+          /></el-icon>
+        </div>
+      </div>
+    </el-dialog>
   </template>
 </template>
 
