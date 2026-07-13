@@ -3,6 +3,7 @@
     <!-- 顶部工具条 -->
     <SettingsHeader title="基础设置">
       <template #actions>
+        <ContentHelp content-key="basic-settings" title="基础设置使用说明" />
         <el-button
           v-if="!hideAddCat"
           type="primary"
@@ -248,6 +249,7 @@ import { Cropper } from 'vue-advanced-cropper'
 import 'vue-advanced-cropper/dist/style.css'
 import { basicSettings, saveBasicSettings } from '../../pet-core/basicSettings'
 import SettingsHeader from '../common/SettingsHeader.vue'
+import ContentHelp from '../common/ContentHelp.vue'
 import { hideAddCat } from '../../pet-core/appConfig'
 import {
   avatarUrl,

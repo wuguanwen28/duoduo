@@ -5,13 +5,7 @@
         <span class="v2w__hint">绿幕/纯色背景视频 → 背景透明的连续图片</span>
       </template>
       <template #actions>
-        <el-button
-          plain
-          type="primary"
-          :icon="QuestionFilled"
-          @click="helpVisible = true"
-          >使用说明</el-button
-        >
+        <ContentHelp content-key="tools-settings" title="视频转帧使用说明" />
       </template>
     </SettingsHeader>
 
@@ -427,13 +421,6 @@
         playsinline
         crossorigin="anonymous"
       />
-
-      <!-- 使用说明由后台说明管理维护，方便后续直接改文案无需发版。 -->
-      <ContentHelpDialog
-        v-model="helpVisible"
-        content-key="video-to-webp"
-        title="视频转帧使用说明"
-      />
     </main>
   </div>
 </template>
@@ -461,7 +448,7 @@ import {
   type KeyRegion,
 } from './chromaKey'
 import { getCachedClip, setCachedClip } from './frameCache'
-import ContentHelpDialog from '../common/ContentHelpDialog.vue'
+import ContentHelp from '../common/ContentHelp.vue'
 import SettingsHeader from '../common/SettingsHeader.vue'
 
 /** requestVideoFrameCallback 元数据。 */
@@ -511,8 +498,6 @@ const quality = ref(90)
 const erode = ref(2)
 /** 剔除坏帧：导出时跳过抠图边缘异常粗糙的帧（多为 H.264 关键帧的块噪声帧）。 */
 const dropBadFrames = ref(true)
-/** 抠图使用说明弹框。 */
-const helpVisible = ref(false)
 
 const decoding = ref(false)
 const decodePercent = ref(0)

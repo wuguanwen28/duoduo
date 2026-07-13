@@ -6,6 +6,12 @@
         <!-- 选猫：切换当前正在编辑的小猫（大小/透明度/触发器等按猫独立） -->
         <CatPicker />
       </template>
+      <template #actions>
+        <ContentHelp
+          content-key="display-settings"
+          title="显示与交互使用说明"
+        />
+      </template>
     </SettingsHeader>
 
     <main class="display-settings__body">
@@ -293,6 +299,7 @@ import {
 } from '../../pet-core/appSettings'
 import CatPicker from '../common/CatPicker.vue'
 import SettingsHeader from '../common/SettingsHeader.vue'
+import ContentHelp from '../common/ContentHelp.vue'
 
 // ── 切猫回调：CatPicker 选猫 / cat-loaded 事件（打开设置页激活、增删猫）触发 ──
 // 重新加载触发器绑定行 + 该猫的 manifest 动作/行为下拉（manifest 按猫独立）。

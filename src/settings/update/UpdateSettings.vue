@@ -3,6 +3,7 @@
     <!-- 顶部工具条，与设置页其他子页面保持统一 -->
     <SettingsHeader title="关于">
       <template #actions>
+        <ContentHelp content-key="update-settings" title="使用说明" />
         <el-button
           class="action-btn"
           plain
@@ -107,6 +108,7 @@ import githubIcon from '../../assets/github.svg'
 import giteeIcon from '../../assets/gitee.svg'
 import FeedbackDialog from './FeedbackDialog.vue'
 import SettingsHeader from '../common/SettingsHeader.vue'
+import ContentHelp from '../common/ContentHelp.vue'
 
 /** 应用图标（与 BasicSettings 共用同一份默认图标资源）。 */
 const appIcon = new URL('../../assets/icon.png', import.meta.url).href

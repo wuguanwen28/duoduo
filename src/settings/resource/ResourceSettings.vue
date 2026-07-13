@@ -13,14 +13,12 @@
         </transition>
       </template>
       <template #actions>
-        <el-button
-          plain
-          type="primary"
-          :icon="QuestionFilled"
-          @click="helpVisible = true"
-        >
-          使用说明
-        </el-button>
+        <ContentHelp content-key="resource-settings" title="资源设置使用说明" />
+        <ContentHelp
+          content-key="video-generation"
+          title="视频生成说明"
+          label="视频生成说明"
+        />
         <el-button :icon="Refresh" @click="reload()">重新加载</el-button>
       </template>
     </SettingsHeader>
@@ -122,12 +120,6 @@
         />
       </template>
     </main>
-
-    <ContentHelpDialog
-      v-model="helpVisible"
-      content-key="resource-settings"
-      title="资源设置使用说明"
-    />
   </div>
 </template>
 
@@ -150,10 +142,9 @@ import {
   Refresh,
   FolderOpened,
   CircleCheckFilled,
-  QuestionFilled,
   Download,
 } from '@element-plus/icons-vue'
-import ContentHelpDialog from '../common/ContentHelpDialog.vue'
+import ContentHelp from '../common/ContentHelp.vue'
 import DirSelect, { type DirNode } from './DirSelect.vue'
 import ActionsCard from './ActionsCard.vue'
 import BehaviorsCard from './BehaviorsCard.vue'
@@ -168,8 +159,6 @@ const hasManifest = ref(false)
 const dirTree = ref<DirNode[]>([])
 /** 读取 manifest 期间显示加载遮罩。 */
 const loading = ref(false)
-/** 使用说明弹窗显隐。 */
-const helpVisible = ref(false)
 
 const follow = reactive({ dir: 'follow', clockwise: true, startAngle: 0 })
 const actions = ref<ActionRow[]>([])
