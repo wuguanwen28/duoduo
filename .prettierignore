@@ -1,0 +1,34 @@
+# 依赖与构建产物
+node_modules
+dist
+dist-ssr
+dist-package
+dist-mirror
+
+# Rust / Tauri 生成物
+src-tauri/target
+target
+src-tauri/gen
+
+# 独立 git 仓库，各自有自己的 prettier 配置，勿用根配置格式化
+server
+
+# 运行时可替换资源（用户数据，勿改）
+resources
+
+# 工具生成、随命令重建的文件
+pnpm-lock.yaml
+CHANGELOG.md
+src/types/auto-imports.d.ts
+src/types/components.d.ts
+
+# 文档（markdown）不做格式化：避免改动文档表格与内嵌 JSON 示例（尾逗号会使
+# manifest 示例失效），也顺带保护未提交的 README 等文档改动。
+*.md
+
+# 杂项
+*.local
+.codegraph
+.superpowers
+.playwright-cli
+docs/superpowers
