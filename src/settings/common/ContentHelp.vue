@@ -21,7 +21,9 @@
       class="content-help"
       align-center
     >
-      <div class="content-help__body">
+      <!-- 事件委托拦截说明内的外链点击：Tauri WebView 默认会在窗口内导航，
+           这里改为阻止默认行为、交给后端 pet_open_url 用系统浏览器打开。 -->
+      <div class="content-help__body" @click="onBodyClick">
         <MdPreview
           id="content-help-preview"
           :model-value="md"
@@ -39,6 +41,7 @@
 
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
+import { invoke } from '@tauri-apps/api/core'
 import { QuestionFilled } from '@element-plus/icons-vue'
 import { MdPreview } from 'md-editor-v3'
 import 'md-editor-v3/lib/preview.css'
@@ -99,6 +102,19 @@ async function fetchContent(key: string): Promise<ContentItem> {
   return (await resp.json()) as ContentItem
 }
 
+/**
+ * 拦截说明内容里链接的点击：事件委托到内容容器，命中 <a> 后阻止 WebView 内部
+ * 导航，改由后端 pet_open_url 调系统默认浏览器打开。仅处理 http(s) 外链，锚点
+ * (#) 等交回默认处理。
+ */
+function onBodyClick(e: MouseEvent) {
+  const a = (e.target as HTMLElement | null)?.closest('a')
+  const href = a?.getAttribute('href')
+  if (!href || !/^https?:\/\//i.test(href)) return
+  e.preventDefault()
+  invoke('pet_open_url', { url: href }).catch(() => {})
+}
+
 onMounted(probeContent)
 </script>
 
@@ -109,6 +125,14 @@ onMounted(probeContent)
     max-height: 62vh;
     overflow-y: auto;
     padding-right: 4px;
+
+    /* 说明里的图片自适应弹窗宽度，避免大图撑破布局或需要横向滚动。
+       后台若要单独指定某张图尺寸，可在 markdown 里直接写
+       <img src="..." width="300" /> 覆盖此默认。 */
+    :deep(img) {
+      max-width: 100%;
+      height: auto;
+    }
   }
 }
 </style>
