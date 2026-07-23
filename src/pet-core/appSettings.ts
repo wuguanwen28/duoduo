@@ -25,6 +25,7 @@ import {
   passthrough,
   follow,
   headOffset,
+  idleReturnSec,
   hydrateDisplay,
   DISPLAY_SETTINGS_CHANGED_EVENT,
 } from './displaySettings'
@@ -78,6 +79,7 @@ export interface DisplayStored {
   passthrough: boolean
   follow: boolean
   headOffset: { x: number; y: number }
+  idleReturnSec: number
 }
 /** 单猫**行为配置**（cats/<id>.json）。身份信息（name/性别等）已上移到 CatMeta。 */
 export interface CatSettings {
@@ -205,6 +207,7 @@ function snapshotCat(): CatSettings {
       passthrough: passthrough.value,
       follow: follow.value,
       headOffset: { x: headOffset.value.x, y: headOffset.value.y },
+      idleReturnSec: idleReturnSec.value,
     },
     menu: menuSettings.value,
     speakPhrases: speakPhrases.value,

@@ -27,6 +27,8 @@ export interface DisplaySettings {
   follow: boolean
   /** 头部校准偏移（占精灵直径比例；0,0=图像中心）。 */
   headOffset: { x: number; y: number }
+  /** 跟随状态下，光标静止超过这么多秒后切回默认行为（1–30，见 useCatBrain.idleTimeoutMs）。 */
+  idleReturnSec: number
 }
 
 /** 持久化形态（与 DisplaySettings 同构，供 appSettings 使用）。 */
@@ -62,6 +64,8 @@ export const follow = ref(DISPLAY_DEFAULTS.follow)
 export const headOffset = ref<{ x: number; y: number }>({
   ...DISPLAY_DEFAULTS.headOffset,
 })
+/** 光标静止回默认行为的超时（秒）。 */
+export const idleReturnSec = ref(DISPLAY_DEFAULTS.idleReturnSec)
 
 /** 从持久化数据填充（appSettings.loadAppSettings 调用）。 */
 export function hydrateDisplay(data: Partial<DisplayStored> | undefined): void {
@@ -85,6 +89,10 @@ export function hydrateDisplay(data: Partial<DisplayStored> | undefined): void {
     typeof data.headOffset.y === 'number'
       ? { x: data.headOffset.x, y: data.headOffset.y }
       : { ...DISPLAY_DEFAULTS.headOffset }
+  idleReturnSec.value =
+    typeof data?.idleReturnSec === 'number'
+      ? data.idleReturnSec
+      : DISPLAY_DEFAULTS.idleReturnSec
 }
 
 /** 将当前显示设置序列化为对象。 */
@@ -96,6 +104,7 @@ function snapshot(): DisplaySettings {
     passthrough: passthrough.value,
     follow: follow.value,
     headOffset: { x: headOffset.value.x, y: headOffset.value.y },
+    idleReturnSec: idleReturnSec.value,
   }
 }
 
@@ -165,4 +174,6 @@ listen<DisplaySettingsPayload>(DISPLAY_SETTINGS_CHANGED_EVENT, (event) => {
   ) {
     headOffset.value = { x: p.headOffset.x, y: p.headOffset.y }
   }
+  if (idleReturnSec.value !== p.idleReturnSec)
+    idleReturnSec.value = p.idleReturnSec
 })

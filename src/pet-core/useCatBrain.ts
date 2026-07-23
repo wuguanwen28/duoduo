@@ -73,6 +73,12 @@ export interface BrainOptions {
   /** 合并到 DEFAULT_CONFIG 上的部分覆盖项。 */
   config?: Partial<BrainConfig>
   /**
+   * 【响应式覆盖】跟随静止回默认行为的超时(毫秒) getter。
+   * 传入则每次 tick 优先读它（用户在设置里改后立即生效，无需重挂猫）；
+   * 不传则回退到 config.idleTimeoutMs 的启动快照。
+   */
+  idleTimeoutMs?: () => number
+  /**
    * 行为随机插播挑中内置动作（`__` 前缀，如 `__speak`）时由 Pet.vue 注入执行。
    * 传入整个 TwitchItem（含 phrases），返回 true 表示已处理（播放器不播帧）；
    * 非内置动作返回 false。由 Pet.vue 持有 PetActionContext，故实际执行权交还上层。
@@ -364,9 +370,11 @@ export function useCatBrain(opts: BrainOptions): CatBrain {
       }
       case 'follow': {
         // 不跟随 / 静止超时 / 光标进入头部死区 → 回 idle。
+        // 静止超时优先读响应式 getter（设置里改后立即生效），否则用 config 快照。
+        const idleTimeoutMs = opts.idleTimeoutMs?.() ?? config.idleTimeoutMs
         if (
           !following ||
-          Date.now() - lastMoveAt > config.idleTimeoutMs ||
+          Date.now() - lastMoveAt > idleTimeoutMs ||
           sample.angle === null
         ) {
           enterIdle()

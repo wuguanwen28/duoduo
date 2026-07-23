@@ -49,6 +49,24 @@
             }}</span>
           </el-form-item>
 
+          <el-form-item label="静止回神">
+            <!-- 跟随时光标静止超过这段时间，猫咪就收回视线回到默认行为。仅跟随开启时生效。 -->
+            <el-slider
+              class="display-settings__slider"
+              :model-value="idleReturnSec"
+              :min="1"
+              :max="30"
+              :step="1"
+              :disabled="!follow"
+              :format-tooltip="formatIdleReturn"
+              @input="onIdleReturnInput"
+              @change="onIdleReturnChange"
+            />
+            <span class="display-settings__hint">{{
+              formatIdleReturn(idleReturnSec)
+            }}</span>
+          </el-form-item>
+
           <el-form-item label="窗口层级">
             <el-switch
               :model-value="alwaysOnTop"
@@ -274,6 +292,7 @@ import {
   opacity,
   alwaysOnTop,
   passthrough,
+  idleReturnSec,
   broadcast,
   saveAndBroadcast,
 } from '../../pet-core/displaySettings'
@@ -657,6 +676,23 @@ function onOpacityInput(value: number | number[]) {
 }
 
 function onOpacityChange() {
+  saveAndBroadcast()
+}
+
+/** 静止回默认行为超时（秒）：整数展示。 */
+function formatIdleReturn(value: number): string {
+  return `${Math.round(value)} 秒`
+}
+
+function onIdleReturnInput(value: number | number[]) {
+  const v = Array.isArray(value) ? value[0] : value
+  if (!Number.isNaN(v)) {
+    idleReturnSec.value = v
+    broadcast()
+  }
+}
+
+function onIdleReturnChange() {
   saveAndBroadcast()
 }
 

@@ -33,6 +33,7 @@ export const DISPLAY_DEFAULTS: DisplayStored = {
   passthrough: false,
   follow: true,
   headOffset: { x: 0, y: 0 },
+  idleReturnSec: 3,
 }
 
 /** 默认说话池（出厂默认，用户可编辑独立的「默认说话模板」）。 */

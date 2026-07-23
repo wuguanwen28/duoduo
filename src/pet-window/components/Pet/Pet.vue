@@ -98,6 +98,7 @@ import {
   opacity,
   alwaysOnTop,
   passthrough,
+  idleReturnSec,
   saveAndBroadcast,
 } from '../../../pet-core/displaySettings'
 import { menuSettings } from '../../../pet-core/menuSettings'
@@ -138,6 +139,8 @@ import {
 const followCursor = follow
 const brain = useCatBrain({
   followEnabled: () => followCursor.value,
+  // 跟随静止回默认行为的超时：读用户设置（秒）×1000，改后立即生效。
+  idleTimeoutMs: () => idleReturnSec.value * 1000,
   // 校准期间让猫咪停留在 idle 状态，使其头部停止跟踪光标
   //（因为校准圆圈是随鼠标拖动的）。`calibrating` 在下方声明；
   // 该 getter 只会在之后的 brain tick 中被调用。
@@ -688,7 +691,7 @@ onMounted(async () => {
   // 窗口失去焦点时自动关闭菜单（覆盖"点击应用外"的场景）。
   getCurrentWindow()
     .onFocusChanged(({ payload: focused }) => {
-      // if (!focused) menuOpen.value = false
+      if (!focused) menuOpen.value = false
     })
     .then((fn) => {
       unlistenFocus = fn

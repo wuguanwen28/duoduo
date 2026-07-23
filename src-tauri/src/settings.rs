@@ -165,6 +165,9 @@ pub struct DisplaySettings {
     /// 头部校准偏移（占精灵直径比例）。
     #[serde(default)]
     pub head_offset: HeadOffset,
+    /// 跟随静止回默认行为的超时（秒，1–30）。旧配置无此字段时兜底为 3。
+    #[serde(default = "default_idle_return_sec")]
+    pub idle_return_sec: f64,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -249,6 +252,11 @@ fn default_true() -> bool {
     true
 }
 
+/// serde 字段默认：静止回默认行为超时缺省 3 秒（旧配置无此字段时兜底）。
+fn default_idle_return_sec() -> f64 {
+    3.0
+}
+
 impl Default for DisplaySettings {
     fn default() -> Self {
         // 显示是渲染安全标量：不可清零（size=0 猫消失、opacity=0 全透明），
@@ -261,6 +269,7 @@ impl Default for DisplaySettings {
             passthrough: false,
             follow: true,
             head_offset: HeadOffset::default(),
+            idle_return_sec: 3.0,
         }
     }
 }
