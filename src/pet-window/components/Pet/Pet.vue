@@ -90,7 +90,7 @@ import { invoke } from '@tauri-apps/api/core'
 import { listen, emit, type UnlistenFn } from '@tauri-apps/api/event'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { register, unregisterAll } from '@tauri-apps/plugin-global-shortcut'
-import Menu, { MENU_WIDTH, MENU_HEIGHT } from '../Menu/Menu.vue'
+import Menu, { MENU_BASE_WIDTH, MENU_BASE_HEIGHT } from '../Menu/Menu.vue'
 import CatSprite from '../CatSprite/CatSprite.vue'
 import SpeechBubble from '../SpeechBubble/SpeechBubble.vue'
 import {
@@ -176,6 +176,13 @@ const MENU_EDGE_PADDING = 4
  */
 const menuPos = ref({ x: 0, y: 0 })
 
+/**
+ * 菜单真实尺寸：基准值 × 当前猫 size，与 Menu.vue 内爪印的等比缩放一致。
+ * 猫放大菜单同步放大，定位/贴边 clamp 始终对齐实际渲染尺寸，故任何 size 下都居中不被裁。
+ */
+const menuWidth = computed(() => Math.round(MENU_BASE_WIDTH * size.value))
+const menuHeight = computed(() => Math.round(MENU_BASE_HEIGHT * size.value))
+
 /** 手势引擎在触发动作前写入的指针位置，供 openMenu 等动作使用。 */
 const pendingMenuPos = ref<{ x: number; y: number } | undefined>()
 
@@ -186,12 +193,14 @@ const pendingMenuPos = ref<{ x: number; y: number } | undefined>()
 function placeMenuAt(cx?: number, cy?: number) {
   const W = window.innerWidth
   const H = window.innerHeight
-  const halfW = MENU_WIDTH / 2
-  const halfH = MENU_HEIGHT / 2
+  const menuW = menuWidth.value
+  const menuH = menuHeight.value
+  const halfW = menuW / 2
+  const halfH = menuH / 2
   const minX = MENU_EDGE_PADDING
   const minY = MENU_EDGE_PADDING
-  const maxX = Math.max(minX, W - MENU_WIDTH - MENU_EDGE_PADDING)
-  const maxY = Math.max(minY, H - MENU_HEIGHT - MENU_EDGE_PADDING)
+  const maxX = Math.max(minX, W - menuW - MENU_EDGE_PADDING)
+  const maxY = Math.max(minY, H - menuH - MENU_EDGE_PADDING)
   const targetX = (cx ?? W / 2) - halfW
   const targetY = (cy ?? H / 2) - halfH
   menuPos.value = {
@@ -679,7 +688,7 @@ onMounted(async () => {
   // 窗口失去焦点时自动关闭菜单（覆盖"点击应用外"的场景）。
   getCurrentWindow()
     .onFocusChanged(({ payload: focused }) => {
-      if (!focused) menuOpen.value = false
+      // if (!focused) menuOpen.value = false
     })
     .then((fn) => {
       unlistenFocus = fn

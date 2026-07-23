@@ -9,7 +9,7 @@
       :width="VIEWBOX_W"
       :height="VIEWBOX_H"
     >
-      <!-- 把原 SVG 的 1024 坐标系整体缩放进 200 画布 -->
+      <!-- 把原 SVG 的 1024 坐标系整体缩放进画布（画布随当前猫 size 联动） -->
       <g :transform="PAW_TRANSFORM">
         <!-- 装饰线条层：沿路径方向的「一笔画」描边动画。
              OUTLINE_D 是装饰笔触的中心线（沿原闭合形状采样取中线得来），
@@ -37,6 +37,7 @@
             :y="pad.ty"
             text-anchor="middle"
             dominant-baseline="central"
+            :style="{ fontSize: `${pad.fontSize}px` }"
           >
             <tspan
               v-for="(line, li) in pad.lines"
@@ -60,17 +61,39 @@
 </template>
 
 <script lang="ts">
+/** 猫爪原始 SVG 的坐标系尺寸（viewBox 1024×1024）。 */
+const PAW_VIEWBOX = 1024
+
 /**
- * 菜单渲染后的实际内容尺寸（从猫爪路径外包矩形计算得出），
- * 供父组件 Pet.vue 做右键定位与贴边 clamp 使用。
+ * 菜单画布基准尺寸（px，对应猫 size=1 时）：把猫爪 1024 坐标系整体缩放进这个画布。
+ * 运行时的真实画布 = MENU_CANVAS_BASE × 当前 size，故菜单永远与小猫等比缩放，
+ * 猫大爪子大、猫小爪子小，无需手动调数字。想整体改爪子相对猫的大小，
+ * 调这个基准即可（例如让爪子略大于猫可乘系数）。
  */
-export const MENU_WIDTH = 167
-export const MENU_HEIGHT = 138
+const MENU_CANVAS_BASE = 200
+
+/** 基准缩放系数（size=1）：原 SVG 坐标系 → 基准画布。 */
+const PAW_SCALE_BASE = MENU_CANVAS_BASE / PAW_VIEWBOX
+
+/**
+ * 猫爪所有路径（轮廓 + 5 个垫）在 1024 坐标系下的外包矩形。
+ * 用它裁剪 viewBox，让菜单尺寸完全贴合实际内容，不留透明内边距。
+ */
+const PATH_BBOX = { x: 89.93, y: 177.24, w: 853.48, h: 704.76 }
+
+/**
+ * 菜单在 size=1 时的基准内容尺寸（外包矩形 × 基准缩放系数算得）。
+ * 供父组件 Pet.vue 乘以当前 size 得到真实菜单尺寸，做右键定位与贴边 clamp。
+ * 由公式推导而非手写字面量，随 MENU_CANVAS_BASE 自动联动。
+ */
+export const MENU_BASE_WIDTH = Math.round(PATH_BBOX.w * PAW_SCALE_BASE)
+export const MENU_BASE_HEIGHT = Math.round(PATH_BBOX.h * PAW_SCALE_BASE)
 </script>
 
 <script setup lang="ts">
 import { computed } from 'vue'
 import { PAW_SLOTS, type MenuItemConfig } from '../../../pet-core/menuSettings'
+import { size } from '../../../pet-core/displaySettings'
 
 const props = defineProps<{
   /** 菜单项配置列表（固定 5 项，与 PAW_SLOTS 一一对应）。 */
@@ -85,21 +108,15 @@ const emit = defineEmits<{
   (e: 'select', actionId: string): void
 }>()
 
-/** 原 SVG 坐标系到 200px 画布的缩放系数。 */
-const PAW_SCALE = 200 / 1024
+/** 运行时真实缩放系数：随当前猫 size 联动，让爪印与小猫等比。 */
+const PAW_SCALE = computed(() => PAW_SCALE_BASE * size.value)
 
-/**
- * 猫爪所有路径（轮廓 + 5 个垫）在 1024 坐标系下的外包矩形。
- * 用此矩形裁剪 viewBox，让菜单尺寸完全贴合实际内容，不留透明内边距。
- */
-const PATH_BBOX = { x: 89.93, y: 177.24, w: 853.48, h: 704.76 }
-
-const VIEWBOX_X = Math.round(PATH_BBOX.x * PAW_SCALE)
-const VIEWBOX_Y = Math.round(PATH_BBOX.y * PAW_SCALE)
-/** 与导出常量一致的内容宽度，避免两边数值漂移。 */
-const VIEWBOX_W = MENU_WIDTH
-/** 与导出常量一致的内容高度。 */
-const VIEWBOX_H = MENU_HEIGHT
+const VIEWBOX_X = computed(() => Math.round(PATH_BBOX.x * PAW_SCALE.value))
+const VIEWBOX_Y = computed(() => Math.round(PATH_BBOX.y * PAW_SCALE.value))
+/** 与导出基准一致的内容宽度（× 当前 size），避免两边数值漂移。 */
+const VIEWBOX_W = computed(() => Math.round(MENU_BASE_WIDTH * size.value))
+/** 与导出基准一致的内容高度（× 当前 size）。 */
+const VIEWBOX_H = computed(() => Math.round(MENU_BASE_HEIGHT * size.value))
 
 /** 5 个爪垫逐个展开的步进延时（毫秒）。 */
 const STEP_DELAY = 60
@@ -113,10 +130,10 @@ const PAD_BASE_DELAY = 0
 
 /**
  * 把原 SVG（viewBox 1024×1024）整体缩放到本菜单画布。
- * 缩放系数 200/1024 ≈ 0.1953，垫的几何与文字坐标仍用原 1024 坐标系；
- * 外层 viewBox 再用 PATH_BBOX 裁剪，去掉透明边。
+ * 缩放系数 = (MENU_CANVAS_BASE/1024) × 当前 size（size=1 时 ≈0.1953），
+ * 垫的几何与文字坐标仍用原 1024 坐标系；外层 viewBox 再用 PATH_BBOX 裁剪，去掉透明边。
  */
-const PAW_TRANSFORM = `scale(${PAW_SCALE})`
+const PAW_TRANSFORM = computed(() => `scale(${PAW_SCALE.value})`)
 
 /**
  * 装饰线条主体——老大修改后的单线版本（fill:none + stroke），
@@ -140,6 +157,7 @@ const PAD_DEFS: Array<{
   /** 文字 x/y（原 1024 坐标系，经由父 g 的 scale 自动缩放）。 */
   tx: number
   ty: number
+  fontSize: number
 }> = [
   {
     slotKey: 'toe-left',
@@ -147,6 +165,7 @@ const PAD_DEFS: Array<{
       'M221.1942 384.9595a84.68214138 84.68214138 0 1 1 0 169.3651926 84.68214138 84.68214138 0 0 1 0-169.3651926z',
     tx: 221,
     ty: 470,
+    fontSize: 40,
   },
   {
     slotKey: 'toe-left-center',
@@ -154,6 +173,7 @@ const PAD_DEFS: Array<{
       'M352.3936 274.0904a84.68214138 84.68214138 0 1 1 161.07930974 52.34017607 84.68214138 84.68214138 0 0 1-161.07930974-52.34017607z',
     tx: 433,
     ty: 300,
+    fontSize: 40,
   },
   {
     slotKey: 'toe-right-center',
@@ -161,6 +181,7 @@ const PAD_DEFS: Array<{
       'M606.4737 316.4151a84.68214138 84.68214138 0 1 1 161.11388355 52.37384004 84.68214138 84.68214138 0 0 1-161.11388355-52.34017608z',
     tx: 687,
     ty: 343,
+    fontSize: 40,
   },
   {
     slotKey: 'toe-right',
@@ -168,6 +189,7 @@ const PAD_DEFS: Array<{
       'M803.4897 478.1595a63.55300361 63.55300361 0 1 1 63.52024949 110.03838049 63.55300361 63.55300361 0 0 1-63.55391343-110.03747065z',
     tx: 835,
     ty: 533,
+    fontSize: 40,
   },
   {
     slotKey: 'center-pad',
@@ -176,6 +198,7 @@ const PAD_DEFS: Array<{
     /** 掌垫 bbox 中心 (≈509, 627)：视觉几何中心，避免文字向下/向右偏。 */
     tx: 509,
     ty: 627,
+    fontSize: 50,
   },
 ]
 
@@ -213,6 +236,7 @@ const pawPads = computed(() =>
       tx: def.tx,
       ty: def.ty,
       active,
+      fontSize: def.fontSize,
       lines: splitLabel(item.label, slot.key),
     }
   }),
