@@ -5,6 +5,8 @@
 //! `scale` 动态变化（不再固定为最大猫尺寸）；缩放时以猫脚（窗口底部中心）为屏幕锚点
 //! 保持不动，避免猫在调大调小时"挪位"。
 
+use std::time::{Duration, Instant};
+
 use tauri::{Manager, PhysicalPosition};
 
 use crate::state::PetState;
@@ -29,6 +31,17 @@ pub const BUBBLE_HEADROOM_PX: f64 = 220.0;
 ///    （气泡最大 `maxW=210` → ≥ 105，加边距取 120）。
 /// 取 120 同时覆盖菜单与气泡。
 pub const MENU_SIDE_RESERVE: f64 = 120.0;
+
+/// 显示器并集边界的缓存有效期。走动时每帧 setPosition 都会触发 Moved → clamp，
+/// 每次重新枚举显示器纯属浪费；500ms 足够短，显示器插拔也能及时跟上。
+const MONITOR_BOUNDS_TTL: Duration = Duration::from_millis(500);
+
+/// 猫内容框在窗口内的偏移与直径（物理像素）：横向居中、纵向贴底。
+/// 返回 `(off_x, off_y, content)`，供 clamp 与行走边界共用同一套推导。
+fn content_box(win_w: f64, win_h: f64, scale: f64, sf: f64) -> (f64, f64, f64) {
+    let content = (PET_BASE_PX * scale * sf).round();
+    ((win_w - content) / 2.0, win_h - content, content)
+}
 
 /// 按当前猫尺寸计算窗口物理尺寸：宽 = 猫 + 左右各 `MENU_SIDE_RESERVE`，
 /// 高 = 顶部 `BUBBLE_HEADROOM_PX` + 猫。猫在窗口内水平居中、纵向贴底。
@@ -55,7 +68,19 @@ fn clampf(v: f64, lo: f64, hi: f64) -> f64 {
 /// over the taskbar/dock — it just can't leave the screen entirely. The startup
 /// position still uses the work area (see lib.rs) so the cat *starts* above the
 /// taskbar, but the user is free to drag it onto/past the taskbar afterwards.
+///
+/// 结果按 `MONITOR_BOUNDS_TTL` 缓存在 `PetState.monitor_bounds`：走动期间本函数
+/// 会被每帧 Moved 触发的 clamp 调到，重复枚举显示器代价不小。
 fn combined_full_area(window: &tauri::Window) -> Result<(i32, i32, i32, i32), String> {
+    let state = window.state::<PetState>();
+    if let Ok(guard) = state.monitor_bounds.lock() {
+        if let Some((at, bounds)) = *guard {
+            if at.elapsed() < MONITOR_BOUNDS_TTL {
+                return Ok(bounds);
+            }
+        }
+    }
+
     let monitors = window.available_monitors().map_err(|e| e.to_string())?;
     if monitors.is_empty() {
         return Err("no monitors available".into());
@@ -72,7 +97,11 @@ fn combined_full_area(window: &tauri::Window) -> Result<(i32, i32, i32, i32), St
         max_x = max_x.max(p.x + s.width as i32);
         max_y = max_y.max(p.y + s.height as i32);
     }
-    Ok((min_x, min_y, max_x, max_y))
+    let bounds = (min_x, min_y, max_x, max_y);
+    if let Ok(mut guard) = state.monitor_bounds.lock() {
+        *guard = Some((Instant::now(), bounds));
+    }
+    Ok(bounds)
 }
 
 /// Clamp the window so the **cat sprite** (not the whole window) stays within
@@ -100,11 +129,8 @@ pub fn clamp_to_work_area(window: &tauri::Window) -> Result<(), String> {
     let sf = window.scale_factor().map_err(|e| e.to_string())?;
 
     // 猫横向居中、纵向贴窗口底（顶部那段为气泡余量，透明）。
-    let content = (PET_BASE_PX * scale * sf).round();
-    let win_w = size.width as f64;
-    let win_h = size.height as f64;
-    let off_x = (win_w - content) / 2.0; // 横向居中
-    let off_y = win_h - content; // 纵向贴底，与 Pet.vue 的 align-items: flex-end 一致
+    let (off_x, off_y, content) =
+        content_box(size.width as f64, size.height as f64, scale, sf);
 
     // Current content top-left in screen space.
     let content_x = pos.x as f64 + off_x;
@@ -171,4 +197,38 @@ pub fn pet_set_content_scale(window: tauri::Window, scale: f64) -> Result<(), St
 
     clamp_to_work_area(&window)?;
     Ok(())
+}
+
+/// 行走可取的**窗口左上角**范围（物理像素）。
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WalkBounds {
+    pub min_x: f64,
+    pub min_y: f64,
+    pub max_x: f64,
+    pub max_y: f64,
+}
+
+/// 查询行走边界。与 `clamp_to_work_area` 用**同一套**推导，因此走动期间每次
+/// setPosition 触发的 Moved clamp 都是幂等空操作，前后端不会互相拉扯。
+///
+/// `scale` 由前端传入而非读 `PetState.scale`：后者是全局单例（最后一个调
+/// `pet_set_content_scale` 的猫写入），多猫且尺寸不同时会给出错误边界；
+/// 每个宠物窗自己知道自己的 size，传进来最准确。
+///
+/// 内容比屏幕还大时会出现 `min > max`，此处**原样返回**不做兜底——前端据此
+/// 判定"该轴无可行走空间"，直接不移动也不反射（否则会每帧反射产生抖动）。
+#[tauri::command]
+pub fn pet_walk_bounds(window: tauri::Window, scale: f64) -> Result<WalkBounds, String> {
+    let size = window.outer_size().map_err(|e| e.to_string())?;
+    let sf = window.scale_factor().map_err(|e| e.to_string())?;
+    let (min_x, min_y, max_x, max_y) = combined_full_area(&window)?;
+    let (off_x, off_y, content) =
+        content_box(size.width as f64, size.height as f64, scale, sf);
+    Ok(WalkBounds {
+        min_x: min_x as f64 - off_x,
+        min_y: min_y as f64 - off_y,
+        max_x: max_x as f64 - content - off_x,
+        max_y: max_y as f64 - content - off_y,
+    })
 }

@@ -50,9 +50,9 @@
             </el-popconfirm>
           </div>
         </template>
-        <el-form label-width="80px" label-position="right">
+        <el-form label-width="92px" label-position="right">
           <el-row :gutter="16">
-            <el-col :span="8">
+            <el-col :span="12">
               <el-form-item label="名称">
                 <el-input
                   v-model="a.name"
@@ -60,7 +60,7 @@
                 />
               </el-form-item>
             </el-col>
-            <el-col :span="16">
+            <el-col :span="12">
               <el-form-item label="图片目录">
                 <DirSelect
                   v-model="a.dir"
@@ -72,22 +72,33 @@
             </el-col>
           </el-row>
           <el-row :gutter="16">
-            <el-col :span="8">
+            <el-col :span="12">
               <el-form-item label="帧率fps">
                 <el-input-number
                   v-model="a.fps"
                   :min="1"
                   :max="120"
+                  :style="{ width: '100%' }"
                   controls-position="right"
                 />
               </el-form-item>
             </el-col>
-            <el-col :span="8">
+            <el-col :span="12">
+              <el-form-item label="素材朝向">
+                <el-select v-model="a.facing" :style="{ width: '100%' }">
+                  <el-option label="朝右" value="right" />
+                  <el-option label="朝左" value="left" />
+                </el-select>
+              </el-form-item>
+            </el-col>
+          </el-row>
+          <el-row :gutter="16">
+            <el-col :span="12">
               <el-form-item label="来回播放">
                 <el-switch v-model="a.yoyo" />
               </el-form-item>
             </el-col>
-            <el-col :span="8">
+            <el-col :span="12">
               <el-form-item label="倒放">
                 <el-switch v-model="a.reverse" />
               </el-form-item>
@@ -126,9 +137,23 @@
               </el-form-item>
             </el-col>
           </el-row>
+          <!-- 位移配置入口：label 占位对齐上方字段，按钮打开多段编辑弹窗；0 段 = 无位移。 -->
+          <el-form-item label="位移配置">
+            <el-button size="small" plain @click="openAdvanced(i)">
+              点击设置
+            </el-button>
+            <span v-if="a.moveSegments.length > 0" class="hint">
+              当前 {{ a.moveSegments.length }} 段
+            </span>
+          </el-form-item>
         </el-form>
       </el-collapse-item>
     </el-collapse>
+    <MoveSegmentsDialog
+      v-if="dialogIndex >= 0"
+      v-model="dialogOpen"
+      :action="actions[dialogIndex]"
+    />
   </el-card>
 </template>
 
@@ -137,6 +162,7 @@ import { ref, watch } from 'vue'
 import { emit as emitEvent } from '@tauri-apps/api/event'
 import { Plus, Delete, VideoPlay } from '@element-plus/icons-vue'
 import DirSelect, { type DirNode } from './DirSelect.vue'
+import MoveSegmentsDialog from './MoveSegmentsDialog.vue'
 import type { ActionRow } from './manifestTypes'
 // 「变换」高级参数是否显示：由远程应用配置控制（启动时 loadAppConfig 拉取）。
 import { showTransform } from '../../pet-core/appConfig'
@@ -189,12 +215,25 @@ function addAction() {
     offsetX: 0,
     offsetY: 0,
     scale: 1,
+    facing: 'right',
+    moveLoop: true,
+    moveBounce: true,
+    moveSegments: [],
   })
   openActions.value = [0, ...openActions.value.map((i) => i + 1)]
 }
 
 function removeAction(i: number) {
   props.actions.splice(i, 1)
+}
+
+/** 高级配置弹窗的显隐与目标动作下标（-1 = 从未打开过）。 */
+const dialogOpen = ref(false)
+const dialogIndex = ref(-1)
+
+function openAdvanced(i: number) {
+  dialogIndex.value = i
+  dialogOpen.value = true
 }
 
 /** 测试播放：广播 pet-play-action（用 key 播放），提示用名称展示。 */
@@ -256,5 +295,10 @@ async function testPlay(key: string, label: string) {
 .item__btn + .item__btn {
   margin-left: 0;
   margin-right: 18px;
+}
+.hint {
+  margin-left: 10px;
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
 }
 </style>

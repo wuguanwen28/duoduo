@@ -80,28 +80,68 @@
           <template #header
             ><span class="block__title">🎯 跟随光标</span></template
           >
-          <el-form label-width="92px" label-position="left">
-            <el-form-item label="帧目录">
-              <DirSelect
-                v-model="follow.dir"
-                :tree="dirTree"
-                placeholder="如 follow，或绝对路径"
-                @refresh="loadDirTree"
-              />
-            </el-form-item>
-            <el-form-item label="起始角度">
-              <el-input-number
-                v-model="follow.startAngle"
-                :min="0"
-                :max="359"
-                controls-position="right"
-              />
-              <span class="hint">第 0 帧朝向：0=上 90=右 180=下 270=左</span>
-            </el-form-item>
-            <el-form-item label="顺时针">
-              <el-switch v-model="follow.clockwise" />
-              <span class="hint">帧号递增方向（关 = 逆时针）</span>
-            </el-form-item>
+          <el-form label-width="92px" label-position="right">
+            <el-row :gutter="16">
+              <el-col :span="14">
+                <el-form-item label="图片目录">
+                  <DirSelect
+                    v-model="follow.dir"
+                    :tree="dirTree"
+                    placeholder="如 follow，或绝对路径"
+                    @refresh="loadDirTree"
+                  />
+                </el-form-item>
+              </el-col>
+              <el-col :span="6">
+                <el-form-item label="跟随光标">
+                  <el-switch
+                    inline-prompt
+                    active-text="开启"
+                    inactive-text="关闭"
+                    :model-value="followEnabled"
+                    @change="onFollowEnabledChange"
+                  />
+                </el-form-item>
+              </el-col>
+            </el-row>
+            <el-row :gutter="16">
+              <el-col :span="14">
+                <el-form-item>
+                  <template #label>
+                    <span class="label-with-help">
+                      <el-tooltip
+                        content="第 0 帧朝向：0=上 90=右 180=下 270=左"
+                        placement="top"
+                      >
+                        <el-icon class="label-help"><QuestionFilled /></el-icon>
+                      </el-tooltip>
+                      起始角度
+                    </span>
+                  </template>
+                  <el-input-number
+                    v-model="follow.startAngle"
+                    :min="0"
+                    :max="359"
+                    :style="{ width: '100%' }"
+                    controls-position="right"
+                  />
+                </el-form-item>
+              </el-col>
+              <el-col :span="6">
+                <el-form-item label="素材方向">
+                  <el-switch
+                    v-model="follow.clockwise"
+                    inline-prompt
+                    style="
+                      --el-switch-on-color: #13ce66;
+                      --el-switch-off-color: #1890ff;
+                    "
+                    active-text="顺时针"
+                    inactive-text="逆时针"
+                  />
+                </el-form-item>
+              </el-col>
+            </el-row>
           </el-form>
         </el-card>
 
@@ -136,6 +176,12 @@ import {
 import { invoke } from '@tauri-apps/api/core'
 import { changeResourceRoot } from '../../pet-core/appSettings'
 import { emitForCat, currentCatId } from '../../pet-core/catContext'
+// 跟随光标总开关与「显示与交互」共用同一状态源：follow 是布尔开关，
+// 改名 followEnabled 避开下方 manifest 模型的同名局部变量 follow。
+import {
+  follow as followEnabled,
+  saveAndBroadcast as saveAndBroadcastDisplay,
+} from '../../pet-core/displaySettings'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import { open } from '@tauri-apps/plugin-dialog'
 import {
@@ -143,6 +189,7 @@ import {
   FolderOpened,
   CircleCheckFilled,
   Download,
+  QuestionFilled,
 } from '@element-plus/icons-vue'
 import ContentHelp from '../common/ContentHelp.vue'
 import DirSelect, { type DirNode } from './DirSelect.vue'
@@ -161,6 +208,15 @@ const dirTree = ref<DirNode[]>([])
 const loading = ref(false)
 
 const follow = reactive({ dir: 'follow', clockwise: true, startAngle: 0 })
+
+/**
+ * 跟随光标总开关变更：写回共享 ref 后保存+广播，猫窗实时生效、appSettings 监听写盘。
+ * 与「显示与交互」页的跟随光标开关完全同源，两边任改一处另一处同步。
+ */
+function onFollowEnabledChange(value: string | number | boolean) {
+  followEnabled.value = Boolean(value)
+  saveAndBroadcastDisplay()
+}
 const actions = ref<ActionRow[]>([])
 const behaviors = ref<BehaviorRow[]>([])
 /** 默认/兜底行为 key。 */
@@ -290,6 +346,18 @@ function parseInto(content: string) {
     offsetX: typeof d?.offsetX === 'number' ? d.offsetX : 0,
     offsetY: typeof d?.offsetY === 'number' ? d.offsetY : 0,
     scale: typeof d?.scale === 'number' ? d.scale : 1,
+    facing: d?.facing === 'left' ? 'left' : 'right',
+    moveLoop: d?.move?.loop !== false,
+    moveBounce: d?.move?.bounce !== false,
+    // 0 段 = 无位移（不移动）；不再用「单段速度 0」当占位哨兵。
+    moveSegments:
+      Array.isArray(d?.move?.segments) && d.move.segments.length > 0
+        ? d.move.segments.map((s: any) => ({
+            dir: Number(s?.dir) || 0,
+            speed: Math.abs(Number(s?.speed) || 0),
+            ms: Number(s?.ms) || 0,
+          }))
+        : [],
   }))
 
   behaviors.value = Object.entries<any>(m.behaviors ?? {}).map(([name, b]) => {
@@ -351,6 +419,24 @@ function build(): any {
     if (a.offsetX !== 0) o.offsetX = a.offsetX
     if (a.offsetY !== 0) o.offsetY = a.offsetY
     if (a.scale !== 1) o.scale = a.scale
+    // 朝右是默认值，不写进 manifest 保持简洁。
+    if (a.facing === 'left') o.facing = 'left'
+    // 0 段 = 不移动，不写 move 字段；≥1 段照常写（速度 0 的段是停顿，仍属位移序列）。
+    const segs = a.moveSegments.filter(
+      (s) => Number.isFinite(s.dir) && Number.isFinite(s.speed),
+    )
+    const moving = segs.length > 0
+    if (moving) {
+      o.move = {
+        loop: a.moveLoop,
+        bounce: a.moveBounce,
+        segments: segs.map((s) => ({
+          dir: s.dir,
+          speed: s.speed,
+          ms: s.ms,
+        })),
+      }
+    }
     acts[a.key] = o
   }
   const behs: Record<string, any> = {}
@@ -584,5 +670,16 @@ onUnmounted(() => unlistenCatLoaded?.())
   margin-left: 10px;
   color: var(--el-text-color-secondary);
   font-size: 12px;
+}
+
+/* label 内嵌问号说明：inline-flex 让文字与图标垂直居中对齐，避免基线错位。 */
+.label-with-help {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.label-help {
+  color: var(--el-text-color-secondary);
+  cursor: help;
 }
 </style>

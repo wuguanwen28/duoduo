@@ -1,4 +1,5 @@
 use std::sync::Mutex;
+use std::time::Instant;
 
 use crate::updater::CheckResult;
 
@@ -32,6 +33,8 @@ pub struct DownloadState {
 ///
 /// `last_check` / `last_checked_at` 是后台轮询更新检查的共享缓存：小猫窗口和设置
 /// 窗口都只被动读它（`updater::pet_update_last_result`），不再各自发请求。
+///
+/// `monitor_bounds` 缓存所有显示器并集的边界，供高频 clamp / 行走边界查询复用。
 pub struct PetState {
     pub scale: Mutex<f64>,
     pub head_offset: Mutex<(f64, f64)>,
@@ -41,4 +44,8 @@ pub struct PetState {
     pub download: Mutex<DownloadState>,
     pub last_check: Mutex<Option<CheckResult>>,
     pub last_checked_at: Mutex<Option<std::time::SystemTime>>,
+    /// 显示器并集边界缓存：(计算时刻, (min_x, min_y, max_x, max_y))。
+    /// 走动时每帧 setPosition 都会触发 Moved → clamp，若每次都枚举显示器
+    /// （available_monitors 是系统调用）纯属浪费；TTL 见 geometry::MONITOR_BOUNDS_TTL。
+    pub monitor_bounds: Mutex<Option<(Instant, (i32, i32, i32, i32))>>,
 }

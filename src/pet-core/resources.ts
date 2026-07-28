@@ -14,6 +14,26 @@ import { invoke, convertFileSrc } from '@tauri-apps/api/core'
 import type { SpeakPhrase } from './speakPhrases'
 import { currentCatId } from './catContext'
 
+/** 一段位移：方向 + 速度 + 时长。 */
+export interface MoveSegment {
+  /** 方向角（度）：0=正右，顺时针为正，90=正下。与 pet_cursor_angle 的屏幕角约定一致。 */
+  dir: number
+  /** 速度（逻辑像素/秒），标量不带符号；0 表示原地停顿段。 */
+  speed: number
+  /** 本段持续毫秒；≤0 表示无限持续（其后的段永不执行）。 */
+  ms: number
+}
+
+/** 动作携带的位移序列。缺省/非法时整体为 null，表示该动作不移动窗口。 */
+export interface MoveSpec {
+  /** 走完最后一段是否回到第一段。 */
+  loop: boolean
+  /** 撞到屏幕边界是否反射（转身）。 */
+  bounce: boolean
+  /** 可为空——空序列在解析期被判为「不移动」（见 parseMove）。 */
+  segments: MoveSegment[]
+}
+
 /** 一个动作（=manifest 的一个 action）解析后的运行时形态。 */
 export interface ResolvedClip {
   /** 动作名（manifest.actions 的键）。 */
@@ -30,6 +50,10 @@ export interface ResolvedClip {
   offsetY: number
   /** 视觉缩放系数。 */
   scale: number
+  /** 素材里猫朝哪边。渲染元数据，本身不改变渲染。 */
+  facing: 'left' | 'right'
+  /** 位移序列；null = 该动作不移动窗口。 */
+  move: MoveSpec | null
 }
 
 /** 随机插播项：引用一个动作名 + 相对权重。 */
@@ -150,6 +174,34 @@ function normPair(v: any, fallback: [number, number]): [number, number] {
   return fallback
 }
 
+/**
+ * 解析 manifest 的 `move` 字段。逐段校验：`dir`/`speed` 非有限数的段直接丢弃；
+ * 全部段都不合法（或本就没有）时返回 null，表示不移动。资源错误一律非致命。
+ */
+function parseMove(raw: any): MoveSpec | null {
+  const list = Array.isArray(raw?.segments) ? raw.segments : []
+  const segments: MoveSegment[] = []
+  for (const s of list) {
+    const dir = Number(s?.dir)
+    const speed = Number(s?.speed)
+    const ms = Number(s?.ms)
+    if (!Number.isFinite(dir) || !Number.isFinite(speed)) continue
+    segments.push({
+      // 归一化到 [0,360)，手写的负角度也能正常工作。
+      dir: ((dir % 360) + 360) % 360,
+      // 方向由 dir 表达，负速度属配置错误，取绝对值而非当作反向。
+      speed: Math.abs(speed),
+      ms: Number.isFinite(ms) ? ms : 0,
+    })
+  }
+  if (segments.length === 0) return null
+  return {
+    loop: raw?.loop !== false,
+    bounce: raw?.bounce !== false,
+    segments,
+  }
+}
+
 /** 预加载一批图片（不阻塞，仅触发浏览器缓存预热）。 */
 function preload(urls: string[]) {
   for (const u of urls) {
@@ -199,6 +251,8 @@ export async function loadResources(): Promise<LoadResult> {
       offsetX: typeof def?.offsetX === 'number' ? def.offsetX : 0,
       offsetY: typeof def?.offsetY === 'number' ? def.offsetY : 0,
       scale: typeof def?.scale === 'number' ? def.scale : 1,
+      facing: def?.facing === 'left' ? 'left' : 'right',
+      move: parseMove(def?.move),
     }
     for (const u of frames)
       if (!frameToAction.has(u)) frameToAction.set(u, name)

@@ -109,7 +109,12 @@ import {
   type PetActionContext,
 } from '../../../pet-core/commands'
 import { useGestures } from '../../composables/useGestures'
-import { actionOfFrame, transformOfAction } from '../../../pet-core/clips'
+import {
+  actionOfFrame,
+  transformOfAction,
+  moveOfAction,
+} from '../../../pet-core/clips'
+import { useWalk } from '../../composables/useWalk'
 import {
   triggerBindings,
   TRIGGER_BINDINGS_CHANGED_EVENT,
@@ -163,6 +168,16 @@ const brain = useCatBrain({
   },
 })
 const currentSrc = brain.currentSrc
+
+// ── 窗口位移引擎 ────────────────────────────────────────
+// 位移是动作属性：当前帧所属动作配了 move 就走，没配就不走。
+// `menuOpen` / `calibrating` 在下方声明；这些 getter 只在 rAF 帧里被调用，
+// 彼时已就绪（与上方 brain 的 paused getter 是同一套写法）。
+const walk = useWalk({
+  move: () => moveOfAction(actionOfFrame(currentSrc.value)),
+  size: () => size.value,
+  paused: () => menuOpen.value || calibrating.value,
+})
 
 /** 猫咪本体包裹层，供手势引擎绑定事件。 */
 const catWrapRef = ref<HTMLElement | undefined>()
@@ -248,11 +263,17 @@ const spriteTransform = computed(() => {
   const tx = Math.round(base * t.offsetX)
   const ty = Math.round(base * t.offsetY)
   const px = Math.round(200 * size.value)
+  // 水平翻转分两种情况：① 当前动作没有位移（静止）时不翻转，猫按素材朝向 facing
+  //   原样站立——让「素材朝向」在无移动时也确定生效，不被历史 heading 污染；
+  //   ② 行走时，猫朝向与素材朝向不一致（向反方向走）才翻转。
+  // scaleX(-1) 写在最右边（= 最先作用于元素），故偏移量 tx 仍按屏幕方向理解。
+  const flip =
+    walk.moving.value && walk.heading.value !== t.facing ? ' scaleX(-1)' : ''
   return {
     width: `${px}px`,
     height: `${px}px`,
     opacity: `${opacity.value}`,
-    transform: `translate(${tx}px, ${ty}px) scale(${t.scale})`,
+    transform: `translate(${tx}px, ${ty}px) scale(${t.scale})${flip}`,
     transformOrigin: 'bottom center',
   }
 })
@@ -325,6 +346,13 @@ watch(
 
 /** 窗口内菜单的状态。 */
 const menuOpen = ref(false)
+
+// 打开猫爪菜单 = 主人叫住了猫：结束行走、回默认行为。
+// 位移的暂停由 useWalk 的 paused 一并负责——两件都要做：只结束行走的话，
+// 若 exit 动作也配了 move（"刹车"），菜单已经打开窗口还会继续漂。
+watch(menuOpen, (open) => {
+  if (open) brain.returnToDefault()
+})
 
 // ── 头部校准 ─────────────────────────────────────────────────
 // 头部偏移量相对于精灵图*直径*的比例，使其在尺寸变化时保持稳定。

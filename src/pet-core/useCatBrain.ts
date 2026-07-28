@@ -103,6 +103,11 @@ export interface CatBrain {
   poke: () => void
   /** 从当前行为的随机插播池里挑一个动作播放；当前无行为时回退到默认行为。 */
   playCurrentBehaviorTwitch: () => void
+  /**
+   * 回到默认行为（会正常播当前行为的 exit）。已在默认行为、或纯跟随模式时空操作。
+   * 供「打开菜单即结束行走」这类"主人叫住了猫"的场景使用。
+   */
+  returnToDefault: () => void
   /** 当前点击是否会唤醒（供 Pet.vue 决定点击手势）。 */
   canWake: () => boolean
 }
@@ -261,6 +266,18 @@ export function useCatBrain(opts: BrainOptions): CatBrain {
   function wake() {
     if (!canWake()) return
     goToBehavior(defaultBehavior) // 播当前 exit（如 wakeUp 起身）→ 默认行为
+  }
+
+  /** 回默认行为。已在默认行为时不重入——否则会白播一遍 exit 再重启待机动画。 */
+  function returnToDefault() {
+    if (followOnly) return
+    if (
+      state.value.kind === 'behavior' &&
+      currentBehavior === defaultBehavior
+    ) {
+      return
+    }
+    goToBehavior(defaultBehavior)
   }
 
   /** 从指定行为的随机插播池里按权重挑一个动作。 */
@@ -468,6 +485,7 @@ export function useCatBrain(opts: BrainOptions): CatBrain {
     wake,
     poke,
     playCurrentBehaviorTwitch,
+    returnToDefault,
     canWake,
   }
 }

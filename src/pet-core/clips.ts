@@ -4,9 +4,10 @@
  * 旧版在这里用「大序列切区间」定义片段；现在每个动作是一个独立帧文件夹，
  * 由 manifest.json 的 actions 声明、由 store 解析，这里只做读取与小工具封装。
  */
-import { getModel, type ResolvedClip } from './resources'
+import { getModel, type ResolvedClip, type MoveSpec } from './resources'
 
-export type { ResolvedClip }
+export type { ResolvedClip, MoveSpec }
+export type { MoveSegment } from './resources'
 
 /** 取一个动作；不存在返回 undefined。 */
 export function getClip(name: string): ResolvedClip | undefined {
@@ -23,7 +24,7 @@ export function clipFrames(clip: ResolvedClip): string[] {
   return f
 }
 
-/** 视觉变换：平移（占精灵直径比例）+ 缩放。 */
+/** 视觉变换：平移（占精灵直径比例）+ 缩放 + 素材朝向。 */
 export interface SourceTransform {
   /** 水平偏移＝相对精灵直径的比例：负＝往左、正＝往右。 */
   offsetX: number
@@ -31,13 +32,16 @@ export interface SourceTransform {
   offsetY: number
   /** 额外缩放系数：1＝原样，>1 放大，<1 缩小。 */
   scale: number
+  /** 素材里猫朝哪边；是否水平翻转由它与运行期 heading 比较得出。 */
+  facing: 'left' | 'right'
 }
 
-/** 默认变换：不偏不缩。 */
+/** 默认变换：不偏不缩、按朝右素材处理。 */
 const IDENTITY_TRANSFORM: SourceTransform = {
   offsetX: 0,
   offsetY: 0,
   scale: 1,
+  facing: 'right',
 }
 
 /** 取某动作的视觉变换；动作未知时返回默认（不偏不缩）。 */
@@ -45,10 +49,24 @@ export function transformOfAction(name: string | undefined): SourceTransform {
   if (!name) return IDENTITY_TRANSFORM
   const c = getModel().actions[name]
   if (!c) return IDENTITY_TRANSFORM
-  return { offsetX: c.offsetX, offsetY: c.offsetY, scale: c.scale }
+  return {
+    offsetX: c.offsetX,
+    offsetY: c.offsetY,
+    scale: c.scale,
+    facing: c.facing,
+  }
 }
 
 /** 由帧 URL 反查它属于哪个动作；不属于任何动作（如跟随帧）时返回 undefined。 */
 export function actionOfFrame(url: string): string | undefined {
   return getModel().frameToAction.get(url)
+}
+
+/**
+ * 取某动作的位移序列；动作未知或未配置位移时返回 null（不移动）。
+ * 跟随帧不属于任何动作（`actionOfFrame` 返回 undefined），因此跟随时永远不移动。
+ */
+export function moveOfAction(name: string | undefined): MoveSpec | null {
+  if (!name) return null
+  return getModel().actions[name]?.move ?? null
 }

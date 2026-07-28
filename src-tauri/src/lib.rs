@@ -58,12 +58,15 @@ pub fn run() {
             download: Mutex::new(DownloadState::default()),
             last_check: Mutex::new(None),
             last_checked_at: Mutex::new(None),
+            monitor_bounds: Mutex::new(None),
         })
         .invoke_handler(tauri::generate_handler![
             gaze::pet_cursor_angle,
             gaze::pet_set_head_offset,
             geometry::pet_set_content_scale,
+            geometry::pet_walk_bounds,
             window::pet_ctrl_pressed,
+            window::pet_lmb_pressed,
             window::pet_quit,
             window::pet_toggle_visibility,
             window::pet_toggle_cat_visible,

@@ -5,7 +5,9 @@
 //! - `cat-<id>`：每只猫一个宠物窗（动态创建，透明无边框置顶），关闭=销毁。
 
 #[cfg(target_os = "windows")]
-use windows_sys::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_CONTROL};
+use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
+    GetAsyncKeyState, VK_CONTROL, VK_LBUTTON,
+};
 
 use sha2::{Digest, Sha256};
 use tauri::{Emitter, Manager, PhysicalPosition};
@@ -19,6 +21,24 @@ pub fn pet_ctrl_pressed() -> bool {
     {
         // SAFETY: GetAsyncKeyState 只读取当前键盘状态，不持有指针或跨线程资源。
         unsafe { (GetAsyncKeyState(VK_CONTROL as i32) as u16 & 0x8000) != 0 }
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        false
+    }
+}
+
+/// 物理左键是否按下。
+///
+/// 原生拖拽（`startDragging`）期间 webview 收不到可靠的 mouseup，没有"拖完了"
+/// 这个事件；而拖动一定发生在左键按下期间，故行走位移用它判定"仍被按着"，
+/// 顺带覆盖长按摸猫（猫被按住时顿住、松手继续走）。
+#[tauri::command]
+pub fn pet_lmb_pressed() -> bool {
+    #[cfg(target_os = "windows")]
+    {
+        // SAFETY: GetAsyncKeyState 只读取当前输入状态，不持有指针或跨线程资源。
+        unsafe { (GetAsyncKeyState(VK_LBUTTON as i32) as u16 & 0x8000) != 0 }
     }
     #[cfg(not(target_os = "windows"))]
     {
