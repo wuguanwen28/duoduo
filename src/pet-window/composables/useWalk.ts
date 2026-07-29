@@ -6,6 +6,10 @@
  * dt 推进「段游标 + 位置」，撞屏幕边界按台球式反射，并维护猫的当前朝向 heading
  * 供精灵镜像使用。
  *
+ * 反射以「累积镜像」实现（`flipX` / `flipY`）：撞墙翻转的是整条路径的朝向，
+ * 之后每一段的配置方向都经 `applyFlip` 换算。若只改当前段的运行方向，单段
+ * `loop` 动作会在换段时把反射结果洗掉，猫便卡在边缘反复来回蹭。
+ *
  * 位置用本地 f64 维护而非每帧回读窗口——回读会让 IPC 翻倍。小数余量留在累加器
  * 里，故 5px/s 这种慢速不会被每帧取整吃光。只在「开始行走」「从暂停恢复」
  * 「从最小化恢复」时同步一次真实位置。
@@ -67,8 +71,16 @@ export function useWalk(opts: WalkOptions): WalkController {
   let spec: MoveSpec | null = null
   let segIndex = 0
   let segElapsed = 0
-  /** 当前段的运行方向（撞边反射会改它；换段时重置为该段配置值）。 */
+  /** 当前段的运行方向 = 该段配置方向经 `applyFlip` 镜像后的结果。 */
   let dirRuntime = 0
+  /**
+   * 累积镜像标志：撞左右墙 toggle `flipX`、撞上下墙 toggle `flipY`，并作用于
+   * **之后每一段**的配置方向。这样反射改的是"整条路径的朝向"而非单段——
+   * 段间的相对关系（先右走再下走）原样保留，换段/循环也不会把反射结果洗掉。
+   * 只在动作切换时清零。
+   */
+  let flipX = false
+  let flipY = false
   /** 段序列已走完且 loop 关闭：位移冻结，动画继续。 */
   let finished = false
 
@@ -133,10 +145,22 @@ export function useWalk(opts: WalkOptions): WalkController {
       })
   }
 
-  /** 换到第 i 段：重置该段的运行方向（反射结果不跨段继承）。 */
+  /**
+   * 把配置方向按当前累积镜像换算成运行方向。
+   * 水平镜像（关于竖直轴）：`dir → 180 - dir`；垂直镜像：`dir → -dir`。
+   * 两者可交换，故先后顺序不影响结果。
+   */
+  function applyFlip(dir: number): number {
+    let d = dir
+    if (flipX) d = 180 - d
+    if (flipY) d = -d
+    return norm(d)
+  }
+
+  /** 换到第 i 段：按该段配置方向 + 当前累积镜像求运行方向。 */
   function enterSegment(i: number) {
     segIndex = i
-    dirRuntime = spec ? spec.segments[i].dir : 0
+    dirRuntime = spec ? applyFlip(spec.segments[i].dir) : 0
   }
 
   /**
@@ -200,8 +224,11 @@ export function useWalk(opts: WalkOptions): WalkController {
       pos.x += vx
       if (pos.x < bounds.minX || pos.x > bounds.maxX) {
         pos.x = Math.min(Math.max(pos.x, bounds.minX), bounds.maxX)
-        // 撞左右边界：水平分量取反，等价于角度关于竖直轴镜像。
-        if (spec.bounce) dirRuntime = norm(180 - dirRuntime)
+        // 撞左右边界：整条路径做一次水平镜像（含后续各段），当前段方向随之更新。
+        if (spec.bounce) {
+          flipX = !flipX
+          dirRuntime = applyFlip(spec.segments[segIndex].dir)
+        }
       }
     }
     // Y 轴同理。上下反射只改垂直分量，不翻转图像（垂直镜像会让猫倒栽葱）。
@@ -209,7 +236,10 @@ export function useWalk(opts: WalkOptions): WalkController {
       pos.y += vy
       if (pos.y < bounds.minY || pos.y > bounds.maxY) {
         pos.y = Math.min(Math.max(pos.y, bounds.minY), bounds.maxY)
-        if (spec.bounce) dirRuntime = norm(-dirRuntime)
+        if (spec.bounce) {
+          flipY = !flipY
+          dirRuntime = applyFlip(spec.segments[segIndex].dir)
+        }
       }
     }
 
@@ -275,6 +305,9 @@ export function useWalk(opts: WalkOptions): WalkController {
       segIndex = 0
       segElapsed = 0
       finished = false
+      // 新动作 = 新路径配置，累积镜像不跨动作继承。
+      flipX = false
+      flipY = false
       dirRuntime = m ? m.segments[0].dir : 0
       if (!m) {
         // heading 保持不变：猫停下后仍朝着刚才走的方向。
