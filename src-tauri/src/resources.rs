@@ -49,10 +49,23 @@ const FRAME_EXTS: [&str; 6] = ["webp", "png", "jpg", "jpeg", "gif", "bmp"];
 /// 列出某动作目录下、按文件名排序的帧文件绝对路径。
 /// `dir` 是绝对路径时直接使用，否则拼接到资源根下。
 fn list_frames(root: &Path, dir: &str) -> Vec<PathBuf> {
+    list_frames_at(&resolve_dir(root, dir))
+}
+
+/// 把动作的 `dir` 解析为绝对路径：绝对路径原样返回，相对路径拼到资源根下。
+fn resolve_dir(root: &Path, dir: &str) -> PathBuf {
     let p = Path::new(dir);
-    let full = if p.is_absolute() { p.to_path_buf() } else { root.join(p) };
+    if p.is_absolute() {
+        p.to_path_buf()
+    } else {
+        root.join(p)
+    }
+}
+
+/// 列出目录下按文件名排序的帧文件绝对路径（目录读不到时返回空表，非致命）。
+fn list_frames_at(full: &Path) -> Vec<PathBuf> {
     let mut out: Vec<PathBuf> = Vec::new();
-    if let Ok(entries) = std::fs::read_dir(&full) {
+    if let Ok(entries) = std::fs::read_dir(full) {
         for e in entries.flatten() {
             let path = e.path();
             if !path.is_file() {
@@ -314,4 +327,41 @@ pub fn pet_list_dirs(app: tauri::AppHandle, cat_id: String) -> Vec<DirNode> {
         Some(root) => list_subdirs(&root, "", 8),
         None => Vec::new(),
     }
+}
+
+/// 取某个动作目录的**首帧**绝对路径，供设置页做静态预览（视觉对齐弹窗）。
+///
+/// 与 `pet_scan_resources` 的区别：那个按**已保存**的 manifest 扫全部帧；这里按
+/// 前端传入的 `dir` 现取现用——设置页里用户刚改还没保存的目录也能立刻预览。
+/// 返回前把该目录加入 asset 白名单，前端 `convertFileSrc` 才能加载。
+/// 目录为空 / 不存在 / 无可用帧时返回 `None`，前端显示占位而非报错。
+#[tauri::command]
+pub fn pet_first_frame(app: tauri::AppHandle, cat_id: String, dir: String) -> Option<String> {
+    if dir.trim().is_empty() {
+        return None;
+    }
+    let p = Path::new(&dir);
+    let full = if p.is_absolute() {
+        p.to_path_buf()
+    } else {
+        resolve_dir(&resource_root(&app, &cat_id)?, &dir)
+    };
+    let first = list_frames_at(&full).into_iter().next()?;
+    let _ = app.asset_protocol_scope().allow_directory(&full, false);
+    Some(first.to_string_lossy().to_string())
+}
+
+/// 给单个图片文件授 asset 白名单，供设置页显示**用户自选的参考图**。
+///
+/// 自选参考图可能在资源根之外（美术给的设计稿、标了中线的标尺图），不在
+/// `pet_scan_resources` 授权过的目录里，`convertFileSrc` 会加载失败——故显式
+/// 按文件授权。只授这一个文件、不授整个目录：参考图的同级目录跟本应用无关。
+/// 文件不存在返回 `false`，前端据此提示而非静默失败。
+#[tauri::command]
+pub fn pet_allow_asset(app: tauri::AppHandle, path: String) -> bool {
+    let p = Path::new(&path);
+    if !p.is_file() {
+        return false;
+    }
+    app.asset_protocol_scope().allow_file(p).is_ok()
 }

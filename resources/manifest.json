@@ -11,30 +11,22 @@
       "dir": "idle/breathe",
       "fps": 24,
       "name": "待机呼吸",
-      "yoyo": true,
-      "offsetX": -0.01,
-      "offsetY": -0.01
+      "yoyo": true
     },
     "idleBlink": {
       "dir": "idle/blink",
       "fps": 24,
-      "name": "眨眼",
-      "offsetX": -0.01,
-      "offsetY": -0.01
+      "name": "眨眼"
     },
     "idleTail": {
       "dir": "idle/tail",
       "fps": 24,
-      "name": "摇尾巴",
-      "offsetX": -0.01,
-      "offsetY": -0.01
+      "name": "摇尾巴"
     },
     "idleEar": {
       "dir": "idle/ear",
       "fps": 24,
-      "name": "抖耳朵",
-      "offsetX": -0.01,
-      "offsetY": -0.01
+      "name": "抖耳朵"
     },
     "feed": {
       "dir": "idle/feed",
@@ -103,6 +95,36 @@
         {
           "action": "wink",
           "weight": 1
+        },
+        {
+          "action": "__speak",
+          "weight": 2,
+          "phrases": [
+            {
+              "text": "喵~",
+              "weight": 1
+            },
+            {
+              "text": "干嘛戳我！！",
+              "weight": 1
+            },
+            {
+              "text": "今天也要加油哦！",
+              "weight": 1
+            },
+            {
+              "text": "我在认真看着你工作呢",
+              "weight": 1
+            },
+            {
+              "text": "老大，喝口水休息一下吧",
+              "weight": 1
+            },
+            {
+              "text": "摸鱼一时爽，一直摸鱼一直爽~",
+              "weight": 1
+            }
+          ]
         }
       ],
       "delay": [

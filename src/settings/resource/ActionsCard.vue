@@ -14,7 +14,7 @@
       description="还没有动作"
       :image-size="64"
     />
-    <el-collapse v-else v-model="openActions">
+    <el-collapse v-else v-model="openActions" accordion>
       <el-collapse-item v-for="(a, i) in actions" :key="i" :name="i">
         <template #title>
           <div class="item__title-row">
@@ -27,7 +27,7 @@
               @click.stop="testPlay(a.key, a.name || `动作${i + 1}`)"
             >
               <el-icon><VideoPlay /></el-icon>
-              测试
+              预览
             </el-button>
             <el-popconfirm
               title="确定删除该动作吗？"
@@ -84,6 +84,27 @@
               </el-form-item>
             </el-col>
             <el-col :span="12">
+              <el-form-item label="来回播放">
+                <template #label>
+                  <span class="label-with-help">
+                    <el-tooltip placement="top">
+                      <template #content>
+                        <div>
+                          如果素材首尾不连续，开启后会正序播放一次再倒序播放<br />
+                          这样就能回到第一帧再衔接其他动作，如"呼吸动作"
+                        </div>
+                      </template>
+                      <el-icon class="label-help"><QuestionFilled /></el-icon>
+                    </el-tooltip>
+                    往返播放
+                  </span>
+                </template>
+                <el-switch v-model="a.yoyo" />
+              </el-form-item>
+            </el-col>
+          </el-row>
+          <el-row :gutter="16">
+            <el-col :span="12">
               <el-form-item label="素材朝向">
                 <el-select v-model="a.facing" :style="{ width: '100%' }">
                   <el-option label="朝右" value="right" />
@@ -91,78 +112,63 @@
                 </el-select>
               </el-form-item>
             </el-col>
-          </el-row>
-          <el-row :gutter="16">
             <el-col :span="12">
-              <el-form-item label="来回播放">
-                <el-switch v-model="a.yoyo" />
-              </el-form-item>
-            </el-col>
-            <el-col :span="12">
-              <el-form-item label="倒放">
+              <el-form-item label="倒序播放">
                 <el-switch v-model="a.reverse" />
               </el-form-item>
             </el-col>
           </el-row>
-          <el-row :gutter="16" v-if="showTransform">
-            <el-col :span="8">
-              <el-form-item label="X轴偏移">
-                <el-input-number
-                  v-model="a.offsetX"
-                  :step="0.01"
-                  :precision="3"
-                  controls-position="right"
-                />
+          <!-- 视觉对齐入口：偏移/缩放靠盲填小数很难对齐，改为拖拽式可视化弹窗。 -->
+          <el-row :gutter="16">
+            <el-col :span="12">
+              <!-- 位移配置入口：label 占位对齐上方字段，按钮打开多段编辑弹窗；0 段 = 无位移。 -->
+              <el-form-item label="位移配置">
+                <el-button plain @click="openMove(i)"> 点击设置 </el-button>
+                <span v-if="a.moveSegments.length > 0" class="hint">
+                  当前 {{ a.moveSegments.length }} 段
+                </span>
               </el-form-item>
             </el-col>
-            <el-col :span="8">
-              <el-form-item label="Y轴偏移">
-                <el-input-number
-                  v-model="a.offsetY"
-                  :step="0.01"
-                  :precision="3"
-                  controls-position="right"
-                />
-              </el-form-item>
-            </el-col>
-            <el-col :span="8">
-              <el-form-item label="缩放">
-                <el-input-number
-                  v-model="a.scale"
-                  :step="0.05"
-                  :precision="2"
-                  :min="0.1"
-                  controls-position="right"
-                />
+            <el-col :span="12" v-if="showTransform">
+              <el-form-item label="视觉对齐">
+                <el-button plain @click="openTransform(i)">
+                  点击设置
+                </el-button>
+                <span v-if="isAligned(a)" class="hint">
+                  偏移 {{ a.offsetX }}, {{ a.offsetY }} · 缩放 {{ a.scale }}
+                </span>
               </el-form-item>
             </el-col>
           </el-row>
-          <!-- 位移配置入口：label 占位对齐上方字段，按钮打开多段编辑弹窗；0 段 = 无位移。 -->
-          <el-form-item label="位移配置">
-            <el-button size="small" plain @click="openAdvanced(i)">
-              点击设置
-            </el-button>
-            <span v-if="a.moveSegments.length > 0" class="hint">
-              当前 {{ a.moveSegments.length }} 段
-            </span>
-          </el-form-item>
         </el-form>
       </el-collapse-item>
     </el-collapse>
     <MoveSegmentsDialog
-      v-if="dialogIndex >= 0"
-      v-model="dialogOpen"
-      :action="actions[dialogIndex]"
+      v-if="moveIndex >= 0"
+      v-model="moveOpen"
+      :action="actions[moveIndex]"
+    />
+    <TransformDialog
+      v-if="tfIndex >= 0"
+      v-model="tfOpen"
+      :action="actions[tfIndex]"
+      :actions="actions"
     />
   </el-card>
 </template>
 
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { ref } from 'vue'
 import { emit as emitEvent } from '@tauri-apps/api/event'
-import { Plus, Delete, VideoPlay } from '@element-plus/icons-vue'
+import {
+  Plus,
+  Delete,
+  VideoPlay,
+  QuestionFilled,
+} from '@element-plus/icons-vue'
 import DirSelect, { type DirNode } from './DirSelect.vue'
 import MoveSegmentsDialog from './MoveSegmentsDialog.vue'
+import TransformDialog from './TransformDialog.vue'
 import type { ActionRow } from './manifestTypes'
 // 「变换」高级参数是否显示：由远程应用配置控制（启动时 loadAppConfig 拉取）。
 import { showTransform } from '../../pet-core/appConfig'
@@ -179,17 +185,8 @@ const emit = defineEmits<{
   (e: 'refresh-dirs'): void
 }>()
 
-/** 展开的折叠项（默认全展开）。 */
-const openActions = ref<number[]>([])
-
-// 列表被整体替换（加载 manifest）时，重置为全部展开；就地增删不在此重置。
-watch(
-  () => props.actions,
-  () => {
-    openActions.value = props.actions.map((_, i) => i)
-  },
-  { immediate: true },
-)
+/** 展开的折叠项 */
+const openActions = ref<number[]>([0])
 
 /**
  * 生成一个不与现有动作冲突的唯一 key（用户不可见，仅供引用使用）。
@@ -227,13 +224,27 @@ function removeAction(i: number) {
   props.actions.splice(i, 1)
 }
 
-/** 高级配置弹窗的显隐与目标动作下标（-1 = 从未打开过）。 */
-const dialogOpen = ref(false)
-const dialogIndex = ref(-1)
+/** 位移配置弹窗的显隐与目标动作下标（-1 = 从未打开过）。 */
+const moveOpen = ref(false)
+const moveIndex = ref(-1)
 
-function openAdvanced(i: number) {
-  dialogIndex.value = i
-  dialogOpen.value = true
+function openMove(i: number) {
+  moveIndex.value = i
+  moveOpen.value = true
+}
+
+/** 视觉对齐弹窗的显隐与目标动作下标（-1 = 从未打开过）。 */
+const tfOpen = ref(false)
+const tfIndex = ref(-1)
+
+function openTransform(i: number) {
+  tfIndex.value = i
+  tfOpen.value = true
+}
+
+/** 是否配过视觉对齐：非默认值时在入口旁显示当前值摘要。 */
+function isAligned(a: ActionRow): boolean {
+  return a.offsetX !== 0 || a.offsetY !== 0 || a.scale !== 1
 }
 
 /** 测试播放：广播 pet-play-action（用 key 播放），提示用名称展示。 */

@@ -84,6 +84,8 @@ pub fn run() {
             resources::pet_write_manifest,
             resources::pet_set_resource_root,
             resources::pet_list_dirs,
+            resources::pet_first_frame,
+            resources::pet_allow_asset,
             converter::pet_converter_begin,
             converter::pet_converter_write,
             downloader::pet_download_resources,

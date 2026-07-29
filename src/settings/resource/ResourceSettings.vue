@@ -77,9 +77,18 @@
 
         <!-- 跟随 follow -->
         <el-card shadow="never" class="block">
-          <template #header
-            ><span class="block__title">🎯 跟随光标</span></template
-          >
+          <template #header>
+            <div class="block__head">
+              <span class="block__title">🎯 跟随光标</span>
+              <el-switch
+                inline-prompt
+                active-text="开启"
+                inactive-text="关闭"
+                :model-value="followEnabled"
+                @change="onFollowEnabledChange"
+              />
+            </div>
+          </template>
           <el-form label-width="92px" label-position="right">
             <el-row :gutter="16">
               <el-col :span="14">
@@ -92,15 +101,15 @@
                   />
                 </el-form-item>
               </el-col>
-              <el-col :span="6">
+              <el-col :span="10">
                 <el-form-item label="跟随光标">
-                  <el-switch
-                    inline-prompt
-                    active-text="开启"
-                    inactive-text="关闭"
-                    :model-value="followEnabled"
-                    @change="onFollowEnabledChange"
-                  />
+                  <el-button
+                    plain
+                    type="default"
+                    style="width: 144px"
+                    @click="onCalibrate"
+                    >校准狗头</el-button
+                  >
                 </el-form-item>
               </el-col>
             </el-row>
@@ -127,18 +136,15 @@
                   />
                 </el-form-item>
               </el-col>
-              <el-col :span="6">
+              <el-col :span="10">
                 <el-form-item label="素材方向">
-                  <el-switch
+                  <el-radio-group
                     v-model="follow.clockwise"
-                    inline-prompt
-                    style="
-                      --el-switch-on-color: #13ce66;
-                      --el-switch-off-color: #1890ff;
-                    "
-                    active-text="顺时针"
-                    inactive-text="逆时针"
-                  />
+                    style="flex-wrap: nowrap"
+                  >
+                    <el-radio-button :value="true">顺时针</el-radio-button>
+                    <el-radio-button :value="false">逆时针</el-radio-button>
+                  </el-radio-group>
                 </el-form-item>
               </el-col>
             </el-row>
@@ -174,7 +180,7 @@ import {
   watch,
 } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
-import { changeResourceRoot } from '../../pet-core/appSettings'
+import { changeResourceRoot, startCalibrate } from '../../pet-core/appSettings'
 import { emitForCat, currentCatId } from '../../pet-core/catContext'
 // 跟随光标总开关与「显示与交互」共用同一状态源：follow 是布尔开关，
 // 改名 followEnabled 避开下方 manifest 模型的同名局部变量 follow。
@@ -556,6 +562,14 @@ async function save() {
   }
 }
 
+/** 校准猫头：先确保该猫窗已显示，再触发它进入校准模式。 */
+async function onCalibrate() {
+  await invoke('pet_show_cat_window', { catId: currentCatId.value }).catch(
+    () => {},
+  )
+  startCalibrate()
+}
+
 // 编辑即自动保存：监听各编辑区（含子组件就地改动），防抖 600ms 后静默写回。
 watch(
   [follow, actions, behaviors, defaultBehavior],
@@ -588,6 +602,7 @@ onUnmounted(() => unlistenCatLoaded?.())
 <style scoped>
 .resource-settings {
   min-height: 100vh;
+  min-width: 700px;
 }
 
 .topbar__saved {
