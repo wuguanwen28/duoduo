@@ -1,79 +1,58 @@
 <template>
   <!--
-    自包含的「使用说明」入口：按钮 + 弹窗二合一。两种模式互斥：
-    - page 模式：传 page，拉取该页面全部说明，渲染多个按钮（按钮文字=label，空则 title），
-      点开共享弹窗显示对应说明。列表为空则整体隐身。
+    自包含「使用说明」入口：按钮 + 弹窗二合一。两种模式互斥（page 优先）：
+    - page 模式：传 page，拉该页面全部说明，渲染多个按钮，点开共享弹窗。
     - contentKey 模式：传 contentKey，拉单条说明，渲染一个按钮；给「别处自定义 key」用。
-    page 优先于 contentKey。后台没配说明 / 无网 / 404 / 内容为空时入口隐身，
-    天然满足「没说明就不显示」。
+    两种模式共用一个根级弹窗：点按钮把对应说明放入 current 并打开。
+    后台没配说明 / 无网 / 404 / 内容为空时按钮隐身，天然满足「没说明就不显示」。
+    注意：el-dialog 必须放在根级、不要包进 <template v-if> 分支里，否则在
+    多根 fragment + teleport 组合下 v-model 的关闭会失效（点「朕知道了」无反应）。
   -->
-  <!-- page 模式：多个按钮 + 共享弹窗 -->
-  <template v-if="mode === 'page' && items.length">
-    <el-button
-      v-for="item in items"
-      :key="item.key"
-      plain
-      type="primary"
-      :icon="QuestionFilled"
-      @click="openItem(item)"
-    >
-      {{ item.label?.trim() || item.title || '使用说明' }}
-    </el-button>
+  <!-- page 模式：多个按钮（key 模式下 pageItems 为空，v-for 不渲染） -->
+  <el-button
+    v-for="item in pageItems"
+    :key="item.key"
+    plain
+    type="primary"
+    :icon="QuestionFilled"
+    @click="openItem(item)"
+  >
+    {{ item.label?.trim() || item.title || '使用说明' }}
+  </el-button>
 
-    <el-dialog
-      v-model="visible"
-      :title="current?.title || '使用说明'"
-      :width="width"
-      class="content-help"
-      align-center
-    >
-      <!-- 事件委托拦截说明内的外链点击：Tauri WebView 默认会在窗口内导航，
-           这里改为阻止默认行为、交给后端 pet_open_url 用系统浏览器打开。 -->
-      <div class="content-help__body" @click="onBodyClick">
-        <MdPreview
-          id="content-help-preview"
-          :model-value="current?.content ?? ''"
-          preview-theme="cyanosis"
-          code-theme="atom"
-        />
-      </div>
-      <template #footer>
-        <el-button type="primary" @click="visible = false">朕知道了</el-button>
-      </template>
-    </el-dialog>
-  </template>
+  <!-- contentKey 模式：单按钮 -->
+  <el-button
+    v-if="showKeyButton"
+    plain
+    type="primary"
+    :icon="QuestionFilled"
+    @click="openKey"
+  >
+    {{ label }}
+  </el-button>
 
-  <!-- contentKey 模式：单按钮 + 单弹窗 -->
-  <template v-else-if="mode === 'key' && available">
-    <el-button
-      plain
-      type="primary"
-      :icon="QuestionFilled"
-      @click="visible = true"
-    >
-      {{ label }}
-    </el-button>
-
-    <el-dialog
-      v-model="visible"
-      :title="dialogTitle"
-      :width="width"
-      class="content-help"
-      align-center
-    >
-      <div class="content-help__body" @click="onBodyClick">
-        <MdPreview
-          id="content-help-preview"
-          :model-value="md"
-          preview-theme="cyanosis"
-          code-theme="atom"
-        />
-      </div>
-      <template #footer>
-        <el-button type="primary" @click="visible = false">朕知道了</el-button>
-      </template>
-    </el-dialog>
-  </template>
+  <!-- 共享弹窗：根级独立渲染，visible 直接控制开关 -->
+  <el-dialog
+    v-model="visible"
+    :title="dialogTitle"
+    :width="width"
+    class="content-help"
+    align-center
+  >
+    <!-- 事件委托拦截说明内的外链点击：Tauri WebView 默认会在窗口内导航，
+         这里改为阻止默认行为、交给后端 pet_open_url 用系统浏览器打开。 -->
+    <div class="content-help__body" @click="onBodyClick">
+      <MdPreview
+        id="content-help-preview"
+        :model-value="dialogContent"
+        preview-theme="cyanosis"
+        code-theme="atom"
+      />
+    </div>
+    <template #footer>
+      <el-button type="primary" @click="visible = false">朕知道了</el-button>
+    </template>
+  </el-dialog>
 </template>
 
 <script setup lang="ts">
@@ -114,29 +93,48 @@ const props = withDefaults(
 /** 当前模式：传了 page 走列表模式，否则单条模式。 */
 const mode = computed<'page' | 'key'>(() => (props.page ? 'page' : 'key'))
 
-/** 弹窗显隐（两种模式共用一个 ref，运行时模式固定不会串扰）。 */
+/** 弹窗显隐（根级 el-dialog 直接绑定，开关稳定）。 */
 const visible = ref(false)
 
-// —— page 模式状态 ——
+// -- page 模式状态 --
 /** 该页面下所有说明（已过滤掉内容为空的项）。 */
 const items = ref<ContentItem[]>([])
-/** 当前在共享弹窗里展示的说明。 */
+
+// -- contentKey 模式状态 --
+/** 单条说明数据；挂载时静默拉取一次并缓存。 */
+const single = ref<ContentItem | null>(null)
+
+/** 弹窗当前展示的说明：page 模式点开时设置；key 模式始终回退用 single。 */
 const current = ref<ContentItem | null>(null)
 
+/** page 模式按钮列表；key 模式返回空数组使 v-for 不渲染。 */
+const pageItems = computed(() => (mode.value === 'page' ? items.value : []))
+
+/** contentKey 模式是否可展示：拉取成功且内容非空才渲染按钮。 */
+const available = computed(() => !!single.value?.content?.trim())
+const showKeyButton = computed(() => mode.value === 'key' && available.value)
+
+/** 弹窗标题：current 优先，回退 single，再回退 props.title。 */
+const dialogTitle = computed(
+  () =>
+    current.value?.title || single.value?.title || props.title || '使用说明',
+)
+/** 弹窗内容：current 优先，回退 single。 */
+const dialogContent = computed(
+  () => current.value?.content ?? single.value?.content ?? '',
+)
+
+/** page 模式：点某条说明，记下 current 并开窗。 */
 function openItem(item: ContentItem) {
   current.value = item
   visible.value = true
 }
 
-// —— contentKey 模式状态 ——
-/** 单条说明数据；挂载时静默拉取一次并缓存。 */
-const single = ref<ContentItem | null>(null)
-/** 是否有可展示的说明：拉取成功且内容非空才为真，决定按钮/弹窗是否渲染。 */
-const available = computed(() => !!single.value?.content?.trim())
-const md = computed(() => single.value?.content ?? '')
-const dialogTitle = computed(
-  () => props.title || single.value?.title || '使用说明',
-)
+/** contentKey 模式：开窗，内容走 single。 */
+function openKey() {
+  current.value = null
+  visible.value = true
+}
 
 /**
  * 挂载时静默探测：
