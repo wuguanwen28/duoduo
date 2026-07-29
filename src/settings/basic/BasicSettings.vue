@@ -139,6 +139,14 @@
           >
             <img :src="previewAvatar" class="avatar-uploader__img" alt="头像" />
           </el-upload>
+          <div class="avatar-actions">
+            <el-button size="small" :loading="iconSaving" @click="setAppIcon"
+              >设为应用图标</el-button
+            >
+            <el-button size="small" @click="resetAppIcon"
+              >恢复默认</el-button
+            >
+          </div>
         </el-form-item>
         <el-form-item label="名字">
           <el-input
@@ -418,6 +426,55 @@ const previewAvatar = computed(
     (editingId.value ? avatarUrl.value : '') ||
     defaultAvatar,
 )
+
+const iconSaving = ref(false)
+
+/** 把图片 URL（asset/file）读成 base64 data URL，供 pet_save_icon 使用。 */
+function urlToBase64(url: string): Promise<string> {
+  return fetch(url)
+    .then((r) => r.blob())
+    .then(
+      (blob) =>
+        new Promise<string>((resolve, reject) => {
+          const reader = new FileReader()
+          reader.onload = () => resolve(reader.result as string)
+          reader.onerror = reject
+          reader.readAsDataURL(blob)
+        }),
+    )
+}
+
+/** 将当前头像设为应用窗口与托盘图标（调用后端 pet_save_icon）。 */
+async function setAppIcon() {
+  iconSaving.value = true
+  try {
+    let data = pendingAvatar.value
+    if (!data) {
+      const url = avatarUrl.value
+      if (!url) {
+        ElMessage.warning('请先设置头像')
+        return
+      }
+      data = await urlToBase64(url)
+    }
+    await invoke('pet_save_icon', { data })
+    ElMessage.success('应用图标已更新')
+  } catch (e) {
+    ElMessage.error(`设置应用图标失败：${e}`)
+  } finally {
+    iconSaving.value = false
+  }
+}
+
+/** 恢复默认应用图标（调用后端 pet_reset_icon）。 */
+async function resetAppIcon() {
+  try {
+    await invoke('pet_reset_icon')
+    ElMessage.success('已恢复默认图标')
+  } catch (e) {
+    ElMessage.error(`恢复默认失败：${e}`)
+  }
+}
 
 function openAdd() {
   editingId.value = null
@@ -755,6 +812,8 @@ function confirmCrop() {
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
+  /* 保留描述中的换行符（HTML 默认把 \n 当空格） */
+  white-space: pre-line;
 }
 /* 卡片内标签行 */
 .cat-card__tags {
@@ -829,5 +888,23 @@ function confirmCrop() {
 
 .cropper-wrap {
   height: 300px;
+}
+
+/* 头像右侧两个图标操作按钮 */
+.avatar-uploader {
+  display: inline-block;
+  vertical-align: middle;
+}
+.avatar-actions {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-left: 14px;
+  vertical-align: middle;
+  width: 108px;
+}
+.avatar-actions .el-button {
+  width: 100%;
+  margin-left: 0;
 }
 </style>
