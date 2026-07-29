@@ -13,12 +13,7 @@
         </transition>
       </template>
       <template #actions>
-        <ContentHelp content-key="resource-settings" title="资源设置使用说明" />
-        <ContentHelp
-          content-key="video-generation"
-          title="视频生成说明"
-          label="视频生成说明"
-        />
+        <ContentHelp page="resource" />
         <el-button :icon="Refresh" @click="reload()">重新加载</el-button>
       </template>
     </SettingsHeader>

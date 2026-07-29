@@ -7,10 +7,7 @@
         <CatPicker />
       </template>
       <template #actions>
-        <ContentHelp
-          content-key="display-settings"
-          title="显示与交互使用说明"
-        />
+        <ContentHelp page="display" />
       </template>
     </SettingsHeader>
 

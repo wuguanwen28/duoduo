@@ -5,7 +5,7 @@
         <span class="v2w__hint">绿幕/纯色背景视频 → 背景透明的连续图片</span>
       </template>
       <template #actions>
-        <ContentHelp content-key="tools-settings" title="视频转帧使用说明" />
+        <ContentHelp page="tools" />
       </template>
     </SettingsHeader>
 

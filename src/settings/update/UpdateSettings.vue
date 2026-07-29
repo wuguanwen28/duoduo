@@ -3,7 +3,7 @@
     <!-- 顶部工具条，与设置页其他子页面保持统一 -->
     <SettingsHeader title="关于">
       <template #actions>
-        <ContentHelp content-key="update-settings" title="使用说明" />
+        <ContentHelp page="update" />
         <el-button
           class="action-btn"
           plain

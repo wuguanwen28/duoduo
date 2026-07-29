@@ -3,7 +3,7 @@
     <!-- 顶部工具条 -->
     <SettingsHeader title="基础设置">
       <template #actions>
-        <ContentHelp content-key="basic-settings" title="基础设置使用说明" />
+        <ContentHelp page="basic" />
         <el-button
           v-if="!hideAddCat"
           type="primary"
