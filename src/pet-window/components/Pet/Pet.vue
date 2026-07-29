@@ -150,6 +150,10 @@ const brain = useCatBrain({
   //（因为校准圆圈是随鼠标拖动的）。`calibrating` 在下方声明；
   // 该 getter 只会在之后的 brain tick 中被调用。
   paused: () => calibrating.value,
+  // 菜单打开期间冻结大脑：不抢占进 follow（头不跟光标）、不轮换行为、
+  // 也不强制回 idle，故 sleep 等不可打断行为得以保持原状。位移另由 useWalk.paused 暂停。
+  // `menuOpen` 在下方声明；该 getter 只会在之后的 brain tick 中被调用。
+  frozen: () => menuOpen.value,
   // 行为随机插播挑中内置动作（如 __speak）时执行：剥离 `__` 前缀查 PET_ACTIONS，
   // 并把该项的独立短语池注入 ctx.speakPool，使说话内容按入口区分。
   // petCtx 在下方声明，此回调只在 brain tick（onMounted 后）触发，彼时已就绪。
@@ -177,6 +181,7 @@ const walk = useWalk({
   move: () => moveOfAction(actionOfFrame(currentSrc.value)),
   size: () => size.value,
   paused: () => menuOpen.value || calibrating.value,
+  overCat: () => brain.cursorOverCat.value,
 })
 
 /** 猫咪本体包裹层，供手势引擎绑定事件。 */
@@ -346,13 +351,6 @@ watch(
 
 /** 窗口内菜单的状态。 */
 const menuOpen = ref(false)
-
-// 打开猫爪菜单 = 主人叫住了猫：结束行走、回默认行为。
-// 位移的暂停由 useWalk 的 paused 一并负责——两件都要做：只结束行走的话，
-// 若 exit 动作也配了 move（"刹车"），菜单已经打开窗口还会继续漂。
-watch(menuOpen, (open) => {
-  if (open) brain.returnToDefault()
-})
 
 // ── 头部校准 ─────────────────────────────────────────────────
 // 头部偏移量相对于精灵图*直径*的比例，使其在尺寸变化时保持稳定。

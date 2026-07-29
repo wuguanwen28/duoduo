@@ -45,6 +45,11 @@ export interface WalkOptions {
   size: () => number
   /** 是否暂停位移（菜单打开 / 头部校准中）。暂停期段计时一并冻结。 */
   paused: () => boolean
+  /**
+   * 鼠标当前是否悬停在猫身上。左键暂停位移仅在此为 true 时生效
+   * （覆盖拖猫 / 长按摸猫），避免在别处按左键也冻住行走。
+   */
+  overCat: () => boolean
 }
 
 export interface WalkController {
@@ -194,7 +199,8 @@ export function useWalk(opts: WalkOptions): WalkController {
     lastTs = ts
 
     // 暂停期段计时一并冻结——被拖着的猫不该"在心里继续走完这一段"。
-    if (opts.paused() || lmbDown || minimized) {
+    // 左键暂停仅在鼠标悬停于猫身上时生效（拖猫 / 长按摸猫），别处点鼠标不打断行走。
+    if (opts.paused() || (lmbDown && opts.overCat()) || minimized) {
       wasPaused = true
       return
     }

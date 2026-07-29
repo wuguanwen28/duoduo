@@ -36,6 +36,8 @@ export interface BehaviorController {
   stop(): void
   /** 是否处于可点击唤醒的点（已进入 loop 且未退出）。enter/lead/exit 期间为 false。 */
   canWake(): boolean
+  /** 是否正在播放离散一次性动作（enter/lead/插播/playOneShot/exit）。 */
+  isPlayingOneShot(): boolean
   /** 在当前循环中插播一次指定动作，播完回到 base 循环。 */
   playOneShot(name: string): void
   /**
@@ -53,6 +55,9 @@ export function useBehavior(opts: BehaviorOptions = {}): BehaviorController {
   let exiting = false
   // 是否已进入 loop：仅此时允许点击唤醒。enter/lead/exit 期间为 false。
   let inLoop = false
+  // 是否正在播放离散一次性动作（enter/lead/插播/playOneShot/exit）。播放期间
+  // 不应被 follow 抢占等打断--播完自然回到 base 循环或转场下一步。
+  let playingOneShot = false
   let twitchTimer: number | undefined
 
   function clearTwitch() {
@@ -69,11 +74,18 @@ export function useBehavior(opts: BehaviorOptions = {}): BehaviorController {
       done()
       return
     }
-    anim.play(clipFrames(c), { fps: c.fps, loop: false }, done)
+    // 离散动作播放期间标记占用：enter/lead/插播/playOneShot/exit 均经此路径，
+    // 供上层判断「正在播一次性动作」以抑制 follow 抢占等打断。
+    playingOneShot = true
+    anim.play(clipFrames(c), { fps: c.fps, loop: false }, () => {
+      playingOneShot = false
+      done()
+    })
   }
 
   /** 循环播放当前行为的 base 动作。 */
   function playBase() {
+    playingOneShot = false
     const base = behavior ? getClip(behavior.loop.base) : undefined
     if (!base) return
     anim.play(clipFrames(base), { fps: base.fps, loop: true })
@@ -143,6 +155,7 @@ export function useBehavior(opts: BehaviorOptions = {}): BehaviorController {
     behavior = null
     exiting = false
     inLoop = false
+    playingOneShot = false
     playOnce(name, () => onDone?.())
   }
 
@@ -152,6 +165,7 @@ export function useBehavior(opts: BehaviorOptions = {}): BehaviorController {
     behavior = b
     exiting = false
     inLoop = false
+    playingOneShot = false
     const toLoop = () => {
       if (!exiting) beginLoop()
     }
@@ -183,11 +197,16 @@ export function useBehavior(opts: BehaviorOptions = {}): BehaviorController {
     anim.stop()
     exiting = false
     inLoop = false
+    playingOneShot = false
     behavior = null
   }
 
   function canWake() {
     return inLoop
+  }
+
+  function isPlayingOneShot() {
+    return playingOneShot
   }
 
   onScopeDispose(stop)
@@ -198,6 +217,7 @@ export function useBehavior(opts: BehaviorOptions = {}): BehaviorController {
     requestExit,
     stop,
     canWake,
+    isPlayingOneShot,
     playOneShot,
     playClipOnce,
   }

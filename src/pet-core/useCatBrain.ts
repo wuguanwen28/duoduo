@@ -70,6 +70,13 @@ export interface BrainOptions {
    * 默认：始终为 false。
    */
   paused?: () => boolean
+  /**
+   * 获取大脑是否被「冻结」（区别于 paused）。为 true 时保持当前状态：
+   * 不抢占进 follow、不轮换行为、不强制回 idle。用于菜单打开期间--既不让头跟光标，
+   * 也不打断 sleep 等不可打断行为（paused 会强制回 idle，故菜单走 frozen 而非 paused）。
+   * 默认：始终为 false。
+   */
+  frozen?: () => boolean
   /** 合并到 DEFAULT_CONFIG 上的部分覆盖项。 */
   config?: Partial<BrainConfig>
   /**
@@ -110,6 +117,8 @@ export interface CatBrain {
   returnToDefault: () => void
   /** 当前点击是否会唤醒（供 Pet.vue 决定点击手势）。 */
   canWake: () => boolean
+  /** 当前行为是否可被打断（interruptible）。用于菜单等场景判断是否该叫回 idle。 */
+  canInterrupt: () => boolean
 }
 
 export function useCatBrain(opts: BrainOptions): CatBrain {
@@ -166,10 +175,10 @@ export function useCatBrain(opts: BrainOptions): CatBrain {
     const delay = lo + Math.random() * Math.max(0, hi - lo)
     rotationTimer = window.setTimeout(() => {
       if (state.value.kind !== 'behavior') return // follow 期间不轮换
-      if (opts.paused?.()) {
+      if (opts.paused?.() || opts.frozen?.()) {
         scheduleRotation()
         return
-      } // 校准期间抑制，稍后重排
+      } // 校准 / 菜单打开期间抑制，稍后重排
       rotate()
     }, delay)
   }
@@ -204,11 +213,16 @@ export function useCatBrain(opts: BrainOptions): CatBrain {
     const b = behaviors[name]
     if (!b) return
     clearRotationTimer()
+    // 转入新行为会先播当前行为的 exit；若 lead 恰好就是该 exit
+    // （如 sleep.exit=wakeUp 时触发 wakeUp 动作），去重以免同一动作播两遍。
+    const exitName =
+      state.value.kind === 'behavior' ? behaviors[currentBehavior]?.exit : undefined
+    const effectiveLead = lead && exitName === lead ? undefined : lead
     const enter = () => {
       currentBehavior = name
       activePlayer.value = 'beh'
       state.value = { kind: 'behavior', behavior: name }
-      beh.start(b, lead ? { lead } : undefined)
+      beh.start(b, effectiveLead ? { lead: effectiveLead } : undefined)
       scheduleRotation()
     }
     if (state.value.kind === 'behavior') {
@@ -261,6 +275,12 @@ export function useCatBrain(opts: BrainOptions): CatBrain {
   function canWake() {
     if (state.value.kind !== 'behavior') return false
     return !!behaviors[currentBehavior]?.exit && beh.canWake()
+  }
+
+  /** 当前行为是否可被打断：与 follow 抢占条件一致（interruptible === true）。 */
+  function canInterrupt() {
+    if (state.value.kind !== 'behavior') return false
+    return behaviors[currentBehavior]?.interruptible === true
   }
 
   function wake() {
@@ -368,15 +388,19 @@ export function useCatBrain(opts: BrainOptions): CatBrain {
         enterIdle()
       return
     }
+    // 菜单打开（冻结）：保持当前行为/状态，不抢占 follow、不轮换、不回 idle。
+    if (opts.frozen?.()) return
 
     const following = opts.followEnabled()
 
     switch (state.value.kind) {
       case 'behavior': {
         const b = behaviors[currentBehavior]
-        // 仅当前行为可打断（idle）+ 鼠标移动 + 光标在死区外，才抢占进 follow。
+        // 仅当前行为可打断（idle）+ 未在播离散动作 + 鼠标移动 + 光标在死区外，
+        // 才抢占进 follow。插播/转场动作播放期间不打断，让其自然播完。
         if (
           b?.interruptible === true &&
+          !beh.isPlayingOneShot() &&
           moved &&
           following &&
           sample.angle !== null
@@ -487,5 +511,6 @@ export function useCatBrain(opts: BrainOptions): CatBrain {
     playCurrentBehaviorTwitch,
     returnToDefault,
     canWake,
+    canInterrupt,
   }
 }
