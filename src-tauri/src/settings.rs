@@ -263,7 +263,7 @@ impl Default for DisplaySettings {
         // 故保留合法默认，并与前端 DISPLAY_DEFAULTS 逐值对齐（尤其 passthrough=false）。
         // follow / head_offset UI 在显示页、存储也归 display。
         Self {
-            size: 0.5,
+            size: 1.0,
             opacity: 1.0,
             always_on_top: true,
             passthrough: false,
@@ -359,6 +359,22 @@ pub fn pet_load_global(app: tauri::AppHandle) -> GlobalSettings {
 #[tauri::command]
 pub fn pet_save_global(app: tauri::AppHandle, global: GlobalSettings) -> Result<(), String> {
     save_global(&app, &global)
+}
+
+/// 更新单只猫的身份档案（setting.json 的 cats[cat_id]），不动其他猫与全局其他字段。
+///
+/// 多窗口（设置窗 + 宠物窗）各自持有 globalSettings 内存镜像且不同步，若用
+/// pet_save_global 整体覆盖写，旧镜像会把其他猫写丢。本命令读磁盘现值、只改
+/// 指定猫 meta 再写回，从根上杜绝跨窗口覆盖丢猫（与 pet_save_cat 保留 resource_root 同理）。
+#[tauri::command]
+pub fn pet_save_cat_meta(
+    app: tauri::AppHandle,
+    cat_id: String,
+    meta: CatMeta,
+) -> Result<(), String> {
+    let mut g = load_global(&app);
+    g.cats.insert(cat_id, meta);
+    save_global(&app, &g)
 }
 
 /// 加载单猫配置。

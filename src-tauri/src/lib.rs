@@ -102,6 +102,7 @@ pub fn run() {
             settings::pet_settings_exists,
             settings::pet_load_global,
             settings::pet_save_global,
+            settings::pet_save_cat_meta,
             settings::pet_load_cat,
             settings::pet_save_cat,
             settings::pet_delete_cat,

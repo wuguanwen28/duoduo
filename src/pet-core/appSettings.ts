@@ -165,29 +165,36 @@ export function avatarAssetUrl(path: string): string {
  * @param catId 指定猫 id；省略则用全局 activeCatId（设置页用）。
  */
 export async function loadAppSettings(catId?: string): Promise<void> {
-  const g = await invoke<GlobalSettings>('pet_load_global')
-  globalSettings.value = g
-  const id = catId ?? g.activeCatId ?? 'default'
-  currentCatId.value = id
-  const cat = await invoke<CatSettings>('pet_load_cat', { catId: id })
-  // 身份档案（basic）现存于全局 cats[id]，不再随 cat 文件加载。
-  hydrateBasic(g.cats[id])
-  hydrateDisplay(cat.display)
-  hydrateMenu(cat.menu)
-  hydrateSpeakPhrases(cat.speakPhrases)
-  hydrateDefaultSpeakPhrases(cat.speakPhrasesDefault)
-  hydrateTriggerBindings(cat.triggerBindings?.entries)
-  // follow / headOffset 已由 hydrateDisplay(cat.display) 一并填充。
-  windowPos.value = cat.windowPos ?? null
-  resourceRoot.value = cat.resourceRoot ?? ''
-  // 头像：经 avatarAssetUrl 统一附加破缓存令牌（与卡片/选猫弹窗一致）。
-  const p = await invoke<string>('pet_avatar_url', { catId: id })
-  avatarUrl.value = avatarAssetUrl(p)
-  // 通知设置页：当前猫配置已加载完成（所有 ref 已 hydrate）。各设置页据此重载按猫
-  // 的本地状态（资源页 manifest、显示页触发器行/动作下拉），避免切猫后仍显示上一只猫。
-  // 用事件而非 watch(currentCatId)：loadAppSettings 先设 currentCatId、后 hydrate 各 ref，
-  // watch 会过早触发读到未 hydrate 的旧数据；事件在全部 hydrate 完成后发，时序正确。
-  emit('cat-loaded', id).catch(() => {})
+  // 加载期间置 isLoading：currentCatId 先设、各 ref 后 hydrate，此间任何保存都会把
+  // 上一只猫的旧 ref 写到新 currentCatId（串猫丢数据）。加载中跳过保存杜绝该 race。
+  isLoading = true
+  try {
+    const g = await invoke<GlobalSettings>('pet_load_global')
+    globalSettings.value = g
+    const id = catId ?? g.activeCatId ?? 'default'
+    currentCatId.value = id
+    const cat = await invoke<CatSettings>('pet_load_cat', { catId: id })
+    // 身份档案（basic）现存于全局 cats[id]，不再随 cat 文件加载。
+    hydrateBasic(g.cats[id])
+    hydrateDisplay(cat.display)
+    hydrateMenu(cat.menu)
+    hydrateSpeakPhrases(cat.speakPhrases)
+    hydrateDefaultSpeakPhrases(cat.speakPhrasesDefault)
+    hydrateTriggerBindings(cat.triggerBindings?.entries)
+    // follow / headOffset 已由 hydrateDisplay(cat.display) 一并填充。
+    windowPos.value = cat.windowPos ?? null
+    resourceRoot.value = cat.resourceRoot ?? ''
+    // 头像：经 avatarAssetUrl 统一附加破缓存令牌（与卡片/选猫弹窗一致）。
+    const p = await invoke<string>('pet_avatar_url', { catId: id })
+    avatarUrl.value = avatarAssetUrl(p)
+    // 通知设置页：当前猫配置已加载完成（所有 ref 已 hydrate）。各设置页据此重载按猫
+    // 的本地状态（资源页 manifest、显示页触发器行/动作下拉），避免切猫后仍显示上一只猫。
+    // 用事件而非 watch(currentCatId)：loadAppSettings 先设 currentCatId、后 hydrate 各 ref，
+    // watch 会过早触发读到未 hydrate 的旧数据；事件在全部 hydrate 完成后发，时序正确。
+    emit('cat-loaded', id).catch(() => {})
+  } finally {
+    isLoading = false
+  }
 }
 
 /** 切换当前编辑猫（设置页选猫用）。 */
@@ -232,9 +239,13 @@ function snapshotIdentity(): CatMeta {
 let saveTimer: ReturnType<typeof setTimeout> | undefined
 /** 防抖间隔：合并短时间内的多次变更。 */
 const SAVE_DEBOUNCE_MS = 300
+/** 是否正在加载猫配置（loadAppSettings 期间为 true）。加载中各 ref 尚未 hydrate，
+ *  此期间保存会把上一只猫的旧数据写到新 currentCatId，必须跳过。 */
+let isLoading = false
 
 /** 防抖保存当前猫配置。 */
 export function scheduleSave(): void {
+  if (isLoading) return
   if (saveTimer) clearTimeout(saveTimer)
   saveTimer = setTimeout(() => {
     saveTimer = undefined
@@ -244,6 +255,7 @@ export function scheduleSave(): void {
 
 /** 立即保存当前猫的行为配置 + 身份档案（写入全局 cats[id]）。 */
 export async function saveNow(): Promise<void> {
+  if (isLoading) return
   if (saveTimer) {
     clearTimeout(saveTimer)
     saveTimer = undefined
@@ -254,18 +266,18 @@ export async function saveNow(): Promise<void> {
   } catch (e) {
     console.error('保存猫配置失败', e)
   }
-  // 同步身份档案到全局 cats[id]：身份信息现只存全局，故每次保存都要写回。
+  // 同步身份档案到全局 cats[id]：用单猫 meta 更新（pet_save_cat_meta 读磁盘现值只改
+  // 该猫），避免多窗口 globalSettings 不同步时整体覆盖 pet_save_global 把其他猫写丢。
   if (globalSettings.value) {
     const g = globalSettings.value
     const next = snapshotIdentity()
     const meta = g.cats[id]
-    // 仅在实际变化时写盘，避免行为配置变更也触发全局文件重写。
     if (!meta || JSON.stringify(meta) !== JSON.stringify(next)) {
       g.cats[id] = next
       try {
-        await invoke('pet_save_global', { global: g })
+        await invoke('pet_save_cat_meta', { catId: id, meta: next })
       } catch (e) {
-        console.error('保存全局配置失败', e)
+        console.error('保存身份档案失败', e)
       }
     }
   }
@@ -352,11 +364,9 @@ export async function addCat(): Promise<string> {
   const id = `c${Date.now().toString(36)}`
   // 新增猫用空白身份（名字待用户在弹窗必填），行为/交互取默认值。
   await invoke('pet_save_cat', { catId: id, cat: defaultCatSettings() })
-  const g =
-    globalSettings.value ?? (await invoke<GlobalSettings>('pet_load_global'))
-  g.cats[id] = blankIdentity()
-  await invoke('pet_save_global', { global: g })
-  globalSettings.value = g
+  // 用单猫 meta 写入新猫身份，避免整体覆盖 pet_save_global 把其他猫写丢
+  await invoke('pet_save_cat_meta', { catId: id, meta: blankIdentity() })
+  globalSettings.value = await invoke<GlobalSettings>('pet_load_global')
   await switchCat(id)
   return id
 }
@@ -390,6 +400,8 @@ export async function listCats(): Promise<CatEntry[]> {
  * 空列表合法（启动不自动打开任何猫）；旧配置无此字段时为空，启动回退 default。
  */
 export async function setAutoShowCats(ids: string[]): Promise<void> {
+  // 先 reload 最新全局，避免用旧镜像整体覆盖把其他猫写丢
+  globalSettings.value = await invoke<GlobalSettings>('pet_load_global')
   if (!globalSettings.value) return
   globalSettings.value = {
     ...globalSettings.value,
@@ -476,6 +488,8 @@ export function shouldShowUpdateBubble(version: string): boolean {
 
 /** 记录一次该版本气泡的关闭；版本变化时计次从 0 重新开始。失败静默忽略。 */
 export async function recordUpdateDismiss(version: string): Promise<void> {
+  // 先 reload 最新全局，避免用旧镜像整体覆盖把其他猫写丢
+  globalSettings.value = await invoke<GlobalSettings>('pet_load_global')
   const g = globalSettings.value
   if (!g) return
   const prev = g.updateDismiss

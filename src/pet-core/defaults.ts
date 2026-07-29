@@ -27,7 +27,7 @@ export const BASIC_DEFAULTS: BasicSettings = {
 
 /** 显示设置默认值（含跟随开关与头部校准偏移——存储上归 display）。 */
 export const DISPLAY_DEFAULTS: DisplayStored = {
-  size: 0.5,
+  size: 1,
   opacity: 1,
   alwaysOnTop: true,
   passthrough: false,
