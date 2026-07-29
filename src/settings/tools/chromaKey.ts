@@ -189,12 +189,29 @@ function minmax3(
 const erode3 = (m: Uint8Array, w: number, h: number) => minmax3(m, w, h, true)
 const dilate3 = (m: Uint8Array, w: number, h: number) => minmax3(m, w, h, false)
 
-/** 补洞：从角 (0,0) 灌水，连边缘的才算真背景；主体上孤立的同色洞补回前景。 */
+/**
+ * 补洞：从画面四条边上的所有背景像素灌水，连通到任一边缘的才算真背景；
+ * 主体上孤立的同色洞补回前景。（不能只从单个角落灌——前景横贯画面时
+ * 会把另一侧的背景切断，导致整块背景被误判成"洞"补回前景。）
+ */
 function fillHoles(fg: Uint8Array, w: number, h: number): void {
-  if (fg[0] !== 0) return
   const reached = new Uint8Array(w * h)
-  const stack: number[] = [0]
-  reached[0] = 1
+  const stack: number[] = []
+  const seed = (idx: number) => {
+    if (fg[idx] === 0 && reached[idx] === 0) {
+      reached[idx] = 1
+      stack.push(idx)
+    }
+  }
+  for (let x = 0; x < w; x++) {
+    seed(x) // 上边
+    seed((h - 1) * w + x) // 下边
+  }
+  for (let y = 1; y < h - 1; y++) {
+    seed(y * w) // 左边
+    seed(y * w + w - 1) // 右边
+  }
+  if (stack.length === 0) return
   while (stack.length) {
     const idx = stack.pop()!
     const x = idx % w
