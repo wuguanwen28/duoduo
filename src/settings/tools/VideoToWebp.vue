@@ -140,6 +140,16 @@
               <span v-if="r.scoped" class="rec__sum"
                 >帧 {{ r.start }}~{{ r.end }}</span
               >
+              <!-- 高级设置触发按钮放头部右侧，避免与底部「添加抠色记录」混淆。 -->
+              <el-button
+                class="rec__adv"
+                text
+                size="small"
+                :type="r.scoped ? 'primary' : undefined"
+                @click="setScoped(i, !r.scoped)"
+              >
+                高级设置
+              </el-button>
               <el-button
                 v-if="records.length > 1"
                 class="rec__del"
@@ -156,7 +166,7 @@
               <el-col :span="12">
                 <!-- 颜色行：单个色块 + 按钮组（吸管 / 自动识别） -->
                 <div class="rec__colors">
-                  <span class="rec__lbl">颜色</span>
+                  <span class="rec__lbl">背景颜色</span>
                   <el-button-group>
                     <el-button class="rec__colorbtn">
                       <el-color-picker
@@ -195,15 +205,9 @@
               </el-col>
             </el-row>
 
-            <!-- 高级设置：区域 / 时间（仅本条生效）；折叠面板的开合直接驱动 r.scoped。 -->
-            <el-collapse
-              class="rec__adv-collapse"
-              :model-value="r.scoped ? ['adv'] : []"
-              @update:model-value="
-                (v) => setScoped(i, (v as string[]).includes('adv'))
-              "
-            >
-              <el-collapse-item name="adv" title="高级设置">
+            <!-- 高级设置：区域 / 时间（仅本条生效）；开合由头部按钮驱动 r.scoped，el-collapse-transition 提供展开动画。 -->
+            <el-collapse-transition>
+              <div v-show="r.scoped" class="rec__adv-body">
                 <div class="rec__row">
                   <span class="rec__lbl">区域(%)</span>
                   <el-input-number
@@ -293,8 +297,8 @@
                     </template>
                   </el-input-number>
                 </div>
-              </el-collapse-item>
-            </el-collapse>
+              </div>
+            </el-collapse-transition>
           </div>
           <el-button :icon="Plus" size="small" @click="addRecord"
             >添加抠色记录</el-button
@@ -1219,6 +1223,7 @@ async function start() {
 .v2w {
   min-height: 100vh;
   min-width: 700px;
+  user-select: none;
 
   &__hint {
     font-size: 12px;
@@ -1401,8 +1406,26 @@ async function start() {
           color: var(--el-text-color-secondary);
         }
 
-        &__del {
+        /* 高级设置触发按钮：次级文字按钮 + 旋转箭头；margin-left:auto 把它和删除键推到行右。 */
+        &__adv {
           margin-left: auto;
+          font-size: 13px;
+        }
+
+        &__adv-arrow {
+          margin-left: 2px;
+          transition: transform 0.2s;
+
+          &.is-open {
+            transform: rotate(90deg);
+          }
+        }
+
+        &__adv-body {
+          margin-top: 6px;
+          padding: 8px;
+          background: var(--el-fill-color-light);
+          border-radius: 6px;
         }
 
         /* 颜色 + 容差左右两栏的容器：避免内层 colors / row 各自的下边距叠加。 */
@@ -1413,6 +1436,10 @@ async function start() {
             margin-bottom: 0;
             flex-shrink: 0;
             min-width: 330px;
+
+            .rec__lbl {
+              width: 60px;
+            }
           }
           .rec__row {
             margin-bottom: 0;
@@ -1473,37 +1500,6 @@ async function start() {
         &__hint {
           color: var(--el-text-color-secondary);
           font-size: 12px;
-        }
-
-        &__adv-collapse {
-          /* 折叠组件融入记录卡片：去边框、收紧默认内边距。 */
-          margin-top: 4px;
-          border: none;
-
-          :deep(.el-collapse-item__header) {
-            height: 32px;
-            line-height: 32px;
-            font-size: 13px;
-            font-weight: 600;
-            color: var(--el-color-primary);
-            border-bottom: none;
-
-            /* 折叠箭头同步主题色，避免和标题脱节。 */
-            .el-collapse-item__arrow {
-              color: var(--el-color-primary);
-            }
-          }
-
-          :deep(.el-collapse-item__wrap) {
-            border-bottom: none;
-            background: transparent;
-          }
-
-          :deep(.el-collapse-item__content) {
-            padding: 8px;
-            background: var(--el-fill-color-light);
-            border-radius: 6px;
-          }
         }
       }
     }
