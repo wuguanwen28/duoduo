@@ -365,3 +365,26 @@ pub fn pet_allow_asset(app: tauri::AppHandle, path: String) -> bool {
     }
     app.asset_protocol_scope().allow_file(p).is_ok()
 }
+
+/// 列出某目录下按文件名排序的帧图片绝对路径，并把该目录加入 asset 白名单，
+/// 供帧对比弹窗用 `convertFileSrc` 直接加载。目录读不到或无图片时返回空表。
+///
+/// 与 `pet_scan_resources` 不同，这里面向**任意用户自选目录**（如视频转帧的
+/// 输出目录），不依赖 manifest / 资源根；按文件授权整目录即可。拒绝 `..`
+/// 逃逸，与 `converter.rs` 一致。排序为字典序，前端再按数值排序兜底。
+#[tauri::command]
+pub fn pet_list_frames_dir(app: tauri::AppHandle, dir: String) -> Result<Vec<String>, String> {
+    let p = PathBuf::from(dir.trim());
+    if p
+        .components()
+        .any(|c| matches!(c, std::path::Component::ParentDir))
+    {
+        return Err("路径不能包含 ..".into());
+    }
+    // 授权该目录（非递归：帧图片就在此目录下），让 convertFileSrc 能加载。
+    let _ = app.asset_protocol_scope().allow_directory(&p, false);
+    Ok(list_frames_at(&p)
+        .into_iter()
+        .map(|p| p.to_string_lossy().to_string())
+        .collect())
+}

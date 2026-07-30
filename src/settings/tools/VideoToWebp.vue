@@ -5,6 +5,7 @@
         <span class="v2w__hint">绿幕/纯色背景视频 → 背景透明的连续图片</span>
       </template>
       <template #actions>
+        <FrameCompareDialog />
         <ContentHelp page="tools" />
       </template>
     </SettingsHeader>
@@ -450,6 +451,7 @@ import {
 import { getCachedClip, setCachedClip } from './frameCache'
 import ContentHelp from '../common/ContentHelp.vue'
 import SettingsHeader from '../common/SettingsHeader.vue'
+import FrameCompareDialog from './FrameCompareDialog.vue'
 
 /** requestVideoFrameCallback 元数据。 */
 interface VideoFrameMeta {
