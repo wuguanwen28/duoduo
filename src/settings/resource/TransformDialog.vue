@@ -106,6 +106,14 @@
       </template>
     </p>
 
+    <!-- 翻转开关先隐藏：默认不翻转（baseFlip=false），数据模型保留，日后需要再放开此 v-if。 -->
+    <div v-if="false" class="tf__bar">
+      <span class="tf__label">水平翻转</span>
+      <el-switch v-model="draftFlip" />
+      <span class="tf__sub"
+        >素材第一步怎么放（与运动无关；移动方向不一致时在此之上再翻一次）</span
+      >
+    </div>
     <el-form label-width="72px" label-position="right" class="tf__form">
       <el-row :gutter="16">
         <el-col :span="8">
@@ -211,6 +219,7 @@ const visible = computed({
 const draftX = ref(0)
 const draftY = ref(0)
 const draftScale = ref(1)
+const draftFlip = ref(false)
 
 /** 当前动作首帧的 asset URL；空串 = 没有可预览的帧。 */
 const url = ref('')
@@ -266,18 +275,30 @@ function round2(v: number): number {
 }
 
 /** 按 Pet.vue 的同一套换算生成预览样式。 */
-function styleOf(ox: number, oy: number, sc: number, opacity: number) {
+function styleOf(
+  ox: number,
+  oy: number,
+  sc: number,
+  opacity: number,
+  flip = false,
+) {
   return {
     transform: `translate(${Math.round(STAGE * num(ox))}px, ${Math.round(
       STAGE * num(oy),
-    )}px) scale(${num(sc, 1)})`,
+    )}px) scale(${num(sc, 1)})${flip ? ' scaleX(-1)' : ''}`,
     transformOrigin: 'bottom center',
     opacity: `${opacity}`,
   }
 }
 
 const draftStyle = computed(() => {
-  const s = styleOf(draftX.value, draftY.value, draftScale.value, 1)
+  const s = styleOf(
+    draftX.value,
+    draftY.value,
+    draftScale.value,
+    1,
+    draftFlip.value,
+  )
   // 无底图时对比模式无意义，按普通叠加渲染。
   if (!baseUrl.value) return s
   if (compareMode.value === 'difference') {
@@ -351,6 +372,7 @@ function resetDraft() {
   draftX.value = num(props.action.offsetX)
   draftY.value = num(props.action.offsetY)
   draftScale.value = num(props.action.scale, 1)
+  draftFlip.value = !!props.action.flip
 }
 
 // 每次打开都重新取草稿与首帧；底图选择不跨次保留，避免切到别的动作时残留。
@@ -458,6 +480,7 @@ function confirm() {
   props.action.offsetX = num(draftX.value)
   props.action.offsetY = num(draftY.value)
   props.action.scale = num(draftScale.value, 1)
+  props.action.flip = draftFlip.value
   visible.value = false
 }
 </script>
@@ -474,6 +497,11 @@ function confirm() {
   font-size: 13px;
   color: var(--el-text-color-regular);
   white-space: nowrap;
+}
+.tf__sub {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+  line-height: 1.4;
 }
 .tf__sel {
   width: 160px;

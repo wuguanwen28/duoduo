@@ -7,6 +7,68 @@
     "startAngle": 0
   },
   "actions": {
+    "action3": {
+      "dir": "wark/entry",
+      "fps": 24,
+      "name": "站起来",
+      "move": {
+        "loop": true,
+        "bounce": true,
+        "segments": [
+          {
+            "dir": 180,
+            "speed": 0,
+            "ms": 3500
+          },
+          {
+            "dir": 180,
+            "speed": 30,
+            "ms": 1000
+          },
+          {
+            "dir": 180,
+            "speed": 80,
+            "ms": 5000
+          }
+        ],
+        "facing": "left"
+      }
+    },
+    "action2": {
+      "dir": "wark/base",
+      "fps": 24,
+      "name": "行走",
+      "move": {
+        "loop": true,
+        "bounce": true,
+        "segments": [
+          {
+            "dir": 180,
+            "speed": 80,
+            "ms": 2000
+          }
+        ],
+        "facing": "left"
+      }
+    },
+    "action1": {
+      "dir": "fly",
+      "fps": 24,
+      "name": "飞行",
+      "offsetY": 0.188,
+      "scale": 1.45,
+      "move": {
+        "loop": true,
+        "bounce": true,
+        "segments": [
+          {
+            "dir": 315,
+            "speed": 120,
+            "ms": 2000
+          }
+        ]
+      }
+    },
     "idleBreathe": {
       "dir": "idle/breathe",
       "fps": 24,
@@ -72,7 +134,7 @@
       "weight": 10,
       "duration": [
         15000,
-        40000
+        39000
       ],
       "base": "idleBreathe",
       "random": [
@@ -158,6 +220,35 @@
       "name": "睡觉",
       "enter": "lieDown",
       "exit": "wakeUp"
+    },
+    "behavior1": {
+      "weight": 2,
+      "duration": [
+        20000,
+        20000
+      ],
+      "base": "action1",
+      "random": [],
+      "delay": [
+        3000,
+        8000
+      ],
+      "name": "飞行"
+    },
+    "behavior2": {
+      "weight": 2,
+      "duration": [
+        15000,
+        40000
+      ],
+      "base": "action2",
+      "random": [],
+      "delay": [
+        3000,
+        8000
+      ],
+      "name": "溜达",
+      "enter": "action3"
     }
   }
 }

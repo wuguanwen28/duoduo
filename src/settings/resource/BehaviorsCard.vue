@@ -14,7 +14,7 @@
       description="至少需要一个行为"
       :image-size="64"
     />
-    <el-collapse v-else v-model="openBehaviors">
+    <el-collapse v-else v-model="openBehaviors" accordion>
       <el-collapse-item v-for="(b, i) in behaviors" :key="i" :name="i">
         <template #title>
           <div class="item__title-row">
@@ -285,7 +285,7 @@ const TIME_UNITS = [
 ]
 
 /** 展开的折叠项（默认全展开）。 */
-const openBehaviors = ref<number[]>([])
+const openBehaviors = ref<number[]>([0])
 
 /** 说话内容弹窗：当前编辑的 random 行（RandomRow 引用）。 */
 const phraseDialogVisible = ref(false)
@@ -311,15 +311,6 @@ function openPhraseDialog(r: RandomRow) {
   phraseRow.value = r
   phraseDialogVisible.value = true
 }
-
-// 列表被整体替换（加载 manifest）时，重置为全部展开；就地增删不在此重置。
-watch(
-  () => props.behaviors,
-  () => {
-    openBehaviors.value = props.behaviors.map((_, i) => i)
-  },
-  { immediate: true },
-)
 
 /**
  * 设置默认行为（行为标题里的「默认」开关）。开启某行为即把它设为默认，

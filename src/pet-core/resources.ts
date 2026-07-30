@@ -31,6 +31,8 @@ export interface MoveSpec {
   /** 撞到屏幕边界是否反射（转身）。 */
   bounce: boolean
   /** 可为空——空序列在解析期被判为「不移动」（见 parseMove）。 */
+  /** 素材朝向：移动方向与它不一致时翻转（在视觉镜像 flip 之上再翻一次）。 */
+  facing: 'left' | 'right'
   segments: MoveSegment[]
 }
 
@@ -50,9 +52,9 @@ export interface ResolvedClip {
   offsetY: number
   /** 视觉缩放系数。 */
   scale: number
-  /** 素材里猫朝哪边。渲染元数据，本身不改变渲染。 */
-  facing: 'left' | 'right'
-  /** 位移序列；null = 该动作不移动窗口。 */
+  /** 视觉对齐的手动镜像（素材第一步怎么放）；与运动无关的基础翻转。 */
+  flip: boolean
+  /** 位移序列；null = 该动作不移动窗口（素材朝向 facing 随 move 携带）。 */
   move: MoveSpec | null
 }
 
@@ -198,6 +200,7 @@ function parseMove(raw: any): MoveSpec | null {
   return {
     loop: raw?.loop !== false,
     bounce: raw?.bounce !== false,
+    facing: raw?.facing === 'left' ? 'left' : 'right',
     segments,
   }
 }
@@ -243,6 +246,15 @@ export async function loadResources(): Promise<LoadResult> {
     let frames = urls[name] ?? []
     if (def?.reverse) frames = [...frames].reverse()
     if (frames.length === 0) continue // 没有帧的动作直接跳过
+    const move = parseMove(def?.move)
+    // facing 归 move：移动方向与它比较决定是否翻转。兼容旧版 facing 写在 action 级--
+    // move 内未显式写 facing 时回退 action.facing，老 manifest 不迁移也能正常跑。
+    if (move) {
+      const mf = def?.move?.facing
+      if (mf !== 'left' && mf !== 'right') {
+        move.facing = def?.facing === 'left' ? 'left' : 'right'
+      }
+    }
     actions[name] = {
       name,
       frames,
@@ -251,8 +263,8 @@ export async function loadResources(): Promise<LoadResult> {
       offsetX: typeof def?.offsetX === 'number' ? def.offsetX : 0,
       offsetY: typeof def?.offsetY === 'number' ? def.offsetY : 0,
       scale: typeof def?.scale === 'number' ? def.scale : 1,
-      facing: def?.facing === 'left' ? 'left' : 'right',
-      move: parseMove(def?.move),
+      flip: !!def?.flip,
+      move,
     }
     for (const u of frames)
       if (!frameToAction.has(u)) frameToAction.set(u, name)

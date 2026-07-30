@@ -268,12 +268,14 @@ const spriteTransform = computed(() => {
   const tx = Math.round(base * t.offsetX)
   const ty = Math.round(base * t.offsetY)
   const px = Math.round(200 * size.value)
-  // 水平翻转分两种情况：① 当前动作没有位移（静止）时不翻转，猫按素材朝向 facing
-  //   原样站立——让「素材朝向」在无移动时也确定生效，不被历史 heading 污染；
-  //   ② 行走时，猫朝向与素材朝向不一致（向反方向走）才翻转。
+  // 水平翻转 = 视觉镜像(baseFlip) XOR (移动方向与 moveFacing 不一致)：
+  //   静止动作无 move，autoFlip=false，翻转由 baseFlip 决定；移动时方向不一致再翻一次。
+  //   heading 在停顿段(speed=0)也按段 dir 更新，故「先停再走」不会停顿期翻反。
   // scaleX(-1) 写在最右边（= 最先作用于元素），故偏移量 tx 仍按屏幕方向理解。
-  const flip =
-    walk.moving.value && walk.heading.value !== t.facing ? ' scaleX(-1)' : ''
+  const moveFacing =
+    moveOfAction(actionOfFrame(currentSrc.value))?.facing ?? 'right'
+  const autoFlip = walk.moving.value && walk.heading.value !== moveFacing
+  const flip = t.flip !== autoFlip ? ' scaleX(-1)' : ''
   return {
     width: `${px}px`,
     height: `${px}px`,

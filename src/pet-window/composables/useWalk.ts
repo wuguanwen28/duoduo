@@ -221,9 +221,13 @@ export function useWalk(opts: WalkOptions): WalkController {
     const vx = Math.cos(rad) * step
     const vy = Math.sin(rad) * step
 
-    // 朝向跟随水平分量；纯垂直段 / 停顿段（vx === 0）保持不变，不中途翻脸。
-    if (vx > 0) heading.value = 'right'
-    else if (vx < 0) heading.value = 'left'
+    // 朝向跟随该段方向的水平分量（cos(rad) 的符号，与 speed 无关），停顿段
+    // （speed=0）也按 dir 定朝向。若改用 vx，则「站起来先停 4 秒再向左走」这类
+    // 首段停顿会沿用上个动作继承来的 heading，停顿期朝向被翻反、等开始走才翻脸。
+    // 纯垂直段（cos(rad) === 0）才保持不变，不中途翻脸。
+    const hSign = Math.cos(rad)
+    if (hSign > 0) heading.value = 'right'
+    else if (hSign < 0) heading.value = 'left'
 
     // X 轴：min > max 表示该轴无空间（内容比屏幕大），不移动也不反射，否则每帧抖。
     if (bounds.minX <= bounds.maxX) {
@@ -315,6 +319,14 @@ export function useWalk(opts: WalkOptions): WalkController {
       flipX = false
       flipY = false
       dirRuntime = m ? m.segments[0].dir : 0
+      // 切入即按首段方向预设 heading：否则第一帧（dt=0，frame 里还没更新 heading）
+      // 会沿用上个动作的朝向渲染一帧翻转态，肉眼看到「左右翻闪一下」。
+      // 纯垂直首段（无水平分量）保持原 heading，与 frame 里的保持规则一致。
+      if (m) {
+        const hSign = Math.cos((dirRuntime * Math.PI) / 180)
+        if (hSign > 0) heading.value = 'right'
+        else if (hSign < 0) heading.value = 'left'
+      }
       if (!m) {
         // heading 保持不变：猫停下后仍朝着刚才走的方向。
         stopEngine()

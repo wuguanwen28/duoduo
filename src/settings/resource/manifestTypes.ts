@@ -27,12 +27,17 @@ export interface ActionRow {
   offsetX: number
   offsetY: number
   scale: number
-  /** 素材里猫朝哪边。 */
-  facing: 'left' | 'right'
+  /** 视觉对齐里的手动镜像：素材第一步怎么放（与运动无关的基础翻转）。 */
+  flip: boolean
   /** 段序列走完是否回到第一段。 */
   moveLoop: boolean
   /** 撞屏幕边界是否反射（转身）。 */
   moveBounce: boolean
+  /**
+   * 移动时的素材朝向（已移进位移配置）：移动方向与它不一致时，在 flip 基础上再翻一次。
+   * 仅在有位移段时才有意义；静止动作不移动、不参与朝向判断。
+   */
+  moveFacing: 'left' | 'right'
   /**
    * 位移段序列，**可为空**——空数组表示该动作不移动窗口（无位移配置）。
    * 有段时按序列行走，其中速度为 0 的段是「原地停顿」而非不移动的哨兵。

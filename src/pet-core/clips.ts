@@ -24,7 +24,7 @@ export function clipFrames(clip: ResolvedClip): string[] {
   return f
 }
 
-/** 视觉变换：平移（占精灵直径比例）+ 缩放 + 素材朝向。 */
+/** 视觉变换：平移（占精灵直径比例）+ 缩放 + 手动镜像。 */
 export interface SourceTransform {
   /** 水平偏移＝相对精灵直径的比例：负＝往左、正＝往右。 */
   offsetX: number
@@ -32,16 +32,16 @@ export interface SourceTransform {
   offsetY: number
   /** 额外缩放系数：1＝原样，>1 放大，<1 缩小。 */
   scale: number
-  /** 素材里猫朝哪边；是否水平翻转由它与运行期 heading 比较得出。 */
-  facing: 'left' | 'right'
+  /** 视觉对齐的手动镜像（baseFlip）：素材第一步怎么放，与运动无关。 */
+  flip: boolean
 }
 
-/** 默认变换：不偏不缩、按朝右素材处理。 */
+/** 默认变换：不偏不缩、不镜像。 */
 const IDENTITY_TRANSFORM: SourceTransform = {
   offsetX: 0,
   offsetY: 0,
   scale: 1,
-  facing: 'right',
+  flip: false,
 }
 
 /** 取某动作的视觉变换；动作未知时返回默认（不偏不缩）。 */
@@ -53,7 +53,7 @@ export function transformOfAction(name: string | undefined): SourceTransform {
     offsetX: c.offsetX,
     offsetY: c.offsetY,
     scale: c.scale,
-    facing: c.facing,
+    flip: c.flip,
   }
 }
 

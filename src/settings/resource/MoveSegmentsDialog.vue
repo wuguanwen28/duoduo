@@ -14,6 +14,13 @@
         <span class="seg__label">撞边转身</span>
         <el-switch v-model="draftBounce" />
       </span>
+      <span class="seg__opt">
+        <span class="seg__label">素材运动方向</span>
+        <el-radio-group v-model="draftMoveFacing" size="small">
+          <el-radio-button label="朝左" value="left" />
+          <el-radio-button label="朝右" value="right" />
+        </el-radio-group>
+      </span>
     </div>
 
     <!-- 用 grid 列表代替 el-table：表格包裹层会裁剪方向圆盘的展开溢出，
@@ -76,7 +83,8 @@
     </el-button>
     <p class="seg__hint">
       没有任何段 = 该动作不移动；速度填 0 = 原地停顿；时长填 0 =
-      这一段一直走下去（其后的段不会执行）。
+      这一段一直走下去（其后的段不会执行）。「素材朝向」用于判断移动方向是否一致：
+      不一致时在视觉对齐镜像之上再翻一次（速度为 0 的停顿段也按方向判断）。
     </p>
 
     <template #footer>
@@ -115,6 +123,7 @@ const visible = computed({
 
 const draftLoop = ref(true)
 const draftBounce = ref(true)
+const draftMoveFacing = ref<'left' | 'right'>('right')
 const draftSegments = ref<MoveSegmentRow[]>([])
 
 // 每次打开都从当前动作行重新取一份深拷贝草稿。
@@ -124,6 +133,7 @@ watch(
     if (!open) return
     draftLoop.value = props.action.moveLoop
     draftBounce.value = props.action.moveBounce
+    draftMoveFacing.value = props.action.moveFacing
     // 0 段 = 无位移，保持空表（不再补占位段）；用户可点「添加一段」开始配置。
     draftSegments.value = props.action.moveSegments.map((s) => ({ ...s }))
   },
@@ -155,6 +165,7 @@ function moveSeg(i: number, delta: number) {
 function confirm() {
   props.action.moveLoop = draftLoop.value
   props.action.moveBounce = draftBounce.value
+  props.action.moveFacing = draftMoveFacing.value
   props.action.moveSegments = draftSegments.value.map((s) => ({ ...s }))
   visible.value = false
 }

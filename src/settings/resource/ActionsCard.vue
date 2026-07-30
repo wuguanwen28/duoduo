@@ -83,7 +83,7 @@
                 />
               </el-form-item>
             </el-col>
-            <el-col :span="12">
+            <el-col :span="6">
               <el-form-item label="来回播放">
                 <template #label>
                   <span class="label-with-help">
@@ -102,17 +102,7 @@
                 <el-switch v-model="a.yoyo" />
               </el-form-item>
             </el-col>
-          </el-row>
-          <el-row :gutter="16">
-            <el-col :span="12">
-              <el-form-item label="素材朝向">
-                <el-select v-model="a.facing" :style="{ width: '100%' }">
-                  <el-option label="朝右" value="right" />
-                  <el-option label="朝左" value="left" />
-                </el-select>
-              </el-form-item>
-            </el-col>
-            <el-col :span="12">
+            <el-col :span="6">
               <el-form-item label="倒序播放">
                 <el-switch v-model="a.reverse" />
               </el-form-item>
@@ -135,7 +125,8 @@
                   点击设置
                 </el-button>
                 <span v-if="isAligned(a)" class="hint">
-                  偏移 {{ a.offsetX }}, {{ a.offsetY }} · 缩放 {{ a.scale }}
+                  偏移 {{ a.offsetX }}, {{ a.offsetY }} · 缩放 {{ a.scale
+                  }}<template v-if="a.flip"> · 翻转</template>
                 </span>
               </el-form-item>
             </el-col>
@@ -212,9 +203,10 @@ function addAction() {
     offsetX: 0,
     offsetY: 0,
     scale: 1,
-    facing: 'right',
+    flip: false,
     moveLoop: true,
     moveBounce: true,
+    moveFacing: 'right',
     moveSegments: [],
   })
   openActions.value = [0, ...openActions.value.map((i) => i + 1)]
@@ -244,7 +236,7 @@ function openTransform(i: number) {
 
 /** 是否配过视觉对齐：非默认值时在入口旁显示当前值摘要。 */
 function isAligned(a: ActionRow): boolean {
-  return a.offsetX !== 0 || a.offsetY !== 0 || a.scale !== 1
+  return a.offsetX !== 0 || a.offsetY !== 0 || a.scale !== 1 || a.flip
 }
 
 /** 测试播放：广播 pet-play-action（用 key 播放），提示用名称展示。 */

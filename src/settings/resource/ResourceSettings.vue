@@ -347,9 +347,14 @@ function parseInto(content: string) {
     offsetX: typeof d?.offsetX === 'number' ? d.offsetX : 0,
     offsetY: typeof d?.offsetY === 'number' ? d.offsetY : 0,
     scale: typeof d?.scale === 'number' ? d.scale : 1,
-    facing: d?.facing === 'left' ? 'left' : 'right',
+    flip: !!d?.flip,
     moveLoop: d?.move?.loop !== false,
     moveBounce: d?.move?.bounce !== false,
+    moveFacing:
+      d?.move?.facing === 'left' ||
+      (d?.move?.facing !== 'right' && d?.facing === 'left')
+        ? 'left'
+        : 'right',
     // 0 段 = 无位移（不移动）；不再用「单段速度 0」当占位哨兵。
     moveSegments:
       Array.isArray(d?.move?.segments) && d.move.segments.length > 0
@@ -420,8 +425,8 @@ function build(): any {
     if (a.offsetX !== 0) o.offsetX = a.offsetX
     if (a.offsetY !== 0) o.offsetY = a.offsetY
     if (a.scale !== 1) o.scale = a.scale
-    // 朝右是默认值，不写进 manifest 保持简洁。
-    if (a.facing === 'left') o.facing = 'left'
+    // flip = 视觉对齐手动镜像；默认 false 省略。
+    if (a.flip) o.flip = true
     // 0 段 = 不移动，不写 move 字段；≥1 段照常写（速度 0 的段是停顿，仍属位移序列）。
     const segs = a.moveSegments.filter(
       (s) => Number.isFinite(s.dir) && Number.isFinite(s.speed),
@@ -437,6 +442,8 @@ function build(): any {
           ms: s.ms,
         })),
       }
+      // 朝右是默认值省略；朝左才写进 move。
+      if (a.moveFacing === 'left') o.move.facing = 'left'
     }
     acts[a.key] = o
   }
