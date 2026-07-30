@@ -27,6 +27,16 @@
         >共 {{ files.length }} 张</span
       >
       <span class="fc__spacer" />
+      <el-tooltip content="自动扫描所有帧，找出姿势最接近、能重叠成循环的一对">
+        <el-button
+          :icon="MagicStick"
+          :loading="sim.running.value"
+          :disabled="!files.length || files.length < 4"
+          @click="runSimilarity"
+        >
+          自动找循环帧
+        </el-button>
+      </el-tooltip>
       <span class="fc__label">对比方式</span>
       <el-radio-group v-model="mode" :disabled="!files.length">
         <el-tooltip content="半透明叠加，每层可调透明度">
@@ -86,6 +96,53 @@
       </el-button>
     </div>
 
+    <!-- 自动找循环帧：候选列表 -->
+    <div
+      v-if="files.length && sim.candidates.value.length"
+      class="fc__sims"
+    >
+      <div class="fc__simtitle">
+        <span>循环候选</span>
+        <span v-if="sim.period.value > 0" class="fc__simpill">
+          检测到主周期约 {{ sim.period.value }} 帧
+        </span>
+        <span class="fc__simtip">
+          点击把底图和对比层切到这一对
+        </span>
+      </div>
+      <div class="fc__simlist">
+        <div
+          v-for="(c, idx) in sim.candidates.value"
+          :key="idx"
+          class="fc__simitem"
+          @click="applyCandidate(c)"
+        >
+          <span class="fc__simrank">#{{ idx + 1 }}</span>
+          <span class="fc__simframes">
+            {{ c.i + 1 }} ↔ {{ c.j + 1 }}
+          </span>
+          <span class="fc__simspacer" />
+          <div class="fc__simcol">
+            <span class="fc__simval">{{ c.gap }}</span>
+            <span class="fc__simlbl">相差帧数</span>
+          </div>
+          <div class="fc__simcol fc__simcol--right">
+            <span class="fc__simval fc__simval--score">
+              {{ Math.round(c.iou * 1000) / 10 }}%
+            </span>
+            <span class="fc__simlbl">相似度</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <el-progress
+      v-if="sim.running.value"
+      :percentage="Math.round(sim.progress.value * 100)"
+      :stroke-width="4"
+      :show-text="false"
+      class="fc__simprogress"
+    />
+
     <!-- 舞台：层叠所有图，棋盘格衬透明像素；isolation 把正片叠底圈在图与图之间 -->
     <div class="fc__stage">
       <img
@@ -121,7 +178,14 @@
 import { computed, ref } from 'vue'
 import { invoke, convertFileSrc } from '@tauri-apps/api/core'
 import { open } from '@tauri-apps/plugin-dialog'
-import { FolderOpened, Plus, Close, Picture } from '@element-plus/icons-vue'
+import {
+  FolderOpened,
+  Plus,
+  Close,
+  Picture,
+  MagicStick,
+} from '@element-plus/icons-vue'
+import { useFrameSimilarity, type LoopCandidate } from './useFrameSimilarity'
 
 /** 最多层数（底图 + 3 对比）。 */
 const MAX = 4
@@ -146,7 +210,34 @@ const files = ref<FrameFile[]>([])
 const layers = ref<Layer[]>([])
 const mode = ref<'overlay' | 'tint'>('overlay')
 
+/** 帧相似度分析（自动找循环帧）。 */
+const sim = useFrameSimilarity()
+
 const maxIdx = computed(() => Math.max(0, files.value.length - 1))
+
+/** 触发自动找循环帧。 */
+async function runSimilarity() {
+  if (!files.value.length) return
+  await sim.run(
+    files.value.map((f) => f.url),
+    undefined, // 最小 gap：不传则按总帧数的 1/6 自动算
+    8, // Top-N
+  )
+  // 自动应用最佳候选
+  if (sim.candidates.value.length) applyCandidate(sim.candidates.value[0])
+}
+
+/** 把某候选应用到底图和对比1 两层。 */
+function applyCandidate(c: LoopCandidate) {
+  if (layers.value.length === 0) return
+  layers.value[0].index = c.i
+  if (layers.value.length >= 2) {
+    layers.value[1].index = c.j
+  } else {
+    layers.value.push({ index: c.j, opacity: 0.5 })
+  }
+}
+
 
 /**
  * 双色模式的染色滤镜：grayscale+sepia 先压成单色调，再 hue-rotate 转到目标色相。
@@ -322,6 +413,108 @@ function layerStyle(i: number) {
 
 .fc__add {
   margin-top: 4px;
+}
+
+/* ---- 自动找循环帧 ---- */
+.fc__simprogress {
+  margin: 8px 0;
+}
+
+.fc__sims {
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  border-radius: 6px;
+  background: var(--el-fill-color-light);
+}
+
+.fc__simtitle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+  font-size: 13px;
+  color: var(--el-text-color-regular);
+}
+
+.fc__simpill {
+  padding: 1px 8px;
+  border-radius: 10px;
+  background: var(--el-color-primary-light-9);
+  color: var(--el-color-primary);
+  font-size: 12px;
+}
+
+.fc__simtip {
+  margin-left: auto;
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+}
+
+.fc__simlist {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+.fc__simitem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 4px;
+  background: var(--el-bg-color);
+  cursor: pointer;
+  transition: background 0.15s;
+
+  &:hover {
+    background: var(--el-fill-color-lighter);
+  }
+}
+
+.fc__simrank {
+  width: 22px;
+  flex: none;
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.fc__simframes {
+  font-size: 14px;
+  color: var(--el-text-color-primary);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.fc__simspacer {
+  flex: 1;
+}
+
+.fc__simcol {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  min-width: 56px;
+}
+
+.fc__simval {
+  font-size: 13px;
+  color: var(--el-text-color-primary);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+
+  &--score {
+    color: var(--el-color-primary);
+    font-weight: 600;
+  }
+}
+
+.fc__simlbl {
+  font-size: 11px;
+  color: var(--el-text-color-secondary);
+  white-space: nowrap;
 }
 
 /* 舞台：棋盘格衬透明像素；isolation 把 multiply 圈在图与图之间，不混棋盘格。 */
