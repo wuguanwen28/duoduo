@@ -255,7 +255,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, computed } from 'vue'
+import { ref, computed } from 'vue'
 import { Plus, Delete, ChatLineRound } from '@element-plus/icons-vue'
 import { BUILTIN_TWITCH_ACTIONS } from '../../pet-core/commands'
 import {
